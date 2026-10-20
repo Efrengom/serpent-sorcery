@@ -1,0 +1,30 @@
+/** Shared colour language: friendly magic is cyan/green/gold, hostile is orange-red. */
+export const COLORS = {
+  bolt: '#5ff6ff',
+  boltCore: '#eaffff',
+  lightning: '#8cff6a',
+  lightningCore: '#f2ffe2',
+  nova: '#ffd45e',
+  novaCore: '#fff4cc',
+  xp: '#d6c4ff',
+  xpBig: '#ff9be8',
+  xpCore: '#ffffff',
+  hostile: '#ff5a36',
+  hostileCore: '#ffe3c4',
+  hostileDark: '#4a0c12',
+  telegraph: '255, 72, 48',
+  portal: '#c2306a',
+  snakeBody: '#2fd3b5',
+  snakeBodyDark: '#127a6c',
+  snakeBelly: '#a8ffe2',
+  hat: '#8a4ee8',
+  hatDark: '#4a1f96',
+  hatBand: '#ffd45e',
+  outline: '#140a24',
+  hurt: '#ff3355',
+  sigilTrail: '#c8f6ff',
+  unclear: '#ff8a8a',
+  text: '#f4ecff',
+} as const;
+
+export type ParticleColor = string;
