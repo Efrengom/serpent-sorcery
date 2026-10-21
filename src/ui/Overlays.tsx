@@ -3,8 +3,8 @@ import { SPELL_IDS, SPELLS } from '../game/config';
 import { formatTime } from '../game/math';
 import type { CommitOutcome, RunResult } from '../game/persistence';
 import type { UpgradeChoice } from '../game/progression';
-import { describeHurt, worstHurt, type RunRecap } from '../game/recap';
-import { Shard, UpgradeGlyph } from './art';
+import { describeHurt, worstHurt, type DamageSource, type RunRecap } from '../game/recap';
+import { CoilIcon, Shard, UpgradeGlyph } from './art';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 import { VolumeControls } from './VolumeControls';
 
@@ -131,11 +131,15 @@ export function PauseMenu({
 
 /** What ended the run, and how much each spell contributed. */
 function RunRecapView({ recap }: { recap: RunRecap }) {
-  const used = SPELL_IDS.filter((id) => recap.spells[id].casts > 0);
-  const rows = used.length > 0 ? used : SPELL_IDS.slice(0, 3);
+  const used: DamageSource[] = SPELL_IDS.filter((id) => recap.spells[id].casts > 0);
+  const rows: DamageSource[] = used.length > 0 ? used : SPELL_IDS.slice(0, 3);
+  if (recap.spells.constrict.casts > 0) rows.push('constrict');
   const total = rows.reduce((sum, id) => sum + recap.spells[id].damage, 0);
   const worst = worstHurt(recap);
+  const { perfect, clean, rough } = recap.casts;
+  const sigils = perfect + clean + rough;
   const extras = [
+    sigils > 0 && `Sigils: ${perfect} perfect · ${clean} clean of ${sigils}`,
     recap.blocked > 0 && `Ward blocked ${recap.blocked} ${recap.blocked === 1 ? 'hit' : 'hits'}`,
     recap.elitesSlain > 0 && `${recap.elitesSlain} ${recap.elitesSlain === 1 ? 'elite' : 'elites'} slain`,
   ].filter(Boolean);
@@ -153,17 +157,18 @@ function RunRecapView({ recap }: { recap: RunRecap }) {
       <div className="recap-spells">
         {rows.map((id) => {
           const s = recap.spells[id];
+          const coil = id === 'constrict';
           const style = {
-            '--spell': SPELL_UI[id].color,
+            '--spell': coil ? 'var(--coil)' : SPELL_UI[id].color,
             '--share': `${total > 0 ? (s.damage / total) * 100 : 0}%`,
           } as CSSProperties;
           return (
-            <div key={id} className="recap-row" style={style}>
-              <SigilIcon spell={id} size={26} />
+            <div key={id} className="recap-row" style={style} data-source={id}>
+              {coil ? <CoilIcon size={26} /> : <SigilIcon spell={id} size={26} />}
               <span className="recap-name">
-                {SPELLS[id].name}
+                {coil ? 'Constrict' : SPELLS[id].name}
                 <span className="recap-sub">
-                  {s.kills} {s.kills === 1 ? 'kill' : 'kills'} · {s.casts} {s.casts === 1 ? 'cast' : 'casts'}
+                  {s.kills} {s.kills === 1 ? 'kill' : 'kills'} · {s.casts} {coil ? (s.casts === 1 ? 'loop' : 'loops') : s.casts === 1 ? 'cast' : 'casts'}
                 </span>
               </span>
               <span className="recap-bar">

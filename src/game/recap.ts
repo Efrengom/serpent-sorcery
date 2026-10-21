@@ -13,9 +13,15 @@ export interface SpellRecap {
   kills: number;
 }
 
+/** Everything that can damage a foe: the five spells, and Constrict. */
+export type DamageSource = SpellId | 'constrict';
+
 /** Per-run statistics shown on the game-over screen. */
 export interface RunRecap {
-  spells: Record<SpellId, SpellRecap>;
+  /** Per spell, plus Constrict (whose "casts" are loops that caught foes). */
+  spells: Record<DamageSource, SpellRecap>;
+  /** How cleanly the run's sigils were drawn. */
+  casts: { perfect: number; clean: number; rough: number };
   /** Damage taken, keyed by hurtKey(). */
   taken: Record<string, number>;
   /** The hurtKey() of the blow that ended the run, or null if it was ended from the menu. */
@@ -30,7 +36,8 @@ export interface RunRecap {
 export function emptyRecap(): RunRecap {
   const spell = (): SpellRecap => ({ casts: 0, damage: 0, kills: 0 });
   return {
-    spells: { bolt: spell(), lightning: spell(), nova: spell(), ward: spell(), frost: spell() },
+    spells: { bolt: spell(), lightning: spell(), nova: spell(), ward: spell(), frost: spell(), constrict: spell() },
+    casts: { perfect: 0, clean: 0, rough: 0 },
     taken: {},
     killedBy: null,
     blocked: 0,

@@ -1,5 +1,7 @@
 import { audio } from './audio';
-import { ARENA, ENEMIES, EVOLUTIONS, GESTURE, HIT_STOP, SIM, SPELL_IDS, SPELL_INFO, SPELLS, type SpellId } from './config';
+import { castPower, castTier, tierBonusLabel } from './cast';
+import { ARENA, CLEAN_CAST, ENEMIES, EVOLUTIONS, GESTURE, HIT_STOP, SIM, SPELL_IDS, SPELL_INFO, SPELLS, type SpellId } from './config';
+import { updateConstrict } from './constrict';
 import { gainXp, hurtPlayer, updateContacts, updateCrystals, updateShots } from './combat';
 import { updateDirector, updateEnemies, updatePortals } from './enemies';
 import { burst, floater, updateEffects } from './effects';
@@ -38,7 +40,7 @@ import {
   updateNovas,
   updateWard,
 } from './spells';
-import { createWorld, DEFAULT_SETUP, type GestureView, type RunSetup, type World } from './world';
+import { createWorld, DEFAULT_SETUP, type GestureView, type RunSetup, type SigilReading, type World } from './world';
 
 export type Phase = 'playing' | 'paused' | 'levelup' | 'dying' | 'gameover';
 
@@ -89,7 +91,9 @@ export class Game {
   private destroyed = false;
   private runId = newRunId();
   private intensity = new IntensityTracker();
-  private readonly gesture: GestureView = { active: false, points: [], target: null, fade: null };
+  private readonly gesture: GestureView = { active: false, points: [], target: null, fade: null, reading: null };
+  /** Seconds until the stroke being drawn is read again (live trail tint). */
+  private readTimer = 0;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -267,6 +271,15 @@ export class Game {
     this.gesture.active = false;
     this.gesture.target = null;
     this.gesture.points = [];
+    this.gesture.reading = null;
+  }
+
+  /** What the stroke so far reads as, for the live trail tint. */
+  private readStroke(points: Pt[]): SigilReading | null {
+    const r = recognize(points);
+    if (!r.kind) return null;
+    const spell = SIGIL_TO_SPELL[r.kind];
+    return { kind: r.kind, spell, known: this.world.known.includes(spell), tier: castTier(r.kind, r.score) };
   }
 
   private endGesture(points: Pt[]): void {
@@ -304,12 +317,23 @@ export class Game {
       audio.play('cooldown');
       return;
     }
-    castSpell(w, spell, target);
+    // A cleanly drawn sigil is stronger.
+    const tier = castTier(result.kind, result.score);
+    castSpell(w, spell, target, castPower(tier));
+    w.recap.casts[tier]++;
     const cd = spellCooldown(spell, w.stats);
     w.cooldowns[spell] = cd;
     w.cooldownTotals[spell] = cd;
     w.castFlash[spell] = 1;
     floater(w, c.x, fy, `${name}!`, SPELL_COLORS[spell], { size: 24, life: 0.9, screen: true });
+    if (tier !== 'rough') {
+      floater(w, c.x, fy + 26, `${tier === 'perfect' ? 'Perfect' : 'Clean'} ${tierBonusLabel(tier)}`, tier === 'perfect' ? COLORS.nova : '#dfe8ff', {
+        size: tier === 'perfect' ? 18 : 15,
+        life: 0.9,
+        screen: true,
+      });
+      if (tier === 'perfect') audio.play('perfect');
+    }
     this.gesture.fade = { points, color: SPELL_COLORS[spell], t: 0 };
   }
 
@@ -362,6 +386,16 @@ export class Game {
     }
     this.gesture.active = this.input.isDrawing && this.phase === 'playing';
     this.gesture.points = this.input.points;
+    if (this.gesture.active && this.gesture.points.length > 3) {
+      this.readTimer -= dt;
+      if (this.readTimer <= 0) {
+        this.readTimer = CLEAN_CAST.liveInterval;
+        this.gesture.reading = this.readStroke(this.gesture.points);
+      }
+    } else {
+      this.gesture.reading = null;
+      this.readTimer = 0;
+    }
 
     const showSnake = this.phase !== 'dying' && this.phase !== 'gameover';
     this.renderer.render(this.world, this.gesture, this.realTime, showSnake);
@@ -383,6 +417,7 @@ export class Game {
       const dir = this.input.direction();
       this.input.endStep();
       if (w.snake.update(dt, dir.x, dir.y)) this.onWallHit();
+      updateConstrict(w, dt);
     }
 
     updateDirector(w, dying ? 0 : dt);

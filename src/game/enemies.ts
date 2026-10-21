@@ -112,6 +112,7 @@ export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number, 
     chill: 0,
     frozen: 0,
     frozenBy: -1,
+    stunned: 0,
   };
   if (canBeElite && kind !== 'boss' && world.rng() < eliteChance(world.depth, world.effects.elitesFromStart)) makeElite(world, e);
   if (kind === 'rival' || kind === 'boss') {

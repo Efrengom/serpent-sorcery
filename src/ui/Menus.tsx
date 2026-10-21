@@ -158,6 +158,10 @@ export function HowToPlay({ onBack, onPlay }: { onBack(): void; onPlay(): void }
             Let go and it keeps its heading. Turns curve — reversing makes a U-turn.
           </p>
           <p>Walls sting and bounce you back inward. Only enemy <b>heads</b> bite, and your own tail is safe.</p>
+          <p>
+            Once your serpent is long enough, <b>loop your body around foes</b> to Constrict them: a dashed line shows the gap
+            left to close.
+          </p>
         </section>
         <section className="howto-card">
           <h3>2 · Draw</h3>
@@ -191,6 +195,10 @@ export function HowToPlay({ onBack, onPlay }: { onBack(): void; onPlay(): void }
             always surround you.
           </p>
           <p>Max a spell's own upgrade and take two ranks of its partner, and a golden card evolves it.</p>
+          <p>
+            While you draw, the trail takes the colour of the spell it reads. <b>Perfect</b> sigils hit 35% harder,{' '}
+            <b>Clean</b> ones 15%.
+          </p>
           <p className="muted">Each spell has its own short cooldown. A messy stroke shows “Sigil unclear” and costs nothing.</p>
         </section>
       </div>

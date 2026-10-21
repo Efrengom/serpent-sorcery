@@ -9,7 +9,7 @@ Requires Node 18+.
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap, spells, depth)
+npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap, spells, depth, clean casts, Constrict)
 npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 npm run playtest   # ~5 min end-to-end play-test in a headless Edge/Chrome
@@ -29,6 +29,7 @@ On Windows PowerShell with script execution disabled, `npm` itself is blocked (`
 - the boss warning hushing the music, the boss theme crossfading in, the freeze and slow motion when the boss dies, and the main theme returning
 - drawing an unlearned triangle, then learning the triangle and zigzag sigils from level-up cards and casting them with real strokes, the ward blocking a real hit, frost slowing a foe, and an evolution card turning Arcane Bolt into Arcane Lance
 - descending to Depth 2 (the Ember Depths) after the boss falls
+- the trail reading a real V's first leg as a line and the finished stroke as a V, a careful V casting as Perfect or Clean, and a real WASD circle around a brute showing the loop hint and then Constricting it
 - an autopilot run with level-ups through death, music layers building as the arena fills, the death recap, the reward banked once, and an instant restart
 - the setup screen: locked and unlocked wizards, picking Frostcoil and a curse with real clicks, the run starting with them, and the curse multiplying the banked shards
 - shop purchases and reload persistence
@@ -64,6 +65,8 @@ Each wizard starts a run knowing three sigils. Drawing one you haven't learned s
 
 **Aiming is independent of the stroke's shape.** On mouse-down the cursor's arena position is recorded and marked with a reticle, with a faint dashed guide from the head. On release, Bolt and Lightning fire from the snake's **current** head toward that recorded point, and Frost Field lands on it, so the snake can keep moving while you draw. If you press within ~48 units of the head, spells fire along the current heading instead.
 
+**Clean casts.** While you draw, the stroke is read about 16 times a second: the trail takes the colour of the spell it currently reads as (grey if you haven't learned it), and a label by the pen names it and how cleanly it's drawn. On release, a **Perfect** sigil casts at +35% power and a **Clean** one at +15% (damage, plus duration for the Ward and size for Frost Field). The grade comes from the recognizer's confidence, compared with per-sigil thresholds in `CLEAN_CAST` (each sigil's scores spread differently: a careful line scores about 0.99, a careful circle about 0.88). They were set from thousands of randomized strokes so that Perfect is roughly the best third of careful strokes. The game-over recap counts your perfect and clean sigils.
+
 Each spell has its own cooldown. An unrecognized stroke shows "Sigil unclear" and costs nothing. A recognized spell that is still recharging shows "… recharging 1.2s" and shakes its HUD card. Tiny drags and clicks are ignored silently.
 
 ## Gesture recognition
@@ -84,6 +87,12 @@ All in `src/game/gesture.ts`. It is local, deterministic and has no dependencies
 6. The best sigil wins. Nothing above 0.5 means **unclear**. Two candidates within 0.08 of each other means **ambiguous**, which also shows "Sigil unclear".
 
 The tests in `src/game/__tests__/gesture*.test.ts` include a sweep of 300 randomized, noisy hand-drawn strokes per shape: triangles of varied shape started at a corner or mid-side with a gap or overlap, and zigzags of 3 to 5 legs at any rotation. Across three seeds (900 strokes per shape): lines 100%, circles 96–99%, Vs 100%, triangles 99–100%, zigzags 99%, zero strokes read as the wrong sigil, and about 1% of random scribbles accepted.
+
+## Constrict
+
+Once the serpent is long enough to bend into a full loop (about 22 segments, around level 6; a banner announces it), **loop your body around foes to crush them**. The loop closes when the head comes back within 30 units of a body point at least 10 segments back. Every foe inside takes 45 damage (scaled by spell damage), is held still for 1.1 s (bosses shrug that off) and is pulled toward the middle. As the head comes around a loop that would catch foes, a dashed line shows the gap left to close. Loops with nothing inside do nothing, and crushes are at least 1.2 s apart. Constrict has its own row in the game-over recap. Tuning is `CONSTRICT` in `config.ts` and the logic is in `src/game/constrict.ts`.
+
+The serpent now starts with 8 segments and grows 3 per level (it used to be 6 and 2) so Constrict arrives mid-run. The body is still harmless to you and to enemies, so a longer serpent has no downside.
 
 ## Spell evolutions
 
@@ -187,6 +196,8 @@ The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite raster
 - `SPELLS.ward`, `SPELLS.frost`: the new spells' cooldowns, duration, charges, slow, damage
 - `EVOLUTIONS`, `EVOLUTION_PARTNER_RANKS`: what each evolution needs and does
 - `DEPTH`, `ELITE`: per-depth scaling and elite chances and modifiers
+- `CLEAN_CAST`: per-sigil Perfect and Clean thresholds and their power bonus
+- `CONSTRICT`: loop closing distance, damage, hold, pull and cooldown
 - `ENEMIES`: per-type health, speed, damage, XP, telegraph timings, boss attack patterns
 - `DIRECTOR`: spawn rate curve, alive cap, enemy-type unlock times, boss timing, difficulty scaling over time
 - `PROGRESSION`: XP curve, passive survival XP, crystal cap
@@ -211,6 +222,8 @@ src/game/            framework-free game code (no React)
   recap.ts           per-run spell and damage statistics for the game-over screen
   wizards.ts         playable wizards: starting sigils, perks, colours, unlocks
   curses.ts          optional pre-run curses and the shard multiplier
+  cast.ts            clean-cast grading from the recognizer's confidence
+  constrict.ts       loop detection and the Constrict crush
   render.ts          Canvas 2D renderer (cached background, glow sprites)
   effects.ts         capped particles, floating text, screen shake, hit-stop
   audio.ts           WebAudio context, volumes, sample loading, music scheduling

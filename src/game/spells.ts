@@ -38,21 +38,25 @@ export function aimAngle(head: { x: number; y: number; heading: number }, target
   return Math.atan2(target.y - head.y, target.x - head.x);
 }
 
-export function castSpell(world: World, id: SpellId, target: Vec | null): void {
+/**
+ * Casts a spell. `power` comes from how cleanly the sigil was drawn (see cast.ts): it scales
+ * damage, and for the Ward and Frost Field their duration or size too.
+ */
+export function castSpell(world: World, id: SpellId, target: Vec | null, power = 1): void {
   const s = world.snake;
   const aim = aimAngle(s, target);
   world.recap.spells[id].casts++;
   if (id === 'bolt') {
-    if (world.evolved.bolt) castLance(world, aim);
-    else castBolt(world, aim);
+    if (world.evolved.bolt) castLance(world, aim, power);
+    else castBolt(world, aim, power);
   } else if (id === 'lightning') {
-    castLightning(world, aim, target);
-    if (world.evolved.lightning) world.echoes.push({ at: world.time + EVOLUTIONS.lightning.echoDelay, spell: 'lightning', aim, target });
+    castLightning(world, aim, target, power);
+    if (world.evolved.lightning) world.echoes.push({ at: world.time + EVOLUTIONS.lightning.echoDelay, spell: 'lightning', aim, target, power });
   } else if (id === 'nova') {
-    castNova(world, 1, 1);
-    if (world.evolved.nova) world.echoes.push({ at: world.time + EVOLUTIONS.nova.echoDelay, spell: 'nova', aim, target });
-  } else if (id === 'ward') castWard(world);
-  else castFrost(world, target);
+    castNova(world, 1, power);
+    if (world.evolved.nova) world.echoes.push({ at: world.time + EVOLUTIONS.nova.echoDelay, spell: 'nova', aim, target, power });
+  } else if (id === 'ward') castWard(world, power);
+  else castFrost(world, target, power);
 }
 
 /** Fires delayed second strikes from evolved spells once they are due. */
@@ -61,8 +65,8 @@ export function updateEchoes(world: World): void {
     const e = world.echoes[i];
     if (world.time < e.at) continue;
     world.echoes.splice(i, 1);
-    if (e.spell === 'lightning') castLightning(world, e.aim, e.target, EVOLUTIONS.lightning.echoDamage);
-    else castNova(world, EVOLUTIONS.nova.echoRadius, EVOLUTIONS.nova.echoDamage);
+    if (e.spell === 'lightning') castLightning(world, e.aim, e.target, EVOLUTIONS.lightning.echoDamage * e.power);
+    else castNova(world, EVOLUTIONS.nova.echoRadius, EVOLUTIONS.nova.echoDamage * e.power);
   }
 }
 
@@ -82,14 +86,14 @@ export function spawnBolt(world: World, x: number, y: number, a: number, damage:
   });
 }
 
-function castBolt(world: World, aim: number): void {
+function castBolt(world: World, aim: number, power: number): void {
   const s = world.snake;
   const cfg = SPELLS.bolt;
   const n = world.stats.boltCount;
   const r = cfg.radius + world.upgrades.potency * 0.7 + world.upgrades.pierce * 0.5;
   for (let i = 0; i < n; i++) {
     const a = aim + (i - (n - 1) / 2) * cfg.spread;
-    spawnBolt(world, s.x + Math.cos(a) * 26, s.y + Math.sin(a) * 26, a, cfg.damage * world.stats.damageMult, world.stats.boltPierce, r);
+    spawnBolt(world, s.x + Math.cos(a) * 26, s.y + Math.sin(a) * 26, a, cfg.damage * world.stats.damageMult * power, world.stats.boltPierce, r);
   }
   burst(world, s.x + Math.cos(aim) * 18, s.y + Math.sin(aim) * 18, COLORS.bolt, 8, 220, {
     dir: aim,
@@ -110,11 +114,11 @@ function segmentDistance(px: number, py: number, ax: number, ay: number, bx: num
 }
 
 /** Arcane Lance: instant beams (one per Split Bolt projectile) that pierce everything in line. */
-function castLance(world: World, aim: number): void {
+function castLance(world: World, aim: number, power: number): void {
   const s = world.snake;
   const evo = EVOLUTIONS.bolt;
   const n = world.stats.boltCount;
-  const damage = SPELLS.bolt.damage * world.stats.damageMult * evo.damageMult;
+  const damage = SPELLS.bolt.damage * world.stats.damageMult * evo.damageMult * power;
   const hit = new Set<number>();
   let struck = 0;
   for (let i = 0; i < n; i++) {
@@ -263,7 +267,7 @@ function castNova(world: World, radiusScale: number, damageScale: number): void 
 // ---------------------------------------------------------------- Arcane Ward
 
 /** Shoves nearby foes away from the head; absorbed hits also deal a little damage. */
-function wardPulse(world: World, damaging: boolean): void {
+function wardPulse(world: World, damaging: boolean, power = 1): void {
   const s = world.snake;
   const cfg = SPELLS.ward;
   for (const e of world.enemies) {
@@ -271,7 +275,7 @@ function wardPulse(world: World, damaging: boolean): void {
     const d = dist(s.x, s.y, e.x, e.y) || 1;
     const kx = ((e.x - s.x) / d) * cfg.pulseKnockback;
     const ky = ((e.y - s.y) / d) * cfg.pulseKnockback;
-    if (damaging) damageEnemy(world, e, cfg.pulseDamage * world.stats.damageMult, 'ward', COLORS.ward, kx, ky);
+    if (damaging) damageEnemy(world, e, cfg.pulseDamage * world.stats.damageMult * power, 'ward', COLORS.ward, kx, ky);
     else {
       const k = e.kind === 'boss' ? 0.05 : e.kind === 'brute' ? 0.4 : 1;
       e.kx += kx * k;
@@ -284,13 +288,14 @@ function wardPulse(world: World, damaging: boolean): void {
   }
 }
 
-function castWard(world: World): void {
+function castWard(world: World, power: number): void {
   world.ward = {
     charges: world.stats.wardCharges,
     t: 0,
-    duration: world.stats.wardDuration + (world.evolved.ward ? EVOLUTIONS.ward.extraDuration : 0),
+    duration: (world.stats.wardDuration + (world.evolved.ward ? EVOLUTIONS.ward.extraDuration : 0)) * power,
     pulses: 0,
     flash: 1,
+    power,
   };
   wardPulse(world, false);
   addShake(world, 0.12);
@@ -305,7 +310,7 @@ export function updateWard(world: World, dt: number): void {
   w.flash = Math.max(0, w.flash - dt * 3);
   while (w.pulses > 0) {
     w.pulses--;
-    wardPulse(world, true);
+    wardPulse(world, true, w.power);
     if (world.evolved.ward) {
       // Aegis: the blocked blow comes back as a ring of bolts.
       const s = world.snake;
@@ -326,10 +331,10 @@ export function updateWard(world: World, dt: number): void {
 
 // ---------------------------------------------------------------- Frost Field
 
-function castFrost(world: World, target: Vec | null): void {
+function castFrost(world: World, target: Vec | null, power: number): void {
   const s = world.snake;
   const cfg = SPELLS.frost;
-  const r = world.stats.frostRadius;
+  const r = world.stats.frostRadius * (1 + (power - 1) * 0.5);
   const aimed = target && dist(s.x, s.y, target.x, target.y) >= SNAKE.aimMinDistance;
   const x = aimed ? target.x : s.x + Math.cos(s.heading) * cfg.placeAhead;
   const y = aimed ? target.y : s.y + Math.sin(s.heading) * cfg.placeAhead;
@@ -341,7 +346,7 @@ function castFrost(world: World, target: Vec | null): void {
     t: 0,
     duration: cfg.duration,
     tick: cfg.tick,
-    damage: cfg.damagePerSecond * cfg.tick * world.stats.damageMult * world.stats.frostDamageMult,
+    damage: cfg.damagePerSecond * cfg.tick * world.stats.damageMult * world.stats.frostDamageMult * power,
   };
   world.frostFields.push(field);
   for (let i = 0; i < 30; i++) {
@@ -400,8 +405,10 @@ export function enemyTimeScale(world: World, e: Enemy, dt: number): number {
       floater(world, e.x, e.y - e.r - 8, 'Frozen', COLORS.frostCore, { size: 13, life: 0.6 });
     }
   }
-  if (e.frozen > 0) {
+  if (e.frozen > 0 || e.stunned > 0) {
+    // Frozen by Glacier or held by Constrict: the enemy's clock stops.
     e.frozen = Math.max(0, e.frozen - dt);
+    e.stunned = Math.max(0, e.stunned - dt);
     return 0;
   }
   return scale;

@@ -1,9 +1,9 @@
-import { DEPTH, ELITE, ENEMIES, EVOLUTIONS, HIT_STOP, PROGRESSION, SNAKE, SPELLS, type SpellId } from './config';
+import { DEPTH, ELITE, ENEMIES, EVOLUTIONS, HIT_STOP, PROGRESSION, SNAKE, SPELLS } from './config';
 import { addShake, burst, floater, hitStop } from './effects';
 import { spawnEnemy } from './enemies';
 import { clamp, dist2, TAU } from './math';
 import { COLORS } from './palette';
-import { hurtKey, type HurtSource } from './recap';
+import { hurtKey, type DamageSource, type HurtSource } from './recap';
 import { PLAY_AREA } from './snake';
 import { frostAt } from './spells';
 import type { Crystal, Enemy, World } from './world';
@@ -34,7 +34,7 @@ export function damageEnemy(
   world: World,
   e: Enemy,
   amount: number,
-  spell: SpellId,
+  spell: DamageSource,
   color: string,
   knockX = 0,
   knockY = 0,

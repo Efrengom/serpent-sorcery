@@ -78,6 +78,14 @@ export const SFX_SAMPLES: Record<SfxName, SampleLayer[]> = {
   ],
   shieldHit: [{ files: range('impactMetal_light', 0, 2), gain: 0.126, rate: [1.1, 1.3] }],
   split: [{ files: ['slime_000'], gain: 0.7, rate: [0.9, 1.1] }],
+  perfect: [
+    { files: ['glass_002'], gain: 0.24, rate: [1.3, 1.4] },
+    { files: ['impactBell_heavy_004'], gain: 0.18, rate: [2, 2.1], delay: 0.03 },
+  ],
+  constrict: [
+    { files: ['impactSoft_heavy_001'], gain: 0.4, rate: [0.75, 0.85] },
+    { files: ['creak1'], gain: 0.4, rate: [0.9, 1] },
+  ],
   descend: [
     { files: ['lowFrequency_explosion_001'], gain: 0.24, rate: [0.6, 0.6] },
     { files: ['impactBell_heavy_001'], gain: 0.24, rate: [0.7, 0.7], delay: 0.3 },
@@ -232,6 +240,13 @@ export function playSynth(
       break;
     case 'split':
       tone(300, 600, 0.12, 'sine', 0.14);
+      break;
+    case 'perfect':
+      [1568, 2093].forEach((f, i) => tone(f, f, 0.18, 'sine', 0.13, i * 0.05));
+      break;
+    case 'constrict':
+      tone(110, 60, 0.3, 'square', 0.2);
+      hiss(0.25, 0.27, 700, 'lowpass');
       break;
     case 'descend':
       tone(90, 45, 1.2, 'sawtooth', 0.25);

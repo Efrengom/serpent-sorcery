@@ -1,7 +1,8 @@
+import type { CastTier } from './cast';
 import type { EnemyKind, SpellId } from './config';
 import { ARENA, DIRECTOR, SPELL_IDS } from './config';
 import { curseEffects, type CurseEffects, type CurseId } from './curses';
-import type { Pt } from './gesture';
+import type { Pt, SigilKind } from './gesture';
 import { mulberry32, type Vec } from './math';
 import {
   computeStats,
@@ -43,7 +44,9 @@ export type SfxName =
   | 'evolve'
   | 'shieldHit'
   | 'split'
-  | 'descend';
+  | 'descend'
+  | 'perfect'
+  | 'constrict';
 
 export type EnemyState = 'move' | 'windup' | 'attack' | 'recover';
 export type BossMove = 'slither' | 'volley' | 'charge' | 'summon';
@@ -94,6 +97,8 @@ export interface Enemy {
   /** Seconds left frozen solid (Glacier), and the field that froze it. */
   frozen: number;
   frozenBy: number;
+  /** Seconds left held still after being constricted. */
+  stunned: number;
 }
 
 export interface Portal {
@@ -185,6 +190,8 @@ export interface Ward {
   pulses: number;
   /** 1 when a hit was just absorbed, fading to 0. */
   flash: number;
+  /** Clean-cast power: scales the pulse damage. */
+  power: number;
 }
 
 /** A delayed second strike from an evolved spell. */
@@ -193,6 +200,24 @@ export interface Echo {
   spell: 'lightning' | 'nova';
   aim: number;
   target: Vec | null;
+  /** Clean-cast power carried over from the original cast. */
+  power: number;
+}
+
+/** The loop the serpent's body is forming (or has just closed) for Constrict. */
+export interface Coil {
+  /** Index of the body segment the head meets (or is closest to). */
+  index: number;
+  closed: boolean;
+  /** Foes inside the loop. */
+  enclosed: number;
+}
+
+/** Brief flash of a loop that just crushed foes. */
+export interface ConstrictFlash {
+  points: Vec[];
+  life: number;
+  maxLife: number;
 }
 
 /** Choices made before a run. */
@@ -243,11 +268,21 @@ export interface Banner {
   color: string;
 }
 
+/** What the stroke being drawn currently reads as. */
+export interface SigilReading {
+  kind: SigilKind;
+  spell: SpellId;
+  known: boolean;
+  tier: CastTier;
+}
+
 /** A gesture the player is currently drawing, plus the recorded aim target. */
 export interface GestureView {
   active: boolean;
   points: Pt[];
   target: Vec | null;
+  /** Live reading of the stroke so far, or null if it isn't a sigil (yet). */
+  reading: SigilReading | null;
   /** Fading trail of the last finished gesture. */
   fade: { points: Pt[]; color: string; t: number } | null;
 }
@@ -284,6 +319,11 @@ export interface World {
   beams: Beam[];
   echoes: Echo[];
   ward: Ward | null;
+  coil: Coil | null;
+  constricts: ConstrictFlash[];
+  constrictCooldown: number;
+  /** Set once the body is long enough to loop (announced once per run). */
+  constrictReady: boolean;
   /** 1 + bosses defeated; each depth is harder and elites grow more common. */
   depth: number;
   /** 0 = the ruins, 1 = the Ember Depths (after the first boss falls). */
@@ -372,6 +412,10 @@ export function createWorld(
     beams: [],
     echoes: [],
     ward: null,
+    coil: null,
+    constricts: [],
+    constrictCooldown: 0,
+    constrictReady: false,
     depth: 1,
     area: 0,
     particles: [],

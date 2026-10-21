@@ -4,7 +4,8 @@
 // Protocol (keys are genuinely held while the mouse draws many-point strokes), plays an
 // autopilot run, and checks the full loop: steering, drawing, aiming, cooldowns, pause/focus/
 // resize handling, music and sound, the boss theme and hit-stop, learning the triangle and zigzag
-// sigils, spell evolution, descending after the boss, level-ups, death and its recap, rewards,
+// sigils, spell evolution, live sigil reading and clean casts, Constrict, descending after the
+// boss, level-ups, death and its recap, rewards,
 // restart, the shop, the wizard and curse setup screen, and save persistence.
 //
 //   npm run playtest                       # ~5 minutes
@@ -697,6 +698,99 @@ try {
     check('a real line stroke fires an Arcane Lance beam once evolved', lance.evolved && lance.beams > 0 && lance.texts.includes('Arcane Lance!'), lance);
   }
 
+  // ============================================================== Part A4: live sigil reading, clean casts, Constrict
+  {
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.invuln = 1e9;
+      w.cooldowns.lightning = 0;
+    });
+    // A slow, careful V: the trail reads the first leg as a line, then the whole stroke as a V.
+    const vee = [];
+    for (let i = 0; i <= 12; i++) vee.push({ x: 820 + i * 5, y: 250 + i * 11 });
+    for (let i = 1; i <= 12; i++) vee.push({ x: 880 + i * 5, y: 382 - i * 11 });
+    const readings = [];
+    const before = await page.evaluate(() => ({ ...window.__serpent.debug().world.recap.casts }));
+    await page.mouse.move(vee[0].x, vee[0].y);
+    await page.mouse.down();
+    for (let i = 1; i < vee.length; i++) {
+      await page.mouse.move(vee[i].x, vee[i].y);
+      await sleep(25);
+      if (i === 10 || i === vee.length - 1) {
+        await sleep(120);
+        readings.push(await page.evaluate(() => window.__serpent.gesture.reading?.kind ?? null));
+      }
+    }
+    await page.mouse.up();
+    await sleep(40);
+    const cast = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { texts: w.floaters.filter((f) => f.screen).map((f) => f.text), casts: { ...w.recap.casts } };
+    });
+    check('while drawing, the trail reads the first leg as a line, then the finished stroke as a V', readings[0] === 'line' && readings[1] === 'vee', { readings });
+    const graded = cast.texts.some((t) => /^(Perfect|Clean) \+\d+%$/.test(t));
+    const counted = cast.casts.perfect + cast.casts.clean > before.perfect + before.clean;
+    check('a careful real V casts as Perfect or Clean, with its bonus shown and counted', cast.texts.includes('Tempest!') || cast.texts.includes('Forked Lightning!') ? graded && counted : false, cast);
+
+    // Constrict: a long serpent circles a brute with real WASD, closing a loop around it.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.enemies.length = 0;
+      w.portals.length = 0;
+      w.shots.length = 0;
+      w.spawnAcc = -1e9;
+      w.frostFields.length = 0;
+      const s = w.snake;
+      s.segmentCount = s.segmentTarget = 30;
+      s.x = 560;
+      s.y = 330;
+      s.heading = 0;
+      w.portals.push({ x: 560, y: 330 + 190 / 4.4, kind: 'brute', t: 0, duration: 0.05 });
+    });
+    await sleep(150);
+    const bruteHp = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      const b = w.enemies.find((e) => e.kind === 'brute');
+      b.speed = 0;
+      b.attackTimer = 1e9;
+      b.elite = null;
+      b.shield = 0;
+      w.snake.x = 560;
+      w.snake.y = 330;
+      w.snake.heading = 0;
+      return b.hp;
+    });
+    let hinted = false;
+    let crushed = false;
+    const keys = ['KeyS', 'KeyA', 'KeyW', 'KeyD', 'KeyS'];
+    for (let k = 0; k < keys.length && !crushed; k++) {
+      await page.keyboard.down(keys[k]);
+      if (k > 0) await page.keyboard.up(keys[k - 1]);
+      const t0 = Date.now();
+      while (Date.now() - t0 < 330) {
+        const st = await page.evaluate(() => {
+          const w = window.__serpent.debug().world;
+          return { coil: w.coil, casts: w.recap.spells.constrict.casts };
+        });
+        if (st.coil && !st.coil.closed && st.coil.enclosed > 0) hinted = true;
+        if (st.casts > 0) {
+          crushed = true;
+          await page.screenshot({ path: path.join(OUT, '15-constrict.png') });
+          break;
+        }
+        await sleep(15);
+      }
+    }
+    for (const k of keys) await page.keyboard.up(k);
+    const crush = await page.evaluate((hp) => {
+      const w = window.__serpent.debug().world;
+      const b = w.enemies.find((e) => e.kind === 'brute');
+      return { loops: w.recap.spells.constrict.casts, damage: Math.round(w.recap.spells.constrict.damage), hpLost: b ? Math.round(hp - b.hp) : 'killed', stunned: b ? +b.stunned.toFixed(2) : null };
+    }, bruteHp);
+    check('the loop hint shows the gap before the body closes around a foe', hinted, { hinted });
+    check('circling a brute with real keys closes a loop that Constricts it', crushed && crush.loops >= 1 && (crush.hpLost === 'killed' || crush.hpLost > 0) && (crush.stunned === null || crush.stunned > 0), crush);
+  }
+
   // ============================================================== Part B: autopilot run
   await page.evaluate(() => window.__serpent.restart());
   await sleep(200);
@@ -909,13 +1003,14 @@ try {
       return {
         killedBy: r.killedBy,
         cause: document.querySelector('.recap-cause')?.textContent ?? '',
-        shown: [...document.querySelectorAll('.recap-num')].map((n) => n.textContent),
+        shown: ['bolt', 'lightning', 'nova'].map((id) => document.querySelector(`.recap-row[data-source="${id}"] .recap-num`)?.textContent),
         expected: ['bolt', 'lightning', 'nova'].map((id) => Math.round(r.spells[id].damage).toLocaleString()),
+        quality: document.querySelector('.recap')?.textContent.match(/Sigils: [^·]+· [^·]+?of \d+/)?.[0] ?? null,
         casts: ['bolt', 'lightning', 'nova'].map((id) => r.spells[id].casts),
       };
     });
     check('game-over recap names the killing blow and shows each spell’s damage', !!recap.killedBy && /^Slain by /.test(recap.cause) &&
-      recap.shown.length === 3 && recap.shown.join() === recap.expected.join() && recap.casts.every((c) => c > 0), recap);
+      recap.shown.join() === recap.expected.join() && recap.casts.every((c) => c > 0) && !!recap.quality, recap);
     const calm = await audioState();
     check('music settles to the calm arrangement on the game-over screen', calm.scene === 'calm' && calm.theme === 'main', calm);
   }

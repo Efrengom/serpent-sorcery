@@ -67,9 +67,10 @@ export const SNAKE = {
   /** Forgiving hit radius used for enemy attacks against the head. */
   hitRadius: 10,
   segmentSpacing: 12,
-  startSegments: 6,
-  segmentsPerLevel: 2,
-  maxSegments: 64,
+  startSegments: 8,
+  /** Grows fast enough to Constrict (a full loop needs ~21 segments) from about level 6. */
+  segmentsPerLevel: 3,
+  maxSegments: 72,
   segmentGrowRate: 8,
   segmentRadiusMax: 13,
   segmentRadiusMin: 6,
@@ -207,6 +208,41 @@ export const EVOLUTIONS = {
 
 /** Ranks of the partner upgrade an evolution needs (the spell's own upgrade must be maxed). */
 export const EVOLUTION_PARTNER_RANKS = 2;
+
+/**
+ * Clean casts: the recognizer's confidence for a sigil, compared with per-sigil thresholds
+ * (each sigil's scores spread differently), boosts the spell. Thresholds were set from
+ * randomized hand-drawn strokes: Perfect is roughly the best third of careful strokes, Clean a
+ * typical careful one.
+ */
+export const CLEAN_CAST = {
+  perfect: { line: 0.975, vee: 0.915, circle: 0.9, triangle: 0.935, zigzag: 0.88 },
+  clean: { line: 0.92, vee: 0.88, circle: 0.86, triangle: 0.9, zigzag: 0.83 },
+  /** Spell power multiplier per tier. */
+  power: { perfect: 1.35, clean: 1.15, rough: 1 },
+  /** Seconds between live readings of the stroke being drawn. */
+  liveInterval: 0.06,
+};
+
+/** Constrict: close a loop of your body around foes to crush them. */
+export const CONSTRICT = {
+  /** Only body points at least this far down the body can close a loop. */
+  minSegments: 10,
+  /** The head must come this close to the body to close the loop. */
+  closeDistance: 30,
+  /**
+   * The closing gap is shown once the head is this close to a body point at least `hintFrom`
+   * segments back, so it appears as the loop comes around rather than halfway through a turn.
+   */
+  hintDistance: 65,
+  hintFrom: 14,
+  damage: 45,
+  /** Seconds crushed foes are held still (bosses shrug it off). */
+  stun: 1.1,
+  /** Inward pull on crushed foes, toward the middle of the loop. */
+  pull: 240,
+  cooldown: 1.2,
+};
 
 export const GESTURE = {
   /** Gestures whose bounding box is smaller than this (CSS px) are treated as clicks. */

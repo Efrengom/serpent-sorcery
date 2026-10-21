@@ -10,6 +10,7 @@ import {
   drawArcs,
   drawBeams,
   drawBolts,
+  drawCoilPixel,
   drawCrystals,
   drawEnemies,
   drawFrostFields,
@@ -25,6 +26,7 @@ import {
   drawWard,
 } from './pixel/draw';
 import { buildPixelFloor, type PixelFloor } from './pixel/floor';
+import { SPELL_COLORS, spellName } from './spells';
 import { WIZARDS } from './wizards';
 import type { Enemy, GestureView, World } from './world';
 
@@ -520,6 +522,7 @@ export class Renderer {
     this.drawFrostFields(world, realTime);
     this.drawCrystals(world);
     this.drawTelegraphs(world);
+    this.drawConstricts(world);
     for (const e of world.enemies) {
       this.drawEnemy(e, world);
       this.drawEnemyStatus(e, world);
@@ -527,6 +530,7 @@ export class Renderer {
     if (showSnake) {
       this.drawSnake(world, gesture);
       this.drawWard(world, realTime);
+      this.drawCoilHint(world, realTime);
     }
     this.drawNovas(world);
     this.drawBolts(world);
@@ -541,6 +545,7 @@ export class Renderer {
     this.drawVignettes(world, realTime);
     this.drawBanner(world);
     this.drawGesture(gesture);
+    this.drawReading(gesture, world);
     this.drawScreenFloaters(world);
   }
 
@@ -563,10 +568,12 @@ export class Renderer {
     drawPortals(low, world, realTime);
     drawCrystals(low, world);
     drawTelegraphs(low, world);
+    drawCoilPixel(low, world, realTime, false);
     drawEnemies(low, world);
     if (showSnake) {
       drawSerpent(low, world, gesture, realTime);
       drawWard(low, world, realTime);
+      drawCoilPixel(low, world, realTime, true);
     }
     drawNovas(low, world);
     drawBolts(low, world);
@@ -596,6 +603,7 @@ export class Renderer {
     this.drawPixelOverlay(world, gesture, realTime);
     main.imageSmoothingEnabled = true;
     main.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.drawReading(gesture, world);
     this.drawScreenFloaters(world);
   }
 
@@ -624,7 +632,7 @@ export class Renderer {
     }
     if (gesture.active && gesture.points.length > 0) {
       const pts = gesture.points.map(toUi);
-      drawTrail(ui, pts, COLORS.sigilTrail, 1);
+      drawTrail(ui, pts, readingColor(gesture), 1);
       drawTrailTip(ui, pts[pts.length - 1]);
     }
     main.setTransform(1, 0, 0, 1, 0, 0);
@@ -1326,6 +1334,14 @@ export class Renderer {
       // Crown marker so elites read at a glance.
       drawStar(ctx, e.x, e.y - e.r - 12, 5, color);
     }
+    if (e.stunned > 0) {
+      this.drawDizzy(e.x, e.y - e.r - 6, t);
+      ctx.strokeStyle = hexAlpha(WIZARDS[world.wizard].look.body, 0.7);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r * (1.1 + 0.1 * Math.sin(t * 18)), 0, TAU);
+      ctx.stroke();
+    }
     if (e.frozen > 0) {
       ctx.fillStyle = 'rgba(200,230,255,0.45)';
       ctx.strokeStyle = 'rgba(240,250,255,0.9)';
@@ -1562,7 +1578,10 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 
-  /** The sigil trail is screen-space and drawn last, above every other effect. */
+  /**
+   * The sigil trail is screen-space and drawn last, above every other effect. While drawing it
+   * takes the colour of the spell the stroke currently reads as, glowing brighter when clean.
+   */
   private drawGesture(g: GestureView): void {
     const ctx = this.ctx;
     if (g.fade) {
@@ -1570,12 +1589,72 @@ export class Renderer {
       if (k > 0) this.drawTrail(g.fade.points, g.fade.color, k);
     }
     if (g.active && g.points.length > 0) {
-      this.drawTrail(g.points, COLORS.sigilTrail, 1);
+      const tier = g.reading?.tier;
+      this.drawTrail(g.points, readingColor(g), tier === 'perfect' ? 1.35 : tier === 'clean' ? 1.15 : 1);
       const tip = g.points[g.points.length - 1];
       ctx.globalCompositeOperation = 'lighter';
-      this.drawGlow('#ffffff', tip.x, tip.y, 14, 0.9);
+      this.drawGlow(tier === 'perfect' ? COLORS.nova : '#ffffff', tip.x, tip.y, tier === 'perfect' ? 20 : 14, 0.9);
       ctx.globalCompositeOperation = 'source-over';
     }
+  }
+
+  /** A small label by the pen tip naming the spell the stroke reads as, and how cleanly. */
+  private drawReading(g: GestureView, world: World): void {
+    const r = g.reading;
+    if (!g.active || !r || g.points.length === 0) return;
+    const tip = g.points[g.points.length - 1];
+    const label = !r.known
+      ? `${spellName(world, r.spell)} · not learned`
+      : `${spellName(world, r.spell)}${r.tier === 'perfect' ? ' · Perfect' : r.tier === 'clean' ? ' · Clean' : ''}`;
+    const ctx = this.ctx;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    this.drawFloater(label, tip.x + 18, tip.y - 18, 14, r.known ? (r.tier === 'perfect' ? COLORS.nova : readingColor(g)) : COLORS.unclear, 0.5);
+  }
+
+  /** The loop that just crushed foes: a flash of the body's colour filling it. */
+  private drawConstricts(world: World): void {
+    const ctx = this.ctx;
+    const color = WIZARDS[world.wizard].look.body;
+    for (const c of world.constricts) {
+      const k = c.life / c.maxLife;
+      ctx.beginPath();
+      ctx.moveTo(c.points[0].x, c.points[0].y);
+      for (const p of c.points) ctx.lineTo(p.x, p.y);
+      ctx.closePath();
+      ctx.fillStyle = hexAlpha(color, 0.32 * k);
+      ctx.fill();
+      ctx.strokeStyle = hexAlpha('#ffffff', 0.7 * k);
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+  }
+
+  /** While the body nearly encloses foes: the gap still to close, and a faint fill of the loop. */
+  private drawCoilHint(world: World, t: number): void {
+    const coil = world.coil;
+    if (!coil || coil.closed) return;
+    const s = world.snake;
+    const seg = s.segments[coil.index];
+    if (!seg) return;
+    const ctx = this.ctx;
+    const color = WIZARDS[world.wizard].look.body;
+    const pulse = 0.55 + 0.35 * Math.sin(t * 10);
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    for (let i = 0; i <= coil.index; i++) ctx.lineTo(s.segments[i].x, s.segments[i].y);
+    ctx.closePath();
+    ctx.fillStyle = hexAlpha(color, 0.08 + 0.06 * pulse);
+    ctx.fill();
+    ctx.strokeStyle = hexAlpha('#ffffff', pulse);
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 6]);
+    ctx.lineDashOffset = -t * 30;
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    ctx.lineTo(seg.x, seg.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   private drawTrail(points: Pt[], color: string, alpha: number): void {
@@ -1634,6 +1713,13 @@ function drawStar(g: CanvasRenderingContext2D, x: number, y: number, r: number, 
   }
   g.closePath();
   g.fill();
+}
+
+/** The live trail colour: the spell the stroke reads as (greyed if not learned), or the plain trail. */
+function readingColor(g: GestureView): string {
+  const r = g.reading;
+  if (!r) return COLORS.sigilTrail;
+  return r.known ? SPELL_COLORS[r.spell] : '#9a90b8';
 }
 
 /** '#rrggbb' + alpha -> 'rgba(...)'. */

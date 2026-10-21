@@ -83,6 +83,10 @@ const ICONS = {
     rows: ['....w....', '.w..i..w.', '..w.i.w..', '...iii...', 'wiiiwiiiw', '...iii...', '..w.i.w..', '.w..i..w.', '....w....'],
     colors: { i: PX.ice2, w: PX.ice3 },
   },
+  coil: {
+    rows: ['..ttttt..', '.t.....t.', 't..kkk..t', 't.k...k.t', 't.k.r.k.t', 't..kkk..t', '.t.....t.', '..ttt.tt.', '......t..'],
+    colors: { t: PX.teal2, k: PX.teal1, r: PX.hurt1 },
+  },
   skull: {
     rows: ['.kkkkk.', 'kwwwwwk', 'kwkwkwk', 'kwwwwwk', '.kwwwk.', '.kwkwk.', '..kkk..'],
     colors: { k: PX.ink, w: PX.hurt2 },
@@ -135,6 +139,19 @@ export function UpgradeGlyph({ id, glyph }: { id: string; glyph: string }) {
   const pixel = usePixelArt();
   if (pixel && UPGRADE_ICON[id]) return <PixelIcon name={UPGRADE_ICON[id]} scale={4} className="card-glyph-px" />;
   return <span className="card-glyph">{glyph}</span>;
+}
+
+/** A serpent coiled around a foe, for Constrict. */
+export function CoilIcon({ size = 26 }: { size?: number }) {
+  const pixel = usePixelArt();
+  if (pixel) return <PixelIcon name="coil" scale={Math.max(2, Math.round(size / 9))} />;
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
+      <circle cx="20" cy="20" r="6" fill="#ff4f7b" />
+      <path d="M33 30 A14 14 0 1 1 30 10" fill="none" stroke="var(--coil)" strokeWidth="5" strokeLinecap="round" />
+      <circle cx="33" cy="30" r="3.5" fill="var(--coil)" />
+    </svg>
+  );
 }
 
 /** Arcane Shard currency symbol. */

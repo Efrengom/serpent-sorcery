@@ -1,6 +1,7 @@
 import { ENEMIES, PIXEL_ART, SNAKE } from '../config';
 import { clamp, mulberry32, TAU, type Vec } from '../math';
 import { PLAY_AREA } from '../snake';
+import { WIZARDS } from '../wizards';
 import type { Enemy, GestureView, World } from '../world';
 import { bayer, blit, createCanvas } from './bake';
 import type { PixelFloor } from './floor';
@@ -477,6 +478,13 @@ function drawEnemyStatus(ctx: CanvasRenderingContext2D, e: Enemy, time: number):
     px(ctx, cx, cy - 1, color, 1, 3);
     px(ctx, cx, cy, PX.white);
   }
+  if (e.stunned > 0) {
+    // Held by Constrict: little stars circling overhead.
+    for (let i = 0; i < 3; i++) {
+      const a = time * 5 + (i / 3) * TAU;
+      px(ctx, x + Math.cos(a) * (R + 2), y - R - 3 + Math.sin(a) * 2, PX.crackHot);
+    }
+  }
   if (e.frozen > 0) {
     const r = Math.round(R) + 2;
     const box = [
@@ -845,4 +853,52 @@ export function buildVignette(w: number, h: number, level: number): HTMLCanvasEl
   }
   pixels(g, list, PX.hurt1);
   return c;
+}
+
+// ---------------------------------------------------------------- Constrict
+
+function loopPath(ctx: CanvasRenderingContext2D, pts: readonly Vec[]): void {
+  ctx.beginPath();
+  ctx.moveTo(Math.round(pts[0].x / P), Math.round(pts[0].y / P));
+  for (const p of pts) ctx.lineTo(Math.round(p.x / P), Math.round(p.y / P));
+  ctx.closePath();
+}
+
+/**
+ * Constrict visuals. Under the bodies (`hint` false): the dithered flash of a loop that just
+ * crushed foes. Over the serpent (`hint` true): the gap still to close around enclosed foes.
+ */
+export function drawCoilPixel(ctx: CanvasRenderingContext2D, world: World, t: number, hint: boolean): void {
+  const ramp = WIZARDS[world.wizard].look.px.body;
+  if (!hint) {
+    for (const c of world.constricts) {
+      const k = c.life / c.maxLife;
+      withArenaClip(ctx, () => {
+        loopPath(ctx, c.points);
+        ctx.fillStyle = ditherPattern(ctx, ramp[0], k > 0.5 ? 0.5 : 0.25);
+        ctx.fill();
+      });
+      const edge: number[] = [];
+      for (let i = 0; i < c.points.length; i++) {
+        const a = c.points[i];
+        const b = c.points[(i + 1) % c.points.length];
+        edge.push(...linePixels(a.x / P, a.y / P, b.x / P, b.y / P, (_, X, Y) => inArena(X, Y) && bayer(X, Y) < k + 0.2));
+      }
+      pixels(ctx, edge, PX.white);
+    }
+    return;
+  }
+  const coil = world.coil;
+  if (!coil || coil.closed) return;
+  const s = world.snake;
+  const seg = s.segments[coil.index];
+  if (!seg) return;
+  const loop = [{ x: s.x, y: s.y }, ...s.segments.slice(0, coil.index + 1)];
+  withArenaClip(ctx, () => {
+    loopPath(ctx, loop);
+    ctx.fillStyle = ditherPattern(ctx, ramp[0], 0.13);
+    ctx.fill();
+  });
+  const off = Math.floor(t * 20);
+  pixels(ctx, linePixels(s.x / P, s.y / P, seg.x / P, seg.y / P, (i) => (i + off) % 4 < 2), Math.floor(t * 10) % 2 === 0 ? PX.white : ramp[1]);
 }
