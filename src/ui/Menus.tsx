@@ -186,7 +186,10 @@ export function HowToPlay({
             down or right; hold two keys for diagonals.
             Let go and it keeps its heading. Turns curve — reversing makes a U-turn.
           </p>
-          <p>Walls sting and bounce you back inward. Only enemy <b>heads</b> bite, and your own tail is safe.</p>
+          <p>
+            Walls, pillars and statues sting and bounce you off, but they also block enemy shots. Only enemy <b>heads</b> bite,
+            and your own tail is safe.
+          </p>
           <p>
             Once your serpent is long enough, <b>loop your body around foes</b> to Constrict them: a dashed line shows the gap
             left to close.
@@ -195,7 +198,7 @@ export function HowToPlay({
         <section className="howto-card">
           <h3>2 · Draw</h3>
           <p>
-            <b>Hold the left mouse button</b> anywhere over the arena, draw a sigil in one stroke, then <b>release</b> to cast.
+            <b>Hold the left mouse button</b> anywhere over the map, draw a sigil in one stroke, then <b>release</b> to cast.
             Size doesn't matter: lines, triangles and zigzags work in any direction, circles either way round, and a V
             just needs to open roughly upward. Each wizard starts with three sigils; level-ups teach the others.
           </p>

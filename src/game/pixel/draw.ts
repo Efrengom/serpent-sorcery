@@ -1,11 +1,11 @@
 import { ENEMIES, PIXEL_ART, SNAKE } from '../config';
+import type { Rect } from '../maps/types';
 import { clamp, mulberry32, TAU, type Vec } from '../math';
 import type { ViewOptions } from '../options';
-import { PLAY_AREA } from '../snake';
+import type { PlayArea } from '../snake';
 import { WIZARDS } from '../wizards';
 import type { Enemy, GestureView, World } from '../world';
 import { bayer, blit, createCanvas } from './bake';
-import type { PixelFloor } from './floor';
 import { PX } from './palette';
 import {
   boltHead,
@@ -28,12 +28,31 @@ import {
   type SegmentStyle,
 } from './sprites';
 
-// Everything here draws on a low-res canvas with an identity transform: 1 unit = 1 art pixel.
+// Everything here draws on a low-res canvas in map art pixels (1 unit = 1 art pixel); the renderer
+// offsets the canvas by the camera in whole pixels.
 const P = PIXEL_ART.worldPerPixel;
-const MIN_X = Math.ceil(PLAY_AREA.minX / P);
-const MIN_Y = Math.ceil(PLAY_AREA.minY / P);
-const MAX_X = Math.floor(PLAY_AREA.maxX / P);
-const MAX_Y = Math.floor(PLAY_AREA.maxY / P);
+/** The map's play area in art pixels (effects are clipped to it), and the view, for skipping off-screen things. */
+let MIN_X = 0;
+let MIN_Y = 0;
+let MAX_X = 0;
+let MAX_Y = 0;
+const VIEW_RECT = { x0: 0, y0: 0, x1: 0, y1: 0 };
+
+/** Sets the play area (world units) and the visible area (art pixels) for this frame. */
+export function setDrawBounds(bounds: PlayArea, viewX: number, viewY: number, viewW: number, viewH: number): void {
+  MIN_X = Math.ceil(bounds.minX / P);
+  MIN_Y = Math.ceil(bounds.minY / P);
+  MAX_X = Math.floor(bounds.maxX / P);
+  MAX_Y = Math.floor(bounds.maxY / P);
+  VIEW_RECT.x0 = viewX;
+  VIEW_RECT.y0 = viewY;
+  VIEW_RECT.x1 = viewX + viewW;
+  VIEW_RECT.y1 = viewY + viewH;
+}
+
+/** True when art pixel (x, y) is within `margin` pixels of the view. */
+const visible = (x: number, y: number, margin: number) =>
+  x > VIEW_RECT.x0 - margin && x < VIEW_RECT.x1 + margin && y > VIEW_RECT.y0 - margin && y < VIEW_RECT.y1 + margin;
 
 function px(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, w = 1, h = 1): void {
   ctx.fillStyle = color;
@@ -169,11 +188,59 @@ function withArenaClip(ctx: CanvasRenderingContext2D, draw: () => void): void {
 
 // ---------------------------------------------------------------- scenery
 
-export function drawTorches(ctx: CanvasRenderingContext2D, floor: PixelFloor, t: number): void {
-  floor.torches.forEach((torch, i) => {
+export function drawTorches(ctx: CanvasRenderingContext2D, torches: readonly Vec[], t: number): void {
+  torches.forEach((torch, i) => {
+    if (!visible(torch.x, torch.y, 8)) return;
     const frame = Math.floor(t * 9 + i * 1.7) % FLAME_FRAMES;
     blit(ctx, flame(frame), torch.x, torch.y);
   });
+}
+
+/** The clearing the boss is coming to: a dashed gold border on the ground, marching unless flashing is reduced. */
+export function drawClearingMark(ctx: CanvasRenderingContext2D, c: Rect, t: number, quiet: boolean): void {
+  const x0 = Math.round((c.x0 + 20) / P);
+  const y0 = Math.round((c.y0 + 20) / P);
+  const x1 = Math.round((c.x1 - 20) / P);
+  const y1 = Math.round((c.y1 - 20) / P);
+  const off = quiet ? 0 : Math.floor(t * 8);
+  const keep = (i: number) => (i + off) % 18 < 11;
+  const dash = [
+    ...linePixels(x0, y0, x1, y0, keep),
+    ...linePixels(x1, y0, x1, y1, keep),
+    ...linePixels(x1, y1, x0, y1, keep),
+    ...linePixels(x0, y1, x0, y0, keep),
+  ];
+  const thick: number[] = [];
+  for (let i = 0; i < dash.length; i += 2) thick.push(dash[i] + 1, dash[i + 1] + 1);
+  pixels(ctx, thick, PX.gold0);
+  pixels(ctx, dash, quiet || Math.floor(t * 3) % 2 === 0 ? PX.gold1 : PX.gold2);
+}
+
+/**
+ * An arrowhead at art pixel (x, y) pointing along `a`, filled with `color` inside an ink outline.
+ * Rasterized per pixel, so it stays crisp at any angle.
+ */
+export function drawEdgeArrow(ctx: CanvasRenderingContext2D, x: number, y: number, a: number, color: string): void {
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  // In the arrow's own frame (u along it): tip at +6, wings back at -4 spanning ±4.5, notched at -2.
+  const inside = (dx: number, dy: number) => {
+    const u = dx * c + dy * s;
+    const v = Math.abs(-dx * s + dy * c);
+    return u <= 6 && u >= -4 && v <= ((6 - u) / 10) * 4.5 && !(u < -2 && v < ((-2 - u) / 2) * 4.5);
+  };
+  const fill: number[] = [];
+  const ink: number[] = [];
+  const cx = Math.round(x);
+  const cy = Math.round(y);
+  for (let dy = -8; dy <= 8; dy++) {
+    for (let dx = -8; dx <= 8; dx++) {
+      if (inside(dx, dy)) fill.push(cx + dx, cy + dy);
+      else if (inside(dx + 1, dy) || inside(dx - 1, dy) || inside(dx, dy + 1) || inside(dx, dy - 1)) ink.push(cx + dx, cy + dy);
+    }
+  }
+  pixels(ctx, ink, PX.ink);
+  pixels(ctx, fill, color);
 }
 
 export function drawPortals(ctx: CanvasRenderingContext2D, world: World, t: number): void {
@@ -205,6 +272,7 @@ export function drawPortals(ctx: CanvasRenderingContext2D, world: World, t: numb
 
 export function drawCrystals(ctx: CanvasRenderingContext2D, world: World): void {
   for (const c of world.crystals) {
+    if (!visible(c.x / P, c.y / P, 8)) continue;
     const tier = c.value >= 10 ? 2 : c.value >= 5 ? 1 : 0;
     const bob = Math.round(Math.sin(c.t * 4));
     const x = c.x / P;
@@ -460,6 +528,7 @@ function drawEnemySnake(ctx: CanvasRenderingContext2D, e: Enemy, time: number, q
 export function drawEnemies(ctx: CanvasRenderingContext2D, world: World, view: ViewOptions): void {
   const quiet = view.reduceFlashing;
   for (const e of world.enemies) {
+    if (!visible(e.x / P, e.y / P, e.segments.length > 0 ? 180 : 32)) continue;
     switch (e.kind) {
       case 'chaser':
         drawChaser(ctx, e, world.time, quiet);
@@ -837,6 +906,7 @@ export function drawParticles(ctx: CanvasRenderingContext2D, world: World): void
     const k = p.life / p.max;
     const x = Math.round(p.x / P);
     const y = Math.round(p.y / P);
+    if (!visible(x, y, 4)) continue;
     if (bayer(x, y) > k + 0.2) continue; // dithered fade-out
     const size = (p.size * (0.5 + k)) / P;
     if (p.kind === 'glow') {

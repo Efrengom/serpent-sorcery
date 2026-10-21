@@ -730,6 +730,15 @@ kbd {
   font-weight: 700;
 }
 
+.map-name {
+  font-size: 10px;
+  color: var(--ink-dim);
+  opacity: 0.75;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .hud-right {
   display: flex;
   justify-content: flex-end;
@@ -2350,6 +2359,20 @@ kbd {
 
 .options-overlay {
   max-width: 1000px;
+}
+
+/* Short windows: tighter options so both columns and the Back button fit without scrolling. */
+@media (max-height: 820px) {
+  .options-section {
+    gap: 9px;
+    padding: 14px 18px;
+  }
+  .opt-toggle {
+    padding: 7px 12px;
+  }
+  .options-grid {
+    margin-bottom: 14px;
+  }
 }
 
 .dot.warn {

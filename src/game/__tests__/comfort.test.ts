@@ -91,7 +91,14 @@ describe('key bindings', () => {
 describe('comfort options', () => {
   it('start at full shake, normal flashing and warnings, full speed', () => {
     expect(optionsOf(defaultSave().settings)).toEqual(defaultOptions());
-    expect(defaultOptions()).toMatchObject({ shake: 1, reduceFlashing: false, safeWarnings: false, gameSpeed: 1 });
+    expect(defaultOptions()).toMatchObject({ shake: 1, reduceFlashing: false, safeWarnings: false, minimap: true, steadyCamera: false, gameSpeed: 1 });
+  });
+
+  it('keep the minimap and camera choices, and ignore junk', () => {
+    const save = parseSave(JSON.stringify({ settings: { minimap: false, steadyCamera: true } }));
+    expect(optionsOf(save.settings)).toMatchObject({ minimap: false, steadyCamera: true });
+    const junk = parseSave(JSON.stringify({ settings: { minimap: 'off', steadyCamera: 1 } }));
+    expect(optionsOf(junk.settings)).toMatchObject({ minimap: true, steadyCamera: false });
   });
 
   it('are saved and validated', () => {

@@ -1,4 +1,5 @@
 import { audio } from './audio';
+import { clampCamera, updateCamera } from './camera';
 import { castPower, castTier, tierBonusLabel } from './cast';
 import { ARENA, CLEAN_CAST, ENEMIES, EVOLUTIONS, GESTURE, HIT_STOP, SIM, SPELL_IDS, SPELL_INFO, SPELLS, type SpellId } from './config';
 import { updateConstrict } from './constrict';
@@ -26,8 +27,8 @@ import {
   type MetaLevels,
   type UpgradeChoice,
 } from './progression';
+import type { SolidName } from './maps/types';
 import { Renderer } from './render';
-import { PLAY_AREA } from './snake';
 import { shardMultiplier } from './curses';
 import {
   castSpell,
@@ -59,6 +60,8 @@ export interface HudSnapshot {
   spellNames: Record<SpellId, string>;
   evolved: Record<SpellId, boolean>;
   depth: number;
+  /** The map's name, as its look suggests (the Ember Depths below depth 1). */
+  mapName: string;
   boss: { name: string; hp: number; maxHp: number; enraged: boolean } | null;
   bossIncoming: number | null;
 }
@@ -115,10 +118,22 @@ export class Game {
       onGestureEnd: (pts) => this.endGesture(pts),
       onGestureCancel: () => this.cancelGestureView(),
       onFocusLost: () => this.pause(),
-      onResize: () => this.renderer.resize(),
+      onResize: () => {
+        this.renderer.resize();
+        this.syncView();
+      },
       onUserGesture: () => audio.unlock(),
     });
+    this.syncView();
     if (options) this.setOptions(options);
+  }
+
+  /** Gives the camera the view size the renderer fits to the window. */
+  private syncView(): void {
+    const cam = this.world.camera;
+    cam.viewW = this.renderer.viewW;
+    cam.viewH = this.renderer.viewH;
+    clampCamera(cam, this.world.map.width, this.world.map.height);
   }
 
   /** Applies the player's options (shake, flashing, warnings, speed, keys); safe mid-run. */
@@ -158,6 +173,7 @@ export class Game {
     // The view transform changes, so an in-progress stroke's screen points would no longer match.
     this.input.cancelGesture();
     this.renderer.setPixelArt(on);
+    this.syncView();
   }
 
   private setPhase(p: Phase): void {
@@ -190,6 +206,7 @@ export class Game {
     this.meta = meta;
     this.setup = setup;
     this.world = this.makeWorld();
+    this.syncView();
     this.runId = newRunId();
     this.intensity = new IntensityTracker();
     this.finished = false;
@@ -270,10 +287,8 @@ export class Game {
   private beginGesture(p: Pt): boolean {
     if (this.phase !== 'playing') return false;
     const t = this.renderer.screenToWorld(p);
-    this.gesture.target = {
-      x: clamp(t.x, PLAY_AREA.minX, PLAY_AREA.maxX),
-      y: clamp(t.y, PLAY_AREA.minY, PLAY_AREA.maxY),
-    };
+    const b = this.world.map.bounds;
+    this.gesture.target = { x: clamp(t.x, b.minX, b.maxX), y: clamp(t.y, b.minY, b.maxY) };
     this.gesture.active = true;
     return true;
   }
@@ -428,7 +443,9 @@ export class Game {
       gainXp(w, survivalXpRate(w.time) * dt);
       const dir = this.input.direction();
       this.input.endStep();
-      if (w.snake.update(dt, dir.x, dir.y)) this.onWallHit();
+      const hit = w.snake.update(dt, dir.x, dir.y, w.map);
+      if (hit) this.onWallHit(hit);
+      updateCamera(w.camera, w.snake, w.map.width, w.map.height, dt, this.options.steadyCamera);
       updateConstrict(w, dt);
     }
 
@@ -479,11 +496,11 @@ export class Game {
     }
   }
 
-  private onWallHit(): void {
+  private onWallHit(solid: SolidName): void {
     const w = this.world;
     const s = w.snake;
     burst(w, s.x, s.y, '#c9b8ff', 10, 200, { size: 3, life: 0.35 });
-    if (!hurtPlayer(w, ARENA.wallDamage, { kind: 'wall', attack: 'wall' })) audio.play('wall');
+    if (!hurtPlayer(w, ARENA.wallDamage, { kind: 'wall', attack: solid })) audio.play('wall');
   }
 
   /** Picks the soundtrack arrangement: layered by danger, a hush before the boss, its theme during the fight. */
@@ -554,6 +571,7 @@ export class Game {
       spellNames: Object.fromEntries(SPELL_IDS.map((id) => [id, spellName(w, id)])) as Record<SpellId, string>,
       evolved: { ...w.evolved },
       depth: w.depth,
+      mapName: w.area === 0 ? w.map.def.name : 'Ember Depths',
       boss: w.boss
         ? { name: ENEMIES.boss.name, hp: Math.max(0, w.boss.hp), maxHp: w.boss.maxHp, enraged: w.boss.enraged }
         : null,

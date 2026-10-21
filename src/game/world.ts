@@ -1,9 +1,12 @@
+import { createCamera, clampCamera, type Camera } from './camera';
 import type { CastTier } from './cast';
 import type { EnemyKind, SpellId } from './config';
-import { ARENA, DIRECTOR, SPELL_IDS } from './config';
+import { DIRECTOR, SPELL_IDS } from './config';
 import { curseEffects, type CurseEffects, type CurseId } from './curses';
 import type { Pt, SigilKind } from './gesture';
+import { buildLayout, mapForDepth, type MapLayout } from './maps';
 import { mulberry32, type Vec } from './math';
+import { createFlowField, refreshFlowField, type FlowField } from './nav';
 import {
   computeStats,
   emptyUpgradeLevels,
@@ -99,6 +102,24 @@ export interface Enemy {
   frozenBy: number;
   /** Seconds left held still after being constricted. */
   stunned: number;
+  nav: EnemyNav;
+}
+
+/** How a foe finds its way to the serpent, refreshed a few times a second (see enemies.ts). */
+export interface EnemyNav {
+  /** World time of the next line-of-sight check. */
+  next: number;
+  /** Nothing solid between this foe's body and the head: it can go straight there. */
+  direct: boolean;
+  /** A thin shot from here would reach the head: shooters may fire. */
+  sight: boolean;
+  /** Which way to walk along the flow field when the way isn't direct. */
+  angle: number;
+  /** Seconds spent far from the serpent, and stuck in one place; where it was at the last check. */
+  far: number;
+  stuck: number;
+  lastX: number;
+  lastY: number;
 }
 
 export interface Portal {
@@ -290,6 +311,12 @@ export interface GestureView {
 export interface World {
   time: number;
   rng: () => number;
+  /** The map this run is played on, the view following the serpent around it, and paths to the serpent for foes. */
+  map: MapLayout;
+  camera: Camera;
+  flow: FlowField;
+  /** The clearing the next boss will arrive in, marked shortly before it does (-1 when none is). */
+  bossClearing: number;
   snake: Snake;
   meta: MetaLevels;
   wizard: WizardId;
@@ -381,10 +408,20 @@ export function createWorld(
   const mods = runMods(setup);
   const stats = computeStats(upgrades, meta, mods);
   const effects = curseEffects(setup.curses);
+  const map = buildLayout(mapForDepth(1), seed);
+  const snake = new Snake(map.start.x, map.start.y, map.startHeading);
+  const camera = createCamera(snake.x, snake.y);
+  clampCamera(camera, map.width, map.height);
+  const flow = createFlowField(map);
+  refreshFlowField(flow, snake.x, snake.y);
   return {
     time: 0,
     rng: mulberry32(seed),
-    snake: new Snake(),
+    map,
+    camera,
+    flow,
+    bossClearing: -1,
+    snake,
     meta,
     wizard: setup.wizard,
     curses: [...setup.curses],
@@ -444,5 +481,3 @@ export function createWorld(
     sfx,
   };
 }
-
-export const ARENA_CENTER = { x: ARENA.width / 2, y: ARENA.height / 2 };

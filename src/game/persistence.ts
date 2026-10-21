@@ -49,6 +49,8 @@ export interface SaveData {
     reduceFlashing: boolean;
     /** Charge warnings as yellow-and-black hazard stripes instead of red. */
     safeWarnings: boolean;
+    minimap: boolean;
+    steadyCamera: boolean;
     /** Simulation speed, 0.5 to 1. */
     gameSpeed: number;
     bindings: KeyBindings;
@@ -110,6 +112,8 @@ export function sanitizeSave(input: unknown): SaveData {
       shake: num(settings.shake, d.settings.shake, 0, 1),
       reduceFlashing: typeof settings.reduceFlashing === 'boolean' ? settings.reduceFlashing : d.settings.reduceFlashing,
       safeWarnings: typeof settings.safeWarnings === 'boolean' ? settings.safeWarnings : d.settings.safeWarnings,
+      minimap: typeof settings.minimap === 'boolean' ? settings.minimap : d.settings.minimap,
+      steadyCamera: typeof settings.steadyCamera === 'boolean' ? settings.steadyCamera : d.settings.steadyCamera,
       gameSpeed: clampSpeed(num(settings.gameSpeed, d.settings.gameSpeed, 0, 1)),
       bindings: sanitizeBindings(settings.bindings),
     },
@@ -119,8 +123,8 @@ export function sanitizeSave(input: unknown): SaveData {
 
 /** The options a run and its renderer use, taken from the settings. */
 export function optionsOf(settings: SaveData['settings']): GameOptions {
-  const { shake, reduceFlashing, safeWarnings, gameSpeed, bindings } = settings;
-  return { shake, reduceFlashing, safeWarnings, gameSpeed, bindings };
+  const { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings } = settings;
+  return { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings };
 }
 
 export function parseSave(raw: string | null | undefined): SaveData {

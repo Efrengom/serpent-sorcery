@@ -1,9 +1,10 @@
 import type { EnemyKind, SpellId } from './config';
+import type { SolidName } from './maps/types';
 
-/** What hurt the player: an enemy's attack, or the arena wall. */
+/** What hurt the player: an enemy's attack, or running into a solid (kind 'wall', named by the solid). */
 export interface HurtSource {
   kind: EnemyKind | 'wall';
-  attack: 'bite' | 'charge' | 'lunge' | 'shot' | 'volley' | 'wall';
+  attack: 'bite' | 'charge' | 'lunge' | 'shot' | 'volley' | SolidName;
 }
 
 export interface SpellRecap {
@@ -62,6 +63,10 @@ const HURT_NAMES: Record<string, string> = {
   'boss:charge': "Ouroboros's charge",
   'boss:volley': "Ouroboros's volley",
   'wall:wall': 'the ruin walls',
+  'wall:pillar': 'a broken pillar',
+  'wall:column': 'a toppled column',
+  'wall:statue': 'a fallen statue',
+  'wall:colossus': 'the Fallen Colossus',
 };
 
 export function describeHurt(key: string): string {

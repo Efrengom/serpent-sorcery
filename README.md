@@ -1,6 +1,6 @@
 # Serpent Sorcery
 
-A top-down action roguelite for desktop browsers. One hand steers a wizard snake that never stops moving; the other hand draws magic sigils with the mouse to cast spells. Survive as long as you can. Your snake grows longer and stronger, learns new sigils and evolves its spells, and the ruins send ever nastier foes, including a rival Archmage serpent at 5:00. Defeat it and the floor cracks open into ever deeper, harder depths. Before each run you pick a wizard and, if you dare, curses that raise the reward.
+A top-down action roguelite for desktop browsers. One hand steers a wizard snake that never stops moving; the other hand draws magic sigils with the mouse to cast spells. Survive as long as you can on the Sunken Ruins, a temple complex several screens across, where the camera follows the serpent and every pillar, wall and fallen statue hurts to run into. Your snake grows longer and stronger, learns new sigils and evolves its spells, and the ruins send ever nastier foes, including a rival Archmage serpent at 5:00. Defeat it and the floor cracks open into ever deeper, harder depths. Before each run you pick a wizard and, if you dare, curses that raise the reward.
 
 ## Setup
 
@@ -9,7 +9,7 @@ Requires Node 18+.
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap, spells, depth, clean casts, Constrict, options, practice)
+npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap, spells, depth, clean casts, Constrict, options, practice, maps, terrain, camera, navigation)
 npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 npm run playtest   # ~5 min end-to-end play-test in a headless Edge/Chrome
@@ -29,8 +29,9 @@ On Windows PowerShell with script execution disabled, `npm` itself is blocked (`
 - the boss warning hushing the music, the boss theme crossfading in, the freeze and slow motion when the boss dies, and the main theme returning
 - drawing an unlearned triangle, then learning the triangle and zigzag sigils from level-up cards and casting them with real strokes, the ward blocking a real hit, frost slowing a foe, and an evolution card turning Arcane Bolt into Arcane Lance
 - descending to Depth 2 (the Ember Depths) after the boss falls
+- the big map: the camera following the serpent and Steady camera centring it, the aim staying on the world point pressed while the view scrolls, steering into a pillar with a real key (a bounce, 8 damage, recorded as the pillar), the boss clearing marked half a minute early with an arrow at the edge of the view, the minimap turned off and on with real clicks (checked in canvas pixels), a screenshot of every landmark in both styles, and frame times while the view races across the whole map
 - the trail reading a real V's first leg as a line and the finished stroke as a V, a careful V casting as Perfect or Clean, and a real WASD circle around a brute showing the loop hint and then Constricting it
-- an autopilot run with level-ups through death, music layers building as the arena fills, the death recap, the reward banked once, and an instant restart
+- an autopilot run with level-ups through death, foes spawning just outside the view (never on screen) and staying around the serpent, music layers building as the arena fills, the death recap, the reward banked once, and an instant restart
 - the setup screen: locked and unlocked wizards, picking Frostcoil and a curse with real clicks, the run starting with them, and the curse multiplying the banked shards
 - shop purchases and reload persistence
 - the options screen: toggles, sliders and rebinding set with real clicks and keys and saved, a key taken from another action, Esc cancelling a rebind, the run steering with the new key (and not the old one), 50% game speed advancing the run at half speed, and canvas pixels showing a struck foe not flashing white with reduced flashing and a charge lane painted in hazard yellow with colorblind-safe warnings
@@ -44,7 +45,7 @@ Screenshots and `results.json` go to `playtest-output/`. Set `PLAYTEST_BROWSER` 
 | Input | Action |
 | --- | --- |
 | **W A S D** (or arrows) | Point the snake up / left / down / right. Hold two for diagonals. Release to keep the current heading. |
-| **Hold left mouse** | Draw a sigil anywhere over the arena. Where you *press* becomes the aim target. |
+| **Hold left mouse** | Draw a sigil anywhere over the map. Where you *press* becomes the aim target, and it stays on that spot of the map while the view scrolls. |
 | **Release** | Recognize the sigil and cast. |
 | **Esc** | Pause / resume (focus loss also pauses) |
 | **M** | Mute everything (volume sliders are on the title screen and pause menu) |
@@ -72,6 +73,20 @@ Each wizard starts a run knowing three sigils. Drawing one you haven't learned s
 
 Each spell has its own cooldown. An unrecognized stroke shows "Sigil unclear" and costs nothing. A recognized spell that is still recharging shows "… recharging 1.2s" and shakes its HUD card. Tiny drags and clicks are ignored silently.
 
+## The map
+
+Runs are played on the **Sunken Ruins**, an old temple complex 6400×3600 world units: about four views across and four and a half down. The view shows the same amount of the world as the old one-screen arena (800 units tall, as wide as the window allows up to 1600), so foes and spell ranges look the same. The camera follows the head, looking 120 units ahead of it and easing after it over a quarter of a second, and stops at the map's edges.
+
+- **Landmarks** to steer by, marked on the minimap: the **Rune Plaza** in the middle (where every run starts) ringed by eight pillars, **The Colonnade** along the north, **The Collapsed Hall** to the west, **The Fallen Colossus** to the east and **The Broken Gate** across the south. Open courts in the four corners and the plaza are the boss clearings.
+- **Stone hurts.** Running into anything solid (the boundary wall, a hall wall, a pillar, a toppled column, a statue, the colossus) bounces the serpent off at a clear angle, locks steering for 0.2 s and costs 8 health, like the old arena walls. The Ward doesn't block it. The death recap names what you hit ("a broken pillar").
+- **Stone gives cover.** Walls and pillars stop enemy shots, Arcane Bolts and Arcane Lance beams. Forked Lightning arcs over them.
+- **Foes find their way.** A flow field (40-unit cells, refreshed four times a second) leads them around walls to the serpent; with a clear line they come straight at you. Casters need a clear shot before they fire. A brute that charges into stone staggers 1.5× longer, so baiting one into a pillar is worth it.
+- **Fair fights on a big map.** Foes spawn in a ring just outside the view, on open floor they can walk from, and never on screen. No foe starts an attack until it is on screen, so every telegraph is seen. Foes left far behind, or stuck out of sight, are brought back to the ring so the fight stays around you.
+- **The boss** arrives in the clearing nearest you. Half a minute before, that clearing is marked on the ground and on the minimap, with an arrow at the edge of the view while it's off-screen; once the boss is out, the arrow points at it. Each depth reuses the ruins' layout for now, in the Ember Depths' look below the first.
+- **Varied per run:** a few optional clusters of statues, fallen columns and pillars come and go, and pillars sit a little differently each time.
+
+Maps are data in `src/game/maps/`: a text grid (one character per 200×200 cell: `#` wall, `.` floor, `b` boss clearing, `S` start, digits for landmarks) plus freely placed pieces. `validate.ts` checks the layout rules for every seed in a unit test: corridors at least 220 wide (the serpent turns in about 86), no narrow pockets, all floor reachable from the start, 3 to 5 clearings at least 1000×700 within 1900 units of everywhere, and a clear start. The full plan for more maps is in [docs/maps-requirements.md](docs/maps-requirements.md).
+
 ## Options
 
 **Options** on the title screen and in the pause menu. Every change applies at once, even mid-run, and is saved.
@@ -79,6 +94,8 @@ Each spell has its own cooldown. An unrecognized stroke shows "Sigil unclear" an
 - **Screen shake**: 0 to 100%. 0 turns it off.
 - **Reduce flashing**: blinking and strobing become steady or softer. Foes no longer flash white when hit; the serpent stays see-through while invulnerable instead of blinking; lightning holds one shape instead of re-jittering 30 times a second; the hurt flash is softer and the low-health warning stops pulsing; the Ward fades out instead of blinking; Constrict's flash, the boss's wind-up glow and the blinking interface cues (low health, enraged boss, a refused spell) calm down.
 - **Colorblind-safe warnings**: attack previews switch from red to yellow-and-black hazard stripes with dark casings, and every foe winding up an attack gets a yellow "!". Charge lanes fill with stripes as the charge builds, aim lines become solid with an arrowhead, and the boss's volley ring gets a casing. The colours are told apart by brightness, which every kind of colour vision keeps. A test simulates protanopia, deuteranopia and tritanopia (Machado et al., 2009). The yellow stays above 7:1 contrast against every arena floor under all of them. The standard red lane edge drops below 3:1 on some floors under protanopia.
+- **Minimap** (on by default): the map in the bottom-right corner, with the visible area outlined, your serpent, elites, the boss and its clearing. Clicks and strokes pass straight through it.
+- **Steady camera** (off by default): keeps the serpent in the middle of the view, with no look-ahead or easing, for players who find a moving camera uncomfortable.
 - **Game speed**: 50 to 100% in 10% steps. It slows the whole run, but drawing happens in real time, so there's more time to draw. Shards and records count game time, so a slower run earns the same; the run summary notes the speed.
 - **Keys**: two keys per action (steer up, down, left, right, pause, mute, art style). Click a key, then press the new one. Backspace clears it, Esc cancels. A key does one thing: binding one that's in use moves it and says which action lost it. A steering direction left with no key gets a warning. Keys are physical positions, so they work the same on any keyboard layout. Esc always pauses and goes back. Hints across the game (How to Play, the pause menu, button tooltips) show the keys you've bound.
 
@@ -157,7 +174,7 @@ Optional handicaps toggled on the same screen. Each adds to the run's shard mult
 
 ## Depths and elites
 
-The run never ends on its own. Each Archmage defeated takes you one **depth** deeper (shown next to the kill count). The first descent turns the arena into the **Ember Depths**: scorched red stone, ash and glowing lava cracks, in both art styles. Every depth adds 35% enemy health, 20% damage, 15% spawn rate and room for 12 more foes, and the boss keeps returning stronger.
+The run never ends on its own. Each Archmage defeated takes you one **depth** deeper (shown next to the kill count). The first descent turns the map into the **Ember Depths**: scorched red stone, ash and glowing lava cracks, in both art styles. Every depth adds 35% enemy health, 20% damage, 15% spawn rate and room for 12 more foes, and the boss keeps returning stronger.
 
 From Depth 2, spawns can be **elites** (10% at Depth 2, +5% per depth, up to 35%): bigger, 1.6× health, 2.5× experience, a crown marker and one modifier:
 
@@ -202,14 +219,15 @@ Effects are samples from Kenney's free CC0 packs (Impact, Sci-Fi, Interface and 
 
 There are two complete looks, switched with **P**, the title-screen button or the pause menu. The choice is saved.
 
-- **Classic** draws smooth vector art with soft glows.
-- **Pixel** renders the arena on a 560×320 canvas (1 pixel = 2.5 arena units) and upscales it by a whole-number factor: ×2 at 1280×720, ×3 at 1920×1080. Very small windows fall back to fractional scaling.
-  - **Sprites** are generated in code with hard edges, a 1px outline and top-left rim lighting. Heads are drawn at 16 headings. Floor tiles, the rune circle and torch light are generated once from a fixed seed.
+- **Classic** draws smooth vector art with soft glows. The floor and stonework are painted in 256-unit chunks at the screen's resolution the first time they come near the view, then cached (the view and a ring of chunks around it, at most 1.75 device pixels per world unit, so under about 64 MB even at 4K); one chunk ahead is painted per frame.
+- **Pixel** renders the view on a low-res canvas 320 art pixels tall (1 pixel = 2.5 world units), offset by the camera in whole pixels, and upscales it by a whole-number factor: ×2 at 1280×720, ×3 at 1920×1080. Very small windows fall back to fractional scaling.
+  - **Sprites** are generated in code with hard edges, a 1px outline and top-left rim lighting. Heads are drawn at 16 headings.
+  - **The floor** is painted per pixel in 256×256 chunks: flagstones, cracks, moss, the rune circle, torch light, and the stonework shaded from each solid's exact distance (rim-lit top-left, shadows cast down-right). Every detail is keyed by its position on the map, so chunks meet without seams. The chunks around the view are painted a band at a time within 3 ms a frame, ahead of need.
   - **Effects** use per-pixel lines and circles plus ordered (Bayer) dithering: charge lanes, lightning, Nova, enemy shots, crystals, particles and portals.
   - **Overlay:** the sigil trail and hurt flash are drawn on a screen-sized overlay that lines up with the same pixel grid.
   - **HUD and menus** switch to pixel fonts (Silkscreen, Pixelify Sans), stepped panels and bitmap icons.
 
-The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite rasterizer), `sprites.ts`, `floor.ts` and `draw.ts`. The menu pieces are in `src/ui/art.tsx`. Pixel size is `PIXEL_ART.worldPerPixel` in `config.ts`.
+The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite rasterizer), `sprites.ts`, `floor.ts` (chunked floor) and `draw.ts`. The classic floor is `src/game/classicFloor.ts`. The menu pieces are in `src/ui/art.tsx`. Pixel size is `PIXEL_ART.worldPerPixel` in `config.ts`.
 
 ## Where to tune balance
 
@@ -227,6 +245,9 @@ The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite raster
 - `DIRECTOR`: spawn rate curve, alive cap, enemy-type unlock times, boss timing, difficulty scaling over time
 - `PROGRESSION`: XP curve, passive survival XP, crystal cap
 - `REWARDS`: Arcane Shards per 10 s survived, per kill, per level and per boss
+- `ARENA`: damage and bounce from walls and every other solid; `CAMERA`: view size, look-ahead and easing; `NAV`: flow-field cells, the spawn ring, the off-screen attack margin, when stragglers are brought back, and how early the boss clearing is marked
+
+The Sunken Ruins' layout is `src/game/maps/ruins.ts`.
 
 Run upgrades (stack sizes and per-level effects), the level-up offer (when new sigils and evolutions appear) and permanent upgrades (costs and caps) are in **`src/game/progression.ts`**. Wizards are in **`src/game/wizards.ts`** and curses in **`src/game/curses.ts`**.
 
@@ -236,14 +257,19 @@ Run upgrades (stack sizes and per-level effects), the level-up offer (when new s
 src/game/            framework-free game code (no React)
   config.ts          balance values
   engine.ts          Game class: fixed-timestep loop, phases, gesture → spell, events to React
-  snake.ts           player movement, path trail for body segments, wall bounce
+  snake.ts           player movement, path trail for body segments, steering that bends U-turns away from stone
+  maps/              map data (the Sunken Ruins), building a run's layout from a seed, the layout validator
+  terrain.ts         distances to solids, bounces, pushing bodies out, ray casts, line of sight
+  camera.ts          the view following the serpent around the map
+  nav.ts             the flow field foes follow to the serpent
+  heap.ts, hash.ts   a min-heap for path searches; position-keyed randomness for seamless floors
   input.ts           keyboard (following the key bindings) + pointer capture, clears on blur/resize/pause
   keys.ts            key bindings: defaults, rebinding, validation, key labels
-  options.ts         comfort and accessibility options: shake, flashing, warnings, game speed
+  options.ts         comfort and accessibility options: shake, flashing, warnings, minimap, camera, game speed
   gesture.ts         sigil recognizer, and the per-sigil explanations for practice
   practice.ts        the practice room's verdicts, fitted shapes and measurements
   spells.ts          all five spells and their evolutions, frost and swift time scaling, aim logic
-  enemies.ts         spawn director, depth scaling, elites, AI for chasers/casters/brutes/rivals/boss
+  enemies.ts         spawn director and spawn ring, boss clearings, depth scaling, elites, AI for chasers/casters/brutes/rivals/boss, line of sight, stragglers
   combat.ts          damage, deaths, crystals, contacts, enemy shots
   progression.ts     XP curve, run upgrades, rewards, permanent upgrades
   persistence.ts     validated localStorage save, award-once commit
@@ -252,7 +278,9 @@ src/game/            framework-free game code (no React)
   curses.ts          optional pre-run curses and the shard multiplier
   cast.ts            clean-cast grading from the recognizer's confidence
   constrict.ts       loop detection and the Constrict crush
-  render.ts          Canvas 2D renderer (cached background, glow sprites)
+  render.ts          Canvas 2D renderer: camera transform, glow sprites, edge arrows, both styles
+  classicFloor.ts    the classic floor and stonework, painted in cached chunks
+  minimap.ts         the map overview in the corner
   effects.ts         capped particles, floating text, screen shake, hit-stop
   audio.ts           WebAudio context, volumes, sample loading, music scheduling
   sfx.ts             sound-effect samples and the synthesized fallback
@@ -264,4 +292,4 @@ The animation loop and all fast-changing state live in `Game` outside React. Rea
 
 ## Saves
 
-Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, records (best time, level, kills, run count, lifetime bosses defeated), mute/volume, the chosen wizard and curses, and the options (shake, reduced flashing, safe warnings, game speed, key bindings). Saved bindings are cleaned on load: unknown keys, duplicates and a stray Esc are dropped. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.
+Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, records (best time, level, kills, run count, lifetime bosses defeated), mute/volume, the chosen wizard and curses, and the options (shake, reduced flashing, safe warnings, minimap, steady camera, game speed, key bindings). Saved bindings are cleaned on load: unknown keys, duplicates and a stray Esc are dropped. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.

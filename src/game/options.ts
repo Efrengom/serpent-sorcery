@@ -8,6 +8,10 @@ export interface ViewOptions {
   reduceFlashing: boolean;
   /** Charge warnings drawn as yellow-and-black hazard stripes instead of red. */
   safeWarnings: boolean;
+  /** The map overview in the corner. */
+  minimap: boolean;
+  /** The camera stays centred on the head, with no lookahead or easing. */
+  steadyCamera: boolean;
 }
 
 export interface GameOptions extends ViewOptions {
@@ -21,7 +25,7 @@ export interface GameOptions extends ViewOptions {
 
 export const GAME_SPEED = { min: 0.5, max: 1, step: 0.1 };
 
-export const DEFAULT_VIEW: ViewOptions = { shake: 1, reduceFlashing: false, safeWarnings: false };
+export const DEFAULT_VIEW: ViewOptions = { shake: 1, reduceFlashing: false, safeWarnings: false, minimap: true, steadyCamera: false };
 
 export function defaultOptions(): GameOptions {
   return { ...DEFAULT_VIEW, gameSpeed: 1, bindings: copyBindings(DEFAULT_BINDINGS) };

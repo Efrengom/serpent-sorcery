@@ -45,7 +45,7 @@ describe('snake movement', () => {
     s.y = ARENA.height / 2;
     s.heading = Math.PI - 0.2; // heading into the left wall at a shallow angle
     const hit = s.update(1 / 60, -1, 0);
-    expect(hit).toBe(true);
+    expect(hit).toBe('wall');
     expect(s.x).toBeGreaterThanOrEqual(PLAY_AREA.minX + SNAKE.headRadius);
     expect(Math.cos(s.heading)).toBeGreaterThanOrEqual(ARENA.wallMinInward - 1e-9);
     expect(s.steerLock).toBeGreaterThan(0);

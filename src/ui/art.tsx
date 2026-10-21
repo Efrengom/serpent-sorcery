@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import type { SpellId } from '../game/config';
-import { buildPixelFloor } from '../game/pixel/floor';
+import { buildLayout } from '../game/maps';
+import { RUINS } from '../game/maps/ruins';
+import { pixelFloorPicture } from '../game/pixel/floor';
 import { PX } from '../game/pixel/palette';
 import { segmentFill, segmentOutline, wizardHead } from '../game/pixel/sprites';
 import { blit } from '../game/pixel/bake';
@@ -304,9 +306,13 @@ export function PixelTitleSerpent({ wizard = 'arcanist' }: { wizard?: WizardId }
   return <canvas ref={ref} width={150} height={44} className="pixel-title-serpent" aria-hidden="true" />;
 }
 
-/** Data URL of the pixel arena floor, used as the menu backdrop in pixel style. */
+/** Data URL of the Rune Plaza's pixel floor, used as the menu backdrop in pixel style. */
 let floorUrl: string | null = null;
 export function pixelFloorUrl(): string {
-  if (!floorUrl) floorUrl = buildPixelFloor().canvas.toDataURL();
+  if (!floorUrl) {
+    const map = buildLayout(RUINS, 1);
+    const plaza = map.landmarks.find((l) => l.kind === 'plaza') ?? map.start;
+    floorUrl = pixelFloorPicture(map, 0, plaza.x, plaza.y, 560, 320).toDataURL();
+  }
   return floorUrl;
 }
