@@ -1,28 +1,55 @@
-import { DIRECTOR, EFFECTS, ENEMIES, type EnemyKind } from './config';
+import { DEPTH, DIRECTOR, EFFECTS, ELITE, ENEMIES, type EnemyKind } from './config';
 import { burst } from './effects';
 import { angleDiff, clamp, dist, TAU } from './math';
 import { COLORS } from './palette';
 import { bounceOffWalls, PathTrail, PLAY_AREA, steer } from './snake';
-import type { BossMove, Enemy, World } from './world';
+import { enemyTimeScale } from './spells';
+import type { BossMove, EliteKind, Enemy, World } from './world';
 
 // ---------------------------------------------------------------- Scaling
 
-export function difficulty(t: number) {
+export function difficulty(t: number, depth = 1) {
+  const d = depth - 1;
   return {
-    hp: 1 + t * DIRECTOR.hpLinear + (t / DIRECTOR.hpQuadDivisor) ** 2,
-    damage: 1 + t * DIRECTOR.damagePerSec,
+    hp: (1 + t * DIRECTOR.hpLinear + (t / DIRECTOR.hpQuadDivisor) ** 2) * (1 + DEPTH.hpPerDepth * d),
+    damage: (1 + t * DIRECTOR.damagePerSec) * (1 + DEPTH.damagePerDepth * d),
     speed: 1 + Math.min(DIRECTOR.maxSpeedBonus, t * DIRECTOR.speedPerSec),
   };
 }
 
-export function spawnRate(t: number): number {
-  return DIRECTOR.rateBase + DIRECTOR.rateLinear * t + DIRECTOR.rateQuad * t * t;
+export function spawnRate(t: number, depth = 1): number {
+  return (DIRECTOR.rateBase + DIRECTOR.rateLinear * t + DIRECTOR.rateQuad * t * t) * (1 + DEPTH.spawnPerDepth * (depth - 1));
 }
 
-export function aliveCap(t: number): number {
+export function aliveCap(t: number, depth = 1): number {
   return Math.floor(
-    Math.min(DIRECTOR.capMax, DIRECTOR.capBase + DIRECTOR.capPerSec * t, DIRECTOR.earlyCapBase + DIRECTOR.earlyCapPerSec * t),
+    Math.min(
+      DIRECTOR.capMax + DEPTH.capPerDepth * (depth - 1),
+      DIRECTOR.capBase + DIRECTOR.capPerSec * t + DEPTH.capPerDepth * (depth - 1),
+      DIRECTOR.earlyCapBase + DIRECTOR.earlyCapPerSec * t,
+    ),
   );
+}
+
+/** Chance that a new spawn is elite: none in depth 1 unless cursed, then rising each depth. */
+export function eliteChance(depth: number, cursed: boolean): number {
+  const base = depth >= 2 ? ELITE.baseChance + ELITE.chancePerDepth * (depth - 2) : cursed ? ELITE.cursedChance : 0;
+  return Math.min(ELITE.maxChance, base + (cursed && depth >= 2 ? ELITE.cursedBonus : 0));
+}
+
+const ELITE_KINDS: EliteKind[] = ['shielded', 'swift', 'splitting'];
+
+/** Makes a fresh enemy elite: tougher, bigger, worth more, with one modifier. */
+function makeElite(world: World, e: Enemy): void {
+  // Snakes can't split cleanly; everything else can roll any modifier.
+  const kinds = e.kind === 'rival' ? ELITE_KINDS.filter((k) => k !== 'splitting') : ELITE_KINDS;
+  e.elite = kinds[Math.floor(world.rng() * kinds.length) % kinds.length];
+  e.hp *= ELITE.hpMult;
+  e.maxHp = e.hp;
+  e.xp = Math.round(e.xp * ELITE.xpMult);
+  e.r *= ELITE.sizeMult;
+  e.contact *= ELITE.contactMult;
+  if (e.elite === 'shielded') e.shield = e.shieldMax = e.maxHp * ELITE.shieldFraction;
 }
 
 function ramp(t: number, start: number, len: number): number {
@@ -40,9 +67,9 @@ export function kindWeights(t: number): [EnemyKind, number][] {
 
 // ---------------------------------------------------------------- Spawning
 
-export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number): Enemy {
+export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number, canBeElite = false): Enemy {
   const t = world.time;
-  const diff = difficulty(t);
+  const diff = difficulty(t, world.depth);
   const base = ENEMIES[kind];
   const s = world.snake;
   const heading = Math.atan2(s.y - y, s.x - x);
@@ -78,7 +105,16 @@ export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number):
     bossMove: 'slither',
     moveIndex: 0,
     enraged: false,
+    elite: null,
+    shield: 0,
+    shieldMax: 0,
+    fragment: false,
+    chill: 0,
+    frozen: 0,
+    frozenBy: -1,
+    stunned: 0,
   };
+  if (canBeElite && kind !== 'boss' && world.rng() < eliteChance(world.depth, world.effects.elitesFromStart)) makeElite(world, e);
   if (kind === 'rival' || kind === 'boss') {
     const cfg = kind === 'rival' ? ENEMIES.rival : ENEMIES.boss;
     e.trail = new PathTrail(3);
@@ -153,7 +189,7 @@ export function updateDirector(world: World, dt: number): void {
     world.sfx('bossWarn');
   }
   if (t >= world.nextBossTime) {
-    world.nextBossTime += DIRECTOR.bossInterval;
+    world.nextBossTime += world.effects.bossInterval ?? DIRECTOR.bossInterval;
     world.bossWarned = false;
     if (!world.boss) {
       world.bossIndex++;
@@ -164,10 +200,10 @@ export function updateDirector(world: World, dt: number): void {
   }
 
   const bossAlive = world.boss !== null || world.portals.some((p) => p.kind === 'boss');
-  const rate = spawnRate(t) * (bossAlive ? DIRECTOR.bossSpawnRateMult : 1);
+  const rate = spawnRate(t, world.depth) * world.effects.spawnRateMult * (bossAlive ? DIRECTOR.bossSpawnRateMult : 1);
   world.spawnAcc += rate * dt;
   const alive = world.enemies.length + world.portals.length;
-  const cap = aliveCap(t);
+  const cap = Math.floor(aliveCap(t, world.depth) * world.effects.capMult);
   while (world.spawnAcc >= 1) {
     world.spawnAcc -= 1;
     if (alive >= cap) {
@@ -185,7 +221,7 @@ export function updatePortals(world: World, dt: number): void {
     p.t += dt;
     if (p.t >= p.duration) {
       world.portals.splice(i, 1);
-      spawnEnemy(world, p.kind, p.x, p.y);
+      spawnEnemy(world, p.kind, p.x, p.y, true);
       burst(world, p.x, p.y, COLORS.portal, p.kind === 'boss' ? 40 : 8, p.kind === 'boss' ? 300 : 140, {
         size: 3,
         life: 0.4,
@@ -199,9 +235,18 @@ export function updatePortals(world: World, dt: number): void {
 
 // ---------------------------------------------------------------- AI
 
-function fireShot(world: World, x: number, y: number, angle: number, speed: number, damage: number, r: number): void {
+function fireShot(
+  world: World,
+  source: EnemyKind,
+  x: number,
+  y: number,
+  angle: number,
+  speed: number,
+  damage: number,
+  r: number,
+): void {
   if (world.shots.length >= EFFECTS.maxEnemyShots) return;
-  world.shots.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r, damage, life: 6, spin: 0 });
+  world.shots.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r, damage, life: 6, spin: 0, source });
 }
 
 /** Where the player's head will be after `lead` seconds if it keeps going straight. */
@@ -257,7 +302,7 @@ function updateCaster(world: World, e: Enemy, dt: number): void {
     if (e.stateTime >= cfg.telegraph) {
       const ox = e.x + Math.cos(e.aim) * (e.r + 6);
       const oy = e.y + Math.sin(e.aim) * (e.r + 6);
-      fireShot(world, ox, oy, e.aim, cfg.shotSpeed, cfg.shotDamage * e.damageMult, cfg.shotRadius);
+      fireShot(world, 'caster', ox, oy, e.aim, cfg.shotSpeed, cfg.shotDamage * e.damageMult, cfg.shotRadius);
       world.sfx('enemyShot');
       setState(e, 'move');
       e.attackTimer = Math.max(1.4, (cfg.fireInterval * (0.85 + world.rng() * 0.3)) / (1 + world.time / 600));
@@ -403,13 +448,13 @@ function updateBoss(world: World, e: Enemy, dt: number): void {
           const n = e.enraged ? cfg.volleyCountEnraged : cfg.volleyCount;
           const off = world.rng() * TAU;
           for (let i = 0; i < n; i++) {
-            fireShot(world, e.x, e.y, off + (i / n) * TAU, cfg.volleySpeed, cfg.volleyDamage * e.damageMult, 9);
+            fireShot(world, 'boss', e.x, e.y, off + (i / n) * TAU, cfg.volleySpeed, cfg.volleyDamage * e.damageMult, 9);
           }
           const aimAt = Math.atan2(s.y - e.y, s.x - e.x);
           const spreadCount = e.enraged ? 5 : 3;
           for (let i = 0; i < spreadCount; i++) {
             const a = aimAt + (i - (spreadCount - 1) / 2) * 0.18;
-            fireShot(world, e.x, e.y, a, cfg.volleySpeed * 1.35, cfg.volleyDamage * e.damageMult, 9);
+            fireShot(world, 'boss', e.x, e.y, a, cfg.volleySpeed * 1.35, cfg.volleyDamage * e.damageMult, 9);
           }
           world.sfx('enemyShot');
           setState(e, 'move');
@@ -457,23 +502,25 @@ export function updateEnemies(world: World, dt: number): void {
   const list = world.enemies;
   for (const e of list) {
     if (e.dead) continue;
-    e.stateTime += dt;
     e.flash = Math.max(0, e.flash - dt);
+    // Each enemy runs on its own clock: frost slows it, swift elites and curses speed it up.
+    const edt = dt * enemyTimeScale(world, e, dt);
+    e.stateTime += edt;
     switch (e.kind) {
       case 'chaser':
-        updateChaser(world, e, dt);
+        updateChaser(world, e, edt);
         break;
       case 'caster':
-        updateCaster(world, e, dt);
+        updateCaster(world, e, edt);
         break;
       case 'brute':
-        updateBrute(world, e, dt);
+        updateBrute(world, e, edt);
         break;
       case 'rival':
-        updateRival(world, e, dt);
+        updateRival(world, e, edt);
         break;
       case 'boss':
-        updateBoss(world, e, dt);
+        updateBoss(world, e, edt);
         break;
     }
     // Knockback

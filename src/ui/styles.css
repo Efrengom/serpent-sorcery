@@ -8,6 +8,9 @@
   --cyan: #5ff6ff;
   --green: #8cff6a;
   --gold: #ffd45e;
+  --ward: #e6d8ff;
+  --ice: #7fb2ff;
+  --coil: #2fd3b5;
   --violet: #d6c4ff;
   --hostile: #ff5a36;
   --hp: #ff4f7b;
@@ -1114,6 +1117,88 @@ kbd {
   font-weight: 700;
 }
 
+/* ---------------------------------------------------------------- run recap */
+
+.recap {
+  width: 100%;
+  max-width: 500px;
+  margin: 0 0 1.1em;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recap-cause {
+  margin: 0;
+  color: var(--ink-dim);
+  font-weight: 700;
+}
+
+.recap-cause b {
+  color: var(--hp);
+}
+
+.recap-spells {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.recap-row {
+  display: grid;
+  grid-template-columns: 28px 150px 1fr 60px;
+  align-items: center;
+  column-gap: 10px;
+  text-align: left;
+}
+
+.recap-name {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.recap-sub {
+  font-size: 0.72rem;
+  color: var(--ink-dim);
+  font-weight: 700;
+}
+
+.recap-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.recap-bar i {
+  display: block;
+  height: 100%;
+  width: var(--share);
+  background: var(--spell);
+  box-shadow: 0 0 8px var(--spell);
+  border-radius: inherit;
+}
+
+.recap-num {
+  text-align: right;
+  font-family: var(--title-font);
+  font-weight: 900;
+  font-size: 1.05rem;
+}
+
+.recap-taken {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+
 /* ---------------------------------------------------------------- volume sliders */
 
 .volume-controls {
@@ -1479,6 +1564,38 @@ kbd {
   }
 }
 
+.app.pixel .recap-spells {
+  background: var(--px-panel-2);
+  border: 3px solid var(--px-ink);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 2px var(--px-hi);
+}
+
+.app.pixel .recap-bar {
+  height: 12px;
+  border-radius: 0;
+  background: #140a1e;
+  border: 2px solid var(--px-ink);
+}
+
+.app.pixel .recap-bar i {
+  border-radius: 0;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35);
+}
+
+.app.pixel .recap-name,
+.app.pixel .recap-num {
+  font-family: var(--title-font);
+}
+
+.app.pixel .recap-name {
+  font-size: 0.72rem;
+}
+
+.app.pixel .recap-sub {
+  font-family: var(--ui-font);
+}
+
 /* -- HUD */
 .app.pixel .hud-bar {
   background: var(--px-ink);
@@ -1677,4 +1794,371 @@ kbd {
   100% {
     opacity: 0.15;
   }
+}
+
+/* ---------------------------------------------------------------- more spells, depth */
+
+.hud-right.many .spell-card {
+  width: 106px;
+}
+
+.hud-right.many .spell-shape {
+  display: none;
+}
+
+.hud-right.many .spell-name {
+  font-size: 11px;
+  white-space: normal;
+}
+
+@media (max-width: 1240px) {
+  .hud-right.many .spell-text {
+    display: none;
+  }
+  .hud-right.many .spell-card {
+    width: 54px;
+    justify-content: center;
+    padding: 0;
+  }
+}
+
+.spell-card.evolved {
+  border-color: var(--gold);
+}
+
+.spell-card.evolved .spell-name::before {
+  content: '✹ ';
+  color: var(--gold);
+}
+
+.depth {
+  color: #ffb070;
+}
+
+.upgrade-card.learn {
+  border-color: var(--spell);
+}
+
+.upgrade-card.learn .card-level {
+  color: var(--spell);
+}
+
+.upgrade-card.evolve {
+  border: 2px solid var(--gold);
+  background: linear-gradient(180deg, rgba(110, 72, 20, 0.95), rgba(40, 20, 50, 0.97));
+  box-shadow: 0 0 26px rgba(255, 212, 94, 0.35);
+}
+
+.upgrade-card.evolve .card-name,
+.upgrade-card.evolve .card-level {
+  color: var(--gold);
+}
+
+.app.pixel .upgrade-card.learn {
+  box-shadow:
+    inset 0 0 0 3px var(--spell),
+    0 5px 0 var(--px-ink);
+}
+
+.app.pixel .upgrade-card.evolve {
+  background: #4a2c0e;
+  box-shadow:
+    inset 0 0 0 3px #ffd45e,
+    0 5px 0 var(--px-ink);
+}
+
+/* ---------------------------------------------------------------- run setup: wizards and curses */
+
+.setup-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.setup-summary {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+
+.setup-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 26px;
+  width: 100%;
+  max-width: 1150px;
+  margin-bottom: 22px;
+}
+
+@media (max-width: 900px) {
+  .setup-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.setup-head {
+  font-family: var(--title-font);
+  margin: 0 0 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.setup-mult {
+  font-size: 0.95rem;
+  color: var(--gold);
+}
+
+.wizard-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.wizard-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(26, 14, 46, 0.92);
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+
+.wizard-card:hover:not(:disabled),
+.wizard-card:focus-visible {
+  border-color: var(--violet);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.wizard-card.chosen {
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 22px rgba(255, 212, 94, 0.3);
+}
+
+.wizard-card.locked {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.wizard-card.locked .wizard-portrait {
+  filter: grayscale(1) brightness(0.6);
+}
+
+.wizard-portrait {
+  width: 104px;
+  height: 60px;
+}
+
+.wizard-portrait.px {
+  image-rendering: pixelated;
+  width: 104px;
+  height: 60px;
+}
+
+.wizard-name {
+  font-family: var(--title-font);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.wizard-title {
+  font-size: 0.78rem;
+  color: var(--ink-dim);
+  font-weight: 700;
+}
+
+.wizard-sigils {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+.wizard-perks,
+.wizard-lock {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--ink-dim);
+}
+
+.wizard-lock {
+  color: #ffb3c2;
+  display: flex;
+  flex-direction: column;
+}
+
+.curse-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.curse {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(26, 14, 46, 0.85);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.curse:hover,
+.curse:focus-visible {
+  border-color: #ff8a8a;
+  outline: none;
+}
+
+.curse.on {
+  border-color: #ff5a6e;
+  background: rgba(80, 14, 34, 0.9);
+}
+
+.curse-box {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  color: #ff8a9a;
+}
+
+.curse.on .curse-box {
+  border-color: #ff5a6e;
+}
+
+.curse-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.curse-text span {
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+
+.curse-bonus {
+  font-weight: 900;
+  color: var(--gold);
+}
+
+.app.pixel .wizard-card,
+.app.pixel .curse {
+  border-radius: 0;
+  background: var(--px-panel);
+  border: 3px solid var(--px-ink);
+  box-shadow: inset 0 0 0 2px var(--px-hi);
+  transition: none;
+}
+
+.app.pixel .wizard-card.chosen {
+  box-shadow:
+    inset 0 0 0 3px #ffd45e,
+    0 4px 0 var(--px-ink);
+}
+
+.app.pixel .curse.on {
+  background: #3a0f26;
+  box-shadow: inset 0 0 0 2px #ff5a6e;
+}
+
+.app.pixel .curse-box {
+  border-radius: 0;
+}
+
+.app.pixel .wizard-name,
+.app.pixel .setup-head,
+.app.pixel .curse-text b {
+  font-family: var(--title-font);
+}
+
+.app.pixel .wizard-name {
+  font-size: 0.9rem;
+}
+
+.hud-right.many .spell-text {
+  padding-right: 22px;
+}
+
+/* Title: room for the Wizard & Curses button without overflowing a 720px window. */
+.title-screen {
+  justify-content: safe center;
+}
+
+.title-screen .tagline {
+  margin-bottom: 1.3em;
+}
+
+.title-screen .records {
+  margin-top: 1.4em;
+}
+
+.menu-pair {
+  display: flex;
+  gap: 12px;
+}
+
+.menu-pair > .btn {
+  flex: 1;
+}
+
+@media (max-height: 820px) {
+  .title-serpent {
+    width: min(360px, 70vw);
+  }
+  .game-title {
+    font-size: clamp(2.4rem, 6vw, 4.2rem);
+  }
+  .title-wrap > .volume-controls {
+    margin-top: 0.9em;
+  }
+  .title-screen .records {
+    margin-top: 1em;
+  }
+  .menu-buttons {
+    gap: 10px;
+  }
+}
+
+/* How to play: a wider Draw card with the five sigils in two columns. */
+@media (min-width: 981px) {
+  .howto-grid {
+    grid-template-columns: minmax(200px, 290px) minmax(380px, 520px) minmax(200px, 290px);
+  }
+  .sigil-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .sigil-row {
+    gap: 8px;
+  }
+  .sigil-row span {
+    font-size: 0.82rem;
+  }
+}
+
+.menu-pair > .btn {
+  white-space: nowrap;
+  padding-left: 12px;
+  padding-right: 12px;
 }

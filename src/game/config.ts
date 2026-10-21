@@ -41,6 +41,24 @@ export const SIM = {
   dyingDuration: 1.4,
 };
 
+/** Brief freezes (seconds of real time) that make big hits land. */
+export const HIT_STOP = {
+  /** Taking damage. */
+  hurt: 0.07,
+  /** Killing a brute or rival snake. */
+  heavyKill: 0.05,
+  /** Lightning striking `bigChain` foes, or a Nova hitting `bigNova`. */
+  bigSpell: 0.045,
+  bigChain: 4,
+  bigNova: 6,
+  /** The boss dies: a longer freeze, then slow motion. */
+  bossKill: 0.45,
+  bossSlowMo: 1.1,
+  slowMoScale: 0.3,
+  /** Small freezes are at least this far apart so busy fights don't stutter. */
+  minGap: 0.35,
+};
+
 export const SNAKE = {
   speed: 190,
   /** Radians per second. U-turn takes roughly PI / turnRate seconds. */
@@ -49,9 +67,10 @@ export const SNAKE = {
   /** Forgiving hit radius used for enemy attacks against the head. */
   hitRadius: 10,
   segmentSpacing: 12,
-  startSegments: 6,
-  segmentsPerLevel: 2,
-  maxSegments: 64,
+  startSegments: 8,
+  /** Grows fast enough to Constrict (a full loop needs ~21 segments) from about level 6. */
+  segmentsPerLevel: 3,
+  maxSegments: 72,
   segmentGrowRate: 8,
   segmentRadiusMax: 13,
   segmentRadiusMin: 6,
@@ -62,7 +81,8 @@ export const SNAKE = {
   aimMinDistance: 48,
 };
 
-export type SpellId = 'bolt' | 'lightning' | 'nova';
+export type SpellId = 'bolt' | 'lightning' | 'nova' | 'ward' | 'frost';
+export const SPELL_IDS: SpellId[] = ['bolt', 'lightning', 'nova', 'ward', 'frost'];
 
 export const SPELLS = {
   bolt: {
@@ -100,7 +120,129 @@ export const SPELLS = {
     expandTime: 0.32,
     knockback: 280,
   },
+  ward: {
+    name: 'Arcane Ward',
+    cooldown: 11,
+    minCooldown: 6,
+    /** Seconds the shield lasts, and how many hits it absorbs. Walls still sting. */
+    duration: 8,
+    charges: 1,
+    /** Each absorbed hit (and the cast) pushes nearby foes away. */
+    pulseRadius: 120,
+    pulseKnockback: 330,
+    pulseDamage: 10,
+    /** Brief invulnerability after a hit is absorbed. */
+    absorbInvuln: 0.5,
+  },
+  frost: {
+    name: 'Frost Field',
+    cooldown: 8,
+    minCooldown: 4.5,
+    radius: 130,
+    duration: 5,
+    /** Time scale for enemies inside (0.45 = they act at 45% speed), and for hostile shots. */
+    slow: 0.45,
+    shotSlow: 0.5,
+    damagePerSecond: 8,
+    tick: 0.5,
+    /** Where the field lands when you press on the serpent instead of aiming. */
+    placeAhead: 170,
+  },
 } as const;
+
+/** The sigil for each spell, and a one-line summary for menus and level-up cards. */
+export const SPELL_INFO: Record<SpellId, { shape: string; blurb: string }> = {
+  bolt: { shape: 'Line', blurb: 'Fast bolt toward your target. Hits the first foe.' },
+  lightning: { shape: 'V', blurb: 'Strikes a foe near your aim, then chains onward.' },
+  nova: { shape: 'Circle', blurb: 'Shockwave around the snake. Dispels enemy shots.' },
+  ward: { shape: 'Triangle', blurb: 'A shield that blocks the next hit and shoves foes back.' },
+  frost: { shape: 'Zigzag', blurb: 'Freezing ground at your target slows foes and their shots.' },
+};
+
+/**
+ * Spell evolutions: once a spell's own upgrade is maxed and its partner upgrade has a few
+ * ranks, a golden level-up card transforms the spell.
+ */
+export const EVOLUTIONS = {
+  bolt: {
+    name: 'Arcane Lance',
+    requires: ['pierce', 'potency'],
+    description: 'Bolts become beams that pierce everything in a line for 1.8× damage.',
+    beamLength: 780,
+    beamWidth: 22,
+    damageMult: 1.8,
+  },
+  lightning: {
+    name: 'Tempest',
+    requires: ['chains', 'haste'],
+    description: 'Lightning chains to 3 more foes, then strikes a second time.',
+    extraChains: 3,
+    echoDelay: 0.3,
+    echoDamage: 0.8,
+  },
+  nova: {
+    name: 'Supernova',
+    requires: ['novaRadius', 'vitality'],
+    description: 'A second, wider ring follows each Nova, and every foe hit heals you 1.',
+    echoDelay: 0.3,
+    echoRadius: 1.5,
+    echoDamage: 0.8,
+    healPerHit: 1,
+    maxHeal: 20,
+  },
+  ward: {
+    name: 'Aegis',
+    requires: ['wardRunes', 'regen'],
+    description: 'The ward lasts 4s longer, and each blocked hit fires 8 bolts outward.',
+    extraDuration: 4,
+    bolts: 8,
+  },
+  frost: {
+    name: 'Glacier',
+    requires: ['deepFrost', 'magnet'],
+    description: 'Foes caught in the field freeze solid for 1.2s and take 40% more damage.',
+    freezeTime: 1.2,
+    brittle: 1.4,
+  },
+} as const;
+
+/** Ranks of the partner upgrade an evolution needs (the spell's own upgrade must be maxed). */
+export const EVOLUTION_PARTNER_RANKS = 2;
+
+/**
+ * Clean casts: the recognizer's confidence for a sigil, compared with per-sigil thresholds
+ * (each sigil's scores spread differently), boosts the spell. Thresholds were set from
+ * randomized hand-drawn strokes: Perfect is roughly the best third of careful strokes, Clean a
+ * typical careful one.
+ */
+export const CLEAN_CAST = {
+  perfect: { line: 0.975, vee: 0.915, circle: 0.9, triangle: 0.935, zigzag: 0.88 },
+  clean: { line: 0.92, vee: 0.88, circle: 0.86, triangle: 0.9, zigzag: 0.83 },
+  /** Spell power multiplier per tier. */
+  power: { perfect: 1.35, clean: 1.15, rough: 1 },
+  /** Seconds between live readings of the stroke being drawn. */
+  liveInterval: 0.06,
+};
+
+/** Constrict: close a loop of your body around foes to crush them. */
+export const CONSTRICT = {
+  /** Only body points at least this far down the body can close a loop. */
+  minSegments: 10,
+  /** The head must come this close to the body to close the loop. */
+  closeDistance: 30,
+  /**
+   * The closing gap is shown once the head is this close to a body point at least `hintFrom`
+   * segments back, so it appears as the loop comes around rather than halfway through a turn.
+   */
+  hintDistance: 65,
+  hintFrom: 14,
+  damage: 45,
+  /** Seconds crushed foes are held still (bosses shrug it off). */
+  stun: 1.1,
+  /** Inward pull on crushed foes, toward the middle of the loop. */
+  pull: 240,
+  cooldown: 1.2,
+};
 
 export const GESTURE = {
   /** Gestures whose bounding box is smaller than this (CSS px) are treated as clicks. */
@@ -235,6 +377,36 @@ export const DIRECTOR = {
   damagePerSec: 1 / 360,
   speedPerSec: 1 / 900,
   maxSpeedBonus: 0.35,
+};
+
+/** Each boss defeated opens a deeper, harder depth (endless). */
+export const DEPTH = {
+  /** Distinct arena looks: the ruins, then the Ember Depths for every depth after. */
+  areas: 2,
+  hpPerDepth: 0.35,
+  damagePerDepth: 0.2,
+  spawnPerDepth: 0.15,
+  capPerDepth: 12,
+};
+
+/** Elite enemies (shielded, swift or splitting), from depth 2 onward. */
+export const ELITE = {
+  /** Chance a spawn is elite at depth 2, growing per further depth, capped. */
+  baseChance: 0.1,
+  chancePerDepth: 0.05,
+  maxChance: 0.35,
+  /** With the Champions' Hunt curse, elites appear from depth 1 and a little more often. */
+  cursedChance: 0.08,
+  cursedBonus: 0.05,
+  hpMult: 1.6,
+  xpMult: 2.5,
+  sizeMult: 1.15,
+  contactMult: 1.2,
+  /** Shield strength as a share of the elite's health. */
+  shieldFraction: 0.8,
+  /** Splitting elites break into two fragments this big, with this share of base health. */
+  fragmentScale: 0.75,
+  fragmentHp: 0.35,
 };
 
 export const PROGRESSION = {

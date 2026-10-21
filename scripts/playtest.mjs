@@ -3,7 +3,10 @@
 // Starts its own Vite dev server, drives a headless Edge/Chrome through the Chrome DevTools
 // Protocol (keys are genuinely held while the mouse draws many-point strokes), plays an
 // autopilot run, and checks the full loop: steering, drawing, aiming, cooldowns, pause/focus/
-// resize handling, level-ups, death, rewards, restart, the shop and save persistence.
+// resize handling, music and sound, the boss theme and hit-stop, learning the triangle and zigzag
+// sigils, spell evolution, live sigil reading and clean casts, Constrict, descending after the
+// boss, level-ups, death and its recap, rewards,
+// restart, the shop, the wizard and curse setup screen, and save persistence.
 //
 //   npm run playtest                       # ~5 minutes
 //   AUTOPILOT_SECONDS=60 npm run playtest  # shorter autopilot run
@@ -66,9 +69,9 @@ const browser = await puppeteer.launch({
   args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling'],
 });
 const page = await browser.newPage();
-const musicResponses = [];
+const sampleResponses = [];
 page.on('response', (r) => {
-  if (r.url().includes('pixel-kingdom')) musicResponses.push(r.status());
+  if (r.url().includes('/sfx/') && r.url().includes('.ogg')) sampleResponses.push(r.status());
 });
 page.on('pageerror', (e) => check('no page errors', false, { error: String(e) }));
 page.on('console', (m) => {
@@ -110,7 +113,13 @@ const state = () =>
       upgrades: { ...w.upgrades },
       cssW: r.cssW,
       overlay,
+      scene: window.__serpentAudio.musicScene,
     };
+  });
+const audioState = () =>
+  page.evaluate(() => {
+    const a = window.__serpentAudio;
+    return { scene: a.musicScene, theme: a.musicTheme, playing: a.musicPlaying, time: +a.musicTime.toFixed(2) };
   });
 const readSave = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k) || 'null'), SAVE_KEY);
 const screenToWorld = (p) => page.evaluate((p) => window.__serpent.renderer.screenToWorld(p), p);
@@ -137,15 +146,33 @@ const shapes = {
       const a = (dir * i * Math.PI * 2) / 32;
       return { x: x + Math.cos(a) * r + jitter(), y: y + Math.sin(a) * r + jitter() };
     }),
-  scribble: (x, y) => {
-    const z = [[0, 0], [30, 55], [60, 0], [90, 55], [120, 0], [150, 55]];
+  scribble: (x, y) =>
+    Array.from({ length: 60 }, (_, i) => {
+      const t = i / 59;
+      const a = t * Math.PI * 7;
+      return { x: x + Math.cos(a) * (14 + t * 60), y: y + Math.sin(a) * (14 + t * 60) };
+    }),
+  triangle: (x, y, r = 70) => {
+    const corners = [0, 1, 2, 3].map((i) => ({ x: x + Math.cos(-Math.PI / 2 + (i * 2 * Math.PI) / 3) * r, y: y + Math.sin(-Math.PI / 2 + (i * 2 * Math.PI) / 3) * r }));
+    const pts = [];
+    for (let i = 1; i < corners.length; i++)
+      for (let k = 0; k < 12; k++)
+        pts.push({ x: corners[i - 1].x + ((corners[i].x - corners[i - 1].x) * k) / 12 + jitter(), y: corners[i - 1].y + ((corners[i].y - corners[i - 1].y) * k) / 12 + jitter() });
+    pts.push(corners[3]);
+    return pts;
+  },
+  zigzag: (x, y) => {
+    const z = [[0, 0], [35, 80], [70, 0], [105, 80]];
     const pts = [];
     for (let i = 1; i < z.length; i++)
-      for (let k = 0; k < 6; k++)
-        pts.push({ x: x + z[i - 1][0] + ((z[i][0] - z[i - 1][0]) * k) / 6, y: y + z[i - 1][1] + ((z[i][1] - z[i - 1][1]) * k) / 6 });
+      for (let k = 0; k < 10; k++)
+        pts.push({ x: x + z[i - 1][0] + ((z[i][0] - z[i - 1][0]) * k) / 10 + jitter(), y: y + z[i - 1][1] + ((z[i][1] - z[i - 1][1]) * k) / 10 + jitter() });
+    pts.push({ x: x + 105, y: y + 80 });
     return pts;
   },
 };
+const SIGIL_OF = { ward: 'triangle', frost: 'zigzag' };
+const SPELL_NAME = { ward: 'Arcane Ward', frost: 'Frost Field' };
 
 async function stroke(points, durationMs = 300, midHook) {
   await page.mouse.move(points[0].x, points[0].y);
@@ -202,7 +229,7 @@ try {
     check('simulation runs in real time', Math.abs(ratio - 1) < 0.15, { ratio: +ratio.toFixed(2) });
   }
 
-  // Background music: starts after the first key press, respects mute, ducks on pause, can be turned off.
+  // Music: starts after the first key press, respects mute, ducks on pause, can be turned off.
   {
     const music = () =>
       page.evaluate(() => {
@@ -212,7 +239,13 @@ try {
     const m0 = await music();
     await sleep(800);
     const m1 = await music();
-    check('music track loads', musicResponses.some((s) => s === 200 || s === 206 || s === 304), { statuses: musicResponses });
+    const samples = await page.evaluate(() => [window.__serpentAudio.samplesLoaded, window.__serpentAudio.samplesFailed, window.__serpentAudio.samplesTotal]);
+    check('every sound effect sample loads and decodes', samples[0] === samples[2] && samples[1] === 0 && sampleResponses.every((s) => s === 200 || s === 304), {
+      loaded: samples[0],
+      total: samples[2],
+      failed: samples[1],
+      responses: sampleResponses.length,
+    });
     check('music plays after the first key press and advances', m0.playing && m1.time > m0.time, { m0, m1 });
     await page.keyboard.press('KeyM');
     await sleep(150);
@@ -452,6 +485,312 @@ try {
     await sleep(150);
   }
 
+  // ============================================================== Part A2: boss music, hit-stop
+  {
+    const a0 = await audioState();
+    check('run music plays the main theme', a0.theme === 'main' && /^run/.test(a0.scene) && a0.playing, a0);
+    // Make the snake untouchable (and unable to level up mid-test), then skip ahead to just
+    // before the boss warning. Part B starts a fresh run afterwards.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.invuln = 1e9;
+      w.xp = -1e6;
+      w.time = w.nextBossTime - 4.6;
+    });
+    await sleep(900);
+    const warn = await audioState();
+    check('music hushes when the boss warning sounds', warn.scene === 'warning' && warn.theme === 'main', warn);
+    let bossUp = false;
+    for (let i = 0; i < 48 && !bossUp; i++) {
+      await sleep(250);
+      bossUp = await page.evaluate(() => !!window.__serpent.debug().world.boss);
+    }
+    await sleep(800);
+    const fight = await audioState();
+    check('boss theme crossfades in when the boss appears', bossUp && fight.theme === 'boss' && /^boss/.test(fight.scene), { bossUp, fight });
+    await page.screenshot({ path: path.join(OUT, '07-boss-fight.png') });
+
+    // Clear the field, leave the boss on 1 HP and record sim time against real time.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.enemies = w.enemies.filter((e) => e.kind === 'boss');
+      w.portals = [];
+      w.boss.hp = 1;
+      window.__timeline = [];
+      const rec = () => {
+        window.__timeline.push([performance.now(), w.time, window.__serpent.getPhase()]);
+        if (window.__timeline.length < 1500) requestAnimationFrame(rec);
+      };
+      requestAnimationFrame(rec);
+    });
+    // Finish it with real bolt strokes aimed at any visible part of the boss.
+    let killed = false;
+    for (let i = 0; i < 10 && !killed; i++) {
+      const aim = await page.evaluate(() => {
+        const g = window.__serpent;
+        const b = g.debug().world.boss;
+        if (!b) return null;
+        const pts = [{ x: b.x, y: b.y }, ...b.segments].map((p) => g.renderer.worldToScreen(p));
+        return pts.find((p) => p.y > 110 && p.y < 600 && p.x > 30 && p.x < 1150) ?? null;
+      });
+      if (aim) await stroke(shapes.line(aim.x, aim.y, -0.3, 110), 130);
+      await sleep(650);
+      killed = await page.evaluate(() => window.__serpent.debug().world.bossKills > 0);
+    }
+    await sleep(2600);
+    const tl = await page.evaluate(() => window.__timeline);
+    // The longest stretch of real time during which the simulation clock stood still while playing.
+    let freeze = 0;
+    let freezeEndAt = 0;
+    let start = null;
+    for (let i = 1; i < tl.length; i++) {
+      if (tl[i][2] === 'playing' && tl[i][1] === tl[i - 1][1]) {
+        start ??= tl[i - 1][0];
+        if (tl[i][0] - start > freeze) {
+          freeze = tl[i][0] - start;
+          freezeEndAt = tl[i][0];
+        }
+      } else start = null;
+    }
+    const rate = (fromMs, toMs) => {
+      const a = tl.find((r) => r[0] >= freezeEndAt + fromMs);
+      const b = [...tl].reverse().find((r) => r[0] <= freezeEndAt + toMs);
+      return a && b && b[0] > a[0] ? +((b[1] - a[1]) / ((b[0] - a[0]) / 1000)).toFixed(2) : null;
+    };
+    const slow = rate(50, 850);
+    const after = rate(1400, 2200);
+    check('killing the boss freezes the action for a moment', killed && freeze >= 350 && freeze <= 700, { killed, freezeMs: Math.round(freeze) });
+    check('then plays out in slow motion before returning to full speed', slow !== null && slow < 0.5 && after !== null && after > 0.85, { slow, after });
+    const back = await audioState();
+    check('main theme returns after the boss falls', back.theme === 'main' && /^run/.test(back.scene), back);
+    const deeper = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { depth: w.depth, area: w.area, hud: document.querySelector('.kills')?.textContent };
+    });
+    check('defeating the boss descends to Depth 2, the Ember Depths', deeper.depth === 2 && deeper.area === 1 && /Depth 2/.test(deeper.hud ?? ''), deeper);
+    await page.screenshot({ path: path.join(OUT, '08-ember-depths.png') });
+    const rec = await page.evaluate(() => window.__serpent.debug().world.recap.spells.bolt);
+    check('the recap credits the boss kill to Arcane Bolt', rec.kills >= 1 && rec.casts >= 1, rec);
+  }
+
+  // ============================================================== Part A3: new sigils, learning, evolution
+  {
+    await page.evaluate(() => window.__serpent.restart());
+    await sleep(300);
+    const known0 = await page.evaluate(() => [...window.__serpent.debug().world.known]);
+    check('the Arcanist starts with Bolt, Lightning and Nova', known0.join() === 'bolt,lightning,nova', { known: known0 });
+    await page.evaluate(() => (window.__serpent.debug().world.invuln = 1e9));
+    await stroke(shapes.triangle(900, 380), 450);
+    await sleep(40);
+    let t = await state();
+    const noWard = await page.evaluate(() => window.__serpent.debug().world.ward === null);
+    check('a real triangle before learning it says the sigil is not learned yet', noWard && t.texts.some((x) => x.includes('Arcane Ward not learned')), { texts: t.texts });
+
+    // Level-ups teach the missing sigils: a learn card is guaranteed at level 3 and level 6.
+    const learnAt = async (level) => {
+      await page.evaluate((level) => {
+        const w = window.__serpent.debug().world;
+        w.level = level - 1;
+        // Exactly one level's worth (the XP curve from config.PROGRESSION).
+        const l = w.level - 1;
+        w.xp = Math.floor(16 + 7 * l + l * l) + 0.5;
+      }, level);
+      for (let i = 0; i < 20 && (await state()).phase !== 'levelup'; i++) await sleep(50);
+      await sleep(520);
+      const cards = await page.evaluate(() => [...document.querySelectorAll('.upgrade-card')].map((c) => ({ learn: c.classList.contains('learn'), name: c.querySelector('.card-name')?.textContent })));
+      const i = cards.findIndex((c) => c.learn);
+      if (i >= 0) await page.keyboard.press(['Digit1', 'Digit2', 'Digit3'][i]);
+      await sleep(120);
+      // Further level-ups queued by the big XP grant: take the first card.
+      await page.evaluate(() => (window.__serpent.debug().world.xp = 0));
+      for (let k = 0; k < 30 && (await state()).phase === 'levelup'; k++) {
+        await sleep(480);
+        await page.keyboard.press('Digit1');
+        await sleep(80);
+      }
+      return { cards, picked: i >= 0 ? cards[i].name : null };
+    };
+    const castNew = async (spell) => {
+      await page.evaluate((spell) => (window.__serpent.debug().world.cooldowns[spell] = 0), spell);
+      if (spell === 'ward') await stroke(shapes.triangle(900, 380), 450);
+      else await stroke(shapes.zigzag(250, 260), 450);
+      await sleep(40);
+      return page.evaluate(() => {
+        const w = window.__serpent.debug().world;
+        return { ward: w.ward ? w.ward.charges : 0, frost: w.frostFields.length, texts: w.floaters.filter((f) => f.screen).map((f) => f.text) };
+      });
+    };
+    const first = await learnAt(3);
+    const known1 = await page.evaluate(() => [...window.__serpent.debug().world.known]);
+    const learned1 = known1.find((k) => k === 'ward' || k === 'frost');
+    check('level 3 offers a new sigil card, and picking it teaches the sigil', !!first.picked && !!learned1 && first.picked === SPELL_NAME[learned1], { first, known: known1 });
+    await page.screenshot({ path: path.join(OUT, '09-learned-sigil.png') });
+    const c1 = learned1 ? await castNew(learned1) : null;
+    check(`a real ${SIGIL_OF[learned1] ?? 'new'} stroke now casts ${SPELL_NAME[learned1] ?? 'it'}`, !!c1 && c1.texts.includes(`${SPELL_NAME[learned1]}!`) && (learned1 === 'ward' ? c1.ward > 0 : c1.frost > 0), c1 ?? {});
+    const second = await learnAt(6);
+    const known2 = await page.evaluate(() => [...window.__serpent.debug().world.known]);
+    const learned2 = known2.find((k) => (k === 'ward' || k === 'frost') && k !== learned1);
+    check('level 6 teaches the other new sigil', !!learned2 && known2.length === 5, { second, known: known2 });
+    const c2 = learned2 ? await castNew(learned2) : null;
+    check(`a real ${SIGIL_OF[learned2] ?? 'new'} stroke casts ${SPELL_NAME[learned2] ?? 'it'}`, !!c2 && c2.texts.includes(`${SPELL_NAME[learned2]}!`) && (learned2 === 'ward' ? c2.ward > 0 : c2.frost > 0), c2 ?? {});
+    t = await state();
+    const hudCards = await page.evaluate(() => document.querySelectorAll('.spell-card').length);
+    check('the HUD shows all five learned spells', hudCards === 5, { hudCards });
+
+    // The ward blocks a real hit: drop a chaser on the head with no invulnerability.
+    if (!(await page.evaluate(() => !!window.__serpent.debug().world.ward))) await castNew('ward');
+    const block = await page.evaluate(async () => {
+      const w = window.__serpent.debug().world;
+      w.invuln = 0;
+      const hp = w.hp;
+      w.portals.push({ x: w.snake.x, y: w.snake.y, kind: 'chaser', t: 0, duration: 0.01 });
+      await new Promise((r) => setTimeout(r, 250));
+      return { hpBefore: hp, hpAfter: w.hp, blocked: w.recap.blocked };
+    });
+    check('Arcane Ward blocks a real hit', block.blocked >= 1 && block.hpAfter === block.hpBefore, block);
+    await page.evaluate(() => (window.__serpent.debug().world.invuln = 1e9));
+
+    // Frost slows a foe standing in it.
+    if (!(await page.evaluate(() => window.__serpent.debug().world.frostFields.length > 0))) await castNew('frost');
+    const chill = await page.evaluate(async () => {
+      const w = window.__serpent.debug().world;
+      const f = w.frostFields[0];
+      const e = w.enemies.find((e) => e.kind !== 'boss');
+      if (!f || !e) return { chilled: false };
+      e.x = f.x;
+      e.y = f.y;
+      await new Promise((r) => setTimeout(r, 120));
+      return { chilled: e.chill === 1, scale: w.stats.frostSlow };
+    });
+    check('Frost Field slows a foe inside it', chill.chilled, chill);
+    await page.screenshot({ path: path.join(OUT, '10-ward-and-frost.png') });
+
+    // Evolution: max Piercing Bolt, two ranks of Potency, then a level-up offers Arcane Lance.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.upgrades.pierce = 4;
+      w.upgrades.potency = 2;
+      const l = w.level - 1;
+      w.xp = Math.floor(16 + 7 * l + l * l) + 0.5;
+    });
+    for (let i = 0; i < 20 && (await state()).phase !== 'levelup'; i++) await sleep(50);
+    await sleep(520);
+    const evoCards = await page.evaluate(() => [...document.querySelectorAll('.upgrade-card')].map((c) => ({ evolve: c.classList.contains('evolve'), name: c.querySelector('.card-name')?.textContent })));
+    await page.screenshot({ path: path.join(OUT, '11-evolution-card.png') });
+    const ei = evoCards.findIndex((c) => c.evolve);
+    if (ei >= 0) await page.keyboard.press(['Digit1', 'Digit2', 'Digit3'][ei]);
+    await sleep(120);
+    await page.evaluate(() => (window.__serpent.debug().world.xp = 0));
+    for (let k = 0; k < 30 && (await state()).phase === 'levelup'; k++) {
+      await sleep(480);
+      await page.keyboard.press('Digit1');
+      await sleep(80);
+    }
+    check('maxed upgrades offer the Arcane Lance evolution card', ei >= 0 && evoCards[ei].name === 'Arcane Lance', { evoCards });
+    await page.evaluate(() => (window.__serpent.debug().world.cooldowns.bolt = 0));
+    await stroke(shapes.line(1000, 250, -0.3, 120), 140);
+    await sleep(20);
+    const lance = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { evolved: w.evolved.bolt, beams: w.beams.length, texts: w.floaters.filter((f) => f.screen).map((f) => f.text) };
+    });
+    await page.screenshot({ path: path.join(OUT, '12-arcane-lance.png') });
+    check('a real line stroke fires an Arcane Lance beam once evolved', lance.evolved && lance.beams > 0 && lance.texts.includes('Arcane Lance!'), lance);
+  }
+
+  // ============================================================== Part A4: live sigil reading, clean casts, Constrict
+  {
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.invuln = 1e9;
+      w.cooldowns.lightning = 0;
+    });
+    // A slow, careful V: the trail reads the first leg as a line, then the whole stroke as a V.
+    const vee = [];
+    for (let i = 0; i <= 12; i++) vee.push({ x: 820 + i * 5, y: 250 + i * 11 });
+    for (let i = 1; i <= 12; i++) vee.push({ x: 880 + i * 5, y: 382 - i * 11 });
+    const readings = [];
+    const before = await page.evaluate(() => ({ ...window.__serpent.debug().world.recap.casts }));
+    await page.mouse.move(vee[0].x, vee[0].y);
+    await page.mouse.down();
+    for (let i = 1; i < vee.length; i++) {
+      await page.mouse.move(vee[i].x, vee[i].y);
+      await sleep(25);
+      if (i === 10 || i === vee.length - 1) {
+        await sleep(120);
+        readings.push(await page.evaluate(() => window.__serpent.gesture.reading?.kind ?? null));
+      }
+    }
+    await page.mouse.up();
+    await sleep(40);
+    const cast = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { texts: w.floaters.filter((f) => f.screen).map((f) => f.text), casts: { ...w.recap.casts } };
+    });
+    check('while drawing, the trail reads the first leg as a line, then the finished stroke as a V', readings[0] === 'line' && readings[1] === 'vee', { readings });
+    const graded = cast.texts.some((t) => /^(Perfect|Clean) \+\d+%$/.test(t));
+    const counted = cast.casts.perfect + cast.casts.clean > before.perfect + before.clean;
+    check('a careful real V casts as Perfect or Clean, with its bonus shown and counted', cast.texts.includes('Tempest!') || cast.texts.includes('Forked Lightning!') ? graded && counted : false, cast);
+
+    // Constrict: a long serpent circles a brute with real WASD, closing a loop around it.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.enemies.length = 0;
+      w.portals.length = 0;
+      w.shots.length = 0;
+      w.spawnAcc = -1e9;
+      w.frostFields.length = 0;
+      const s = w.snake;
+      s.segmentCount = s.segmentTarget = 30;
+      s.x = 560;
+      s.y = 330;
+      s.heading = 0;
+      w.portals.push({ x: 560, y: 330 + 190 / 4.4, kind: 'brute', t: 0, duration: 0.05 });
+    });
+    await sleep(150);
+    const bruteHp = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      const b = w.enemies.find((e) => e.kind === 'brute');
+      b.speed = 0;
+      b.attackTimer = 1e9;
+      b.elite = null;
+      b.shield = 0;
+      w.snake.x = 560;
+      w.snake.y = 330;
+      w.snake.heading = 0;
+      return b.hp;
+    });
+    let hinted = false;
+    let crushed = false;
+    const keys = ['KeyS', 'KeyA', 'KeyW', 'KeyD', 'KeyS'];
+    for (let k = 0; k < keys.length && !crushed; k++) {
+      await page.keyboard.down(keys[k]);
+      if (k > 0) await page.keyboard.up(keys[k - 1]);
+      const t0 = Date.now();
+      while (Date.now() - t0 < 330) {
+        const st = await page.evaluate(() => {
+          const w = window.__serpent.debug().world;
+          return { coil: w.coil, casts: w.recap.spells.constrict.casts };
+        });
+        if (st.coil && !st.coil.closed && st.coil.enclosed > 0) hinted = true;
+        if (st.casts > 0) {
+          crushed = true;
+          await page.screenshot({ path: path.join(OUT, '15-constrict.png') });
+          break;
+        }
+        await sleep(15);
+      }
+    }
+    for (const k of keys) await page.keyboard.up(k);
+    const crush = await page.evaluate((hp) => {
+      const w = window.__serpent.debug().world;
+      const b = w.enemies.find((e) => e.kind === 'brute');
+      return { loops: w.recap.spells.constrict.casts, damage: Math.round(w.recap.spells.constrict.damage), hpLost: b ? Math.round(hp - b.hp) : 'killed', stunned: b ? +b.stunned.toFixed(2) : null };
+    }, bruteHp);
+    check('the loop hint shows the gap before the body closes around a foe', hinted, { hinted });
+    check('circling a brute with real keys closes a loop that Constricts it', crushed && crush.loops >= 1 && (crush.hpLost === 'killed' || crush.hpLost > 0) && (crush.stunned === null || crush.stunned > 0), crush);
+  }
+
   // ============================================================== Part B: autopilot run
   await page.evaluate(() => window.__serpent.restart());
   await sleep(200);
@@ -465,10 +804,10 @@ try {
       const bolts = w.bolts.length;
       orig(pts);
       const added = w.floaters.filter((f) => f.screen && !before.has(f)).map((f) => f.text);
-      window.__lastCast = { text: added[0] ?? '(ignored)', boltsAdded: w.bolts.length - bolts, multibolt: w.upgrades.multibolt };
+      window.__lastCast = { text: added[0] ?? '(ignored)', boltsAdded: w.bolts.length - bolts, multibolt: w.upgrades.multibolt, lance: w.evolved.bolt };
     };
   });
-  const log = { casts: { line: 0, vee: 0, circle: 0 }, outcomes: {}, levelUps: [], misfires: 0, picks: [], pickFailures: [], boltCountChecks: 0, boltCountFailures: [] };
+  const log = { casts: { line: 0, vee: 0, circle: 0 }, outcomes: {}, levelUps: [], misfires: 0, picks: [], pickFailures: [], boltCountChecks: 0, boltCountFailures: [], scenes: {} };
   const UPGRADE_BY_NAME = {
     'Arcane Potency': 'potency',
     'Split Bolt': 'multibolt',
@@ -479,18 +818,23 @@ try {
     'Serpent Vitality': 'vitality',
     'Crystal Magnetism': 'magnet',
     'Shed Skin': 'regen',
+    'Warding Runes': 'wardRunes',
+    'Deep Frost': 'deepFrost',
   };
   const runSnapshot = () =>
     page.evaluate(() => {
       const w = window.__serpent.debug().world;
-      return { up: { ...w.upgrades }, stats: { ...w.stats }, hp: w.hp };
+      return { up: { ...w.upgrades }, stats: { ...w.stats }, hp: w.hp, known: [...w.known], evolved: { ...w.evolved } };
     });
-  const spellOf = { 'Arcane Bolt!': 'line', 'Forked Lightning!': 'vee', 'Arcane Nova!': 'circle' };
+  const spellOf = { 'Arcane Bolt!': 'line', 'Forked Lightning!': 'vee', 'Arcane Nova!': 'circle', 'Arcane Lance!': 'line', 'Tempest!': 'vee', 'Supernova!': 'circle' };
+  const LEARN_BY_NAME = { 'Arcane Ward': 'ward', 'Frost Field': 'frost' };
+  const EVOLVE_BY_NAME = { 'Arcane Lance': 'bolt', Tempest: 'lightning', Supernova: 'nova', Aegis: 'ward', Glacier: 'frost' };
   let pickIndex = 0;
   const t0 = Date.now();
   const shots = { levelup: false, busy: false };
   while ((Date.now() - t0) / 1000 < AUTOPILOT_SECONDS) {
     s = await state();
+    if (s.phase === 'playing' && !(s.scene in log.scenes)) log.scenes[s.scene] = +s.t.toFixed(1);
     if (s.phase === 'levelup') {
       await setKeys(new Set());
       if (!shots.levelup) {
@@ -515,7 +859,11 @@ try {
       const othersSame = Object.keys(before.up).every((k) => k === id || after.up[k] === before.up[k]);
       const applied = id
         ? after.up[id] === before.up[id] + 1 && othersSame && JSON.stringify(after.stats) !== JSON.stringify(before.stats)
-        : after.hp >= before.hp;
+        : LEARN_BY_NAME[name]
+          ? after.known.includes(LEARN_BY_NAME[name]) && !before.known.includes(LEARN_BY_NAME[name])
+          : EVOLVE_BY_NAME[name]
+            ? after.evolved[EVOLVE_BY_NAME[name]] && !before.evolved[EVOLVE_BY_NAME[name]]
+            : after.hp >= before.hp;
       if (!applied) log.pickFailures.push({ name, before: before.up, after: after.up });
       continue;
     }
@@ -599,7 +947,7 @@ try {
     const label = spellOf[t] ? (spellOf[t] === intent ? 'ok' : `MISFIRE as ${spellOf[t]}`) : t.includes('recharging') ? 'recharging' : t;
     log.outcomes[`${intent}:${label}`] = (log.outcomes[`${intent}:${label}`] ?? 0) + 1;
     if (spellOf[t] && spellOf[t] !== intent) log.misfires++;
-    if (cast && t === 'Arcane Bolt!') {
+    if (cast && t === 'Arcane Bolt!' && !cast.lance) {
       // Split Bolt must visibly add projectiles: each cast fires 1 + level bolts.
       log.boltCountChecks++;
       if (cast.boltsAdded !== 1 + cast.multibolt) log.boltCountFailures.push(cast);
@@ -626,14 +974,46 @@ try {
     checked: log.boltCountChecks,
     failures: log.boltCountFailures.slice(0, 3),
   });
+  const climbed = log.scenes.run1 ?? log.scenes.run2;
+  check('autopilot: music adds layers as the arena fills', log.scenes.run0 !== undefined && climbed !== undefined && climbed > log.scenes.run0, {
+    scenes: log.scenes,
+  });
 
   // ============================================================== Death, reward, restart, persistence
-  for (let i = 0; i < 160 && (await state()).phase !== 'gameover'; i++) await sleep(500);
+  // If the autopilot outlived its time, let the run end: keep taking level-up cards, and after
+  // 30 s leave the serpent on 1 health so the next real hit kills it.
+  for (let i = 0; i < 160; i++) {
+    const phase = (await state()).phase;
+    if (phase === 'gameover') break;
+    if (phase === 'levelup') {
+      await sleep(520);
+      await page.keyboard.press('Digit1');
+    }
+    if (i === 60) await page.evaluate(() => (window.__serpent.debug().world.hp = 1));
+    await sleep(500);
+  }
   s = await state();
   const overText = await page.evaluate(() => document.querySelector('.overlay-inner')?.innerText.replace(/\n+/g, ' | '));
   const sv1 = await readSave();
   await page.screenshot({ path: path.join(OUT, '05-gameover.png') });
   check('death leads to the game-over screen with stats', s.phase === 'gameover' && /Run Over/.test(overText ?? ''), { overText });
+  {
+    const recap = await page.evaluate(() => {
+      const r = window.__serpent.debug().world.recap;
+      return {
+        killedBy: r.killedBy,
+        cause: document.querySelector('.recap-cause')?.textContent ?? '',
+        shown: ['bolt', 'lightning', 'nova'].map((id) => document.querySelector(`.recap-row[data-source="${id}"] .recap-num`)?.textContent),
+        expected: ['bolt', 'lightning', 'nova'].map((id) => Math.round(r.spells[id].damage).toLocaleString()),
+        quality: document.querySelector('.recap')?.textContent.match(/Sigils: [^·]+· [^·]+?of \d+/)?.[0] ?? null,
+        casts: ['bolt', 'lightning', 'nova'].map((id) => r.spells[id].casts),
+      };
+    });
+    check('game-over recap names the killing blow and shows each spell’s damage', !!recap.killedBy && /^Slain by /.test(recap.cause) &&
+      recap.shown.join() === recap.expected.join() && recap.casts.every((c) => c > 0) && !!recap.quality, recap);
+    const calm = await audioState();
+    check('music settles to the calm arrangement on the game-over screen', calm.scene === 'calm' && calm.theme === 'main', calm);
+  }
   check('reward banked exactly once', sv1?.records.totalRuns === 1 && Number(/\+(\d+)/.exec(overText ?? '')?.[1]) === sv1?.currency, {
     currency: sv1?.currency,
     runs: sv1?.records.totalRuns,
@@ -690,6 +1070,50 @@ try {
   check('permanent upgrade applies to the next run', stats.maxHp > 100 || stats.damageMult > 1 || stats.pickupRadius > 110 || stats.xpMult > 1, {
     maxHp: stats.maxHp,
   });
+
+  // ============================================================== Part E: wizard and curse setup
+  {
+    await page.evaluate((k) => {
+      const sv = JSON.parse(localStorage.getItem(k));
+      sv.records.bestTime = Math.max(sv.records.bestTime, 200);
+      localStorage.setItem(k, JSON.stringify(sv));
+    }, SAVE_KEY);
+    await page.reload({ waitUntil: 'networkidle0' });
+    await clickButton('Wizard');
+    await sleep(300);
+    const cards = await page.evaluate(() =>
+      [...document.querySelectorAll('.wizard-card')].map((c) => ({ name: c.querySelector('.wizard-name')?.textContent, locked: c.disabled })),
+    );
+    check('the setup screen locks wizards until their records are met', cards.find((c) => c.name === 'Frostcoil')?.locked === false && cards.find((c) => c.name === 'Stormtongue')?.locked === true, { cards });
+    const pickCard = await page.evaluateHandle(() => [...document.querySelectorAll('.wizard-card')].find((c) => c.textContent.includes('Frostcoil')));
+    await pickCard.asElement().click();
+    const curse = await page.evaluateHandle(() => [...document.querySelectorAll('.curse')].find((c) => c.textContent.includes('Glass Scales')));
+    await curse.asElement().click();
+    await sleep(150);
+    await page.screenshot({ path: path.join(OUT, '13-setup.png') });
+    const chosen = (await readSave()).settings;
+    check('picking a wizard and a curse with real clicks saves them', chosen.wizard === 'frostcoil' && chosen.curses.join() === 'glass', { wizard: chosen.wizard, curses: chosen.curses });
+    await page.keyboard.press('Enter');
+    await sleep(600);
+    const run = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { wizard: w.wizard, known: [...w.known], maxHp: w.stats.maxHp, curses: [...w.curses] };
+    });
+    check('the run starts as Frostcoil with Frost Field and the curse applied', run.wizard === 'frostcoil' && run.known.includes('frost') && !run.known.includes('lightning') && run.maxHp < 100, run);
+    await page.screenshot({ path: path.join(OUT, '14-frostcoil-run.png') });
+    const before = (await readSave()).currency;
+    await sleep(2500);
+    await page.keyboard.press('Escape');
+    await sleep(150);
+    await clickButton('End run');
+    await sleep(900);
+    const over = await page.evaluate(() => document.querySelector('.overlay-inner')?.innerText.replace(/\n+/g, ' | '));
+    const gained = Number(/\+(\d+)/.exec(over ?? '')?.[1]);
+    const after = (await readSave()).currency;
+    check('the curse multiplies the shards the run banks', /×1\.30 from curses/.test(over ?? '') && after - before === gained, { over, before, after });
+    await clickButton('Title');
+    await sleep(300);
+  }
 
   // ============================================================== Part D: upgrade-integrity fuzz
   // Random keys and clicks across every screen, with plenty of shards to spend. Clicks that would

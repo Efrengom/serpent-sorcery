@@ -4,7 +4,17 @@
  * Everything here is pure so it can be unit tested.
  */
 
-import { PROGRESSION, REWARDS, SNAKE, SPELLS, type SpellId } from './config';
+import {
+  EVOLUTION_PARTNER_RANKS,
+  EVOLUTIONS,
+  PROGRESSION,
+  REWARDS,
+  SNAKE,
+  SPELL_IDS,
+  SPELL_INFO,
+  SPELLS,
+  type SpellId,
+} from './config';
 
 // ---------------------------------------------------------------- XP
 
@@ -33,9 +43,32 @@ export type UpgradeId =
   | 'haste'
   | 'vitality'
   | 'magnet'
-  | 'regen';
+  | 'regen'
+  | 'wardRunes'
+  | 'deepFrost';
 
 export type UpgradeLevels = Record<UpgradeId, number>;
+
+/** Run-wide modifiers from the chosen wizard and curses. */
+export interface RunMods {
+  maxHp: number;
+  maxHpMult: number;
+  damageMult: number;
+  cooldownMult: number;
+  wardCharges: number;
+  frostRadiusMult: number;
+  chains: number;
+}
+
+export const NO_MODS: RunMods = {
+  maxHp: 0,
+  maxHpMult: 1,
+  damageMult: 1,
+  cooldownMult: 1,
+  wardCharges: 0,
+  frostRadiusMult: 1,
+  chains: 0,
+};
 
 export interface MetaLevels {
   health: number;
@@ -56,6 +89,12 @@ export interface PlayerStats {
   pickupRadius: number;
   regenPerSec: number;
   xpMult: number;
+  wardCharges: number;
+  wardDuration: number;
+  frostRadius: number;
+  /** Time scale for enemies inside a Frost Field (lower = slower). */
+  frostSlow: number;
+  frostDamageMult: number;
 }
 
 export interface UpgradeDef {
@@ -63,6 +102,8 @@ export interface UpgradeDef {
   name: string;
   glyph: string;
   maxLevel: number;
+  /** Only offered once this spell is known. */
+  spell?: SpellId;
   /** Short description of what one more level does, with real numbers. */
   describe: (current: PlayerStats, next: PlayerStats) => string;
 }
@@ -84,6 +125,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     name: 'Split Bolt',
     glyph: '⋔',
     maxLevel: 4,
+    spell: 'bolt',
     describe: (c, n) => `Arcane Bolt fires ${n.boltCount} projectiles in a fan (was ${c.boltCount}).`,
   },
   pierce: {
@@ -91,6 +133,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     name: 'Piercing Bolt',
     glyph: '➶',
     maxLevel: 4,
+    spell: 'bolt',
     describe: (c, n) =>
       `Bolts pass through ${n.boltPierce} ${n.boltPierce === 1 ? 'enemy' : 'enemies'} before breaking (was ${c.boltPierce}).`,
   },
@@ -99,6 +142,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     name: 'Forked Chains',
     glyph: 'ϟ',
     maxLevel: 5,
+    spell: 'lightning',
     describe: (c, n) => `Forked Lightning jumps to ${n.chains} extra targets (was ${c.chains}).`,
   },
   novaRadius: {
@@ -106,6 +150,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     name: 'Nova Expanse',
     glyph: '◎',
     maxLevel: 5,
+    spell: 'nova',
     describe: (c, n) =>
       `Nova radius ${Math.round(c.novaRadius)} → ${Math.round(n.novaRadius)} and +10% Nova damage.`,
   },
@@ -116,7 +161,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     maxLevel: 5,
     describe: (c, n) => {
       const cd = (id: SpellId, s: PlayerStats) => r1(spellCooldown(id, s));
-      return `Cooldowns −8%: Bolt ${cd('bolt', c)}→${cd('bolt', n)}s, Lightning ${cd('lightning', c)}→${cd('lightning', n)}s, Nova ${cd('nova', c)}→${cd('nova', n)}s.`;
+      return `All cooldowns −8%: Bolt ${cd('bolt', c)}→${cd('bolt', n)}s, Nova ${cd('nova', c)}→${cd('nova', n)}s.`;
     },
   },
   vitality: {
@@ -140,31 +185,65 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     maxLevel: 3,
     describe: (c, n) => `Regenerate ${r1(n.regenPerSec)} health per second (was ${r1(c.regenPerSec)}).`,
   },
+  wardRunes: {
+    id: 'wardRunes',
+    name: 'Warding Runes',
+    glyph: '△',
+    maxLevel: 2,
+    spell: 'ward',
+    describe: (c, n) => `Arcane Ward blocks ${n.wardCharges} hits (was ${c.wardCharges}) and lasts ${r1(n.wardDuration)}s.`,
+  },
+  deepFrost: {
+    id: 'deepFrost',
+    name: 'Deep Frost',
+    glyph: '❄',
+    maxLevel: 3,
+    spell: 'frost',
+    describe: (c, n) =>
+      `Frost Field radius ${Math.round(c.frostRadius)} → ${Math.round(n.frostRadius)}, foes inside move at ${pct(n.frostSlow)} speed and take +25% frost damage.`,
+  },
 };
 
 export const UPGRADE_IDS = Object.keys(UPGRADES) as UpgradeId[];
 
 export function emptyUpgradeLevels(): UpgradeLevels {
-  return { potency: 0, multibolt: 0, pierce: 0, chains: 0, novaRadius: 0, haste: 0, vitality: 0, magnet: 0, regen: 0 };
+  return {
+    potency: 0,
+    multibolt: 0,
+    pierce: 0,
+    chains: 0,
+    novaRadius: 0,
+    haste: 0,
+    vitality: 0,
+    magnet: 0,
+    regen: 0,
+    wardRunes: 0,
+    deepFrost: 0,
+  };
 }
 
 export function emptyMetaLevels(): MetaLevels {
   return { health: 0, damage: 0, pickup: 0, wisdom: 0 };
 }
 
-export function computeStats(up: UpgradeLevels, meta: MetaLevels): PlayerStats {
+export function computeStats(up: UpgradeLevels, meta: MetaLevels, mods: RunMods = NO_MODS): PlayerStats {
   return {
-    damageMult: (1 + 0.15 * up.potency) * (1 + 0.08 * meta.damage),
+    damageMult: (1 + 0.15 * up.potency) * (1 + 0.08 * meta.damage) * mods.damageMult,
     boltCount: 1 + up.multibolt,
     boltPierce: up.pierce,
-    chains: SPELLS.lightning.chains + up.chains,
+    chains: SPELLS.lightning.chains + up.chains + mods.chains,
     novaRadius: SPELLS.nova.radius * (1 + 0.2 * up.novaRadius),
     novaDamageMult: 1 + 0.1 * up.novaRadius,
-    cooldownMult: Math.max(0.6, 1 - 0.08 * up.haste),
-    maxHp: SNAKE.baseMaxHp + 10 * meta.health + 20 * up.vitality,
+    cooldownMult: Math.max(0.6, 1 - 0.08 * up.haste) * mods.cooldownMult,
+    maxHp: Math.max(10, Math.round((SNAKE.baseMaxHp + 10 * meta.health + 20 * up.vitality + mods.maxHp) * mods.maxHpMult)),
     pickupRadius: SNAKE.basePickupRadius * (1 + 0.15 * meta.pickup) * (1 + 0.35 * up.magnet),
     regenPerSec: 0.6 * up.regen,
     xpMult: 1 + 0.1 * meta.wisdom,
+    wardCharges: SPELLS.ward.charges + up.wardRunes + mods.wardCharges,
+    wardDuration: SPELLS.ward.duration + 1.5 * up.wardRunes,
+    frostRadius: SPELLS.frost.radius * (1 + 0.18 * up.deepFrost) * mods.frostRadiusMult,
+    frostSlow: Math.max(0.2, SPELLS.frost.slow - 0.07 * up.deepFrost),
+    frostDamageMult: 1 + 0.25 * up.deepFrost,
   };
 }
 
@@ -173,8 +252,14 @@ export function spellCooldown(id: SpellId, stats: PlayerStats): number {
   return Math.max(s.minCooldown, s.cooldown * stats.cooldownMult);
 }
 
+export type ChoiceKind = 'upgrade' | 'learn' | 'evolve' | 'restore';
+
 export interface UpgradeChoice {
-  id: UpgradeId | 'restore';
+  /** The UpgradeId, `learn-<spell>`, `evolve-<spell>` or 'restore'. */
+  id: string;
+  kind: ChoiceKind;
+  upgrade?: UpgradeId;
+  spell?: SpellId;
   name: string;
   glyph: string;
   /** Level the upgrade will reach if chosen. */
@@ -183,38 +268,122 @@ export interface UpgradeChoice {
   description: string;
 }
 
-export const RESTORE_HEAL = 40;
+/** What the level-up roll needs to know about the run beyond upgrade levels. */
+export interface ChoiceContext {
+  known: readonly SpellId[];
+  evolved: Partial<Record<SpellId, boolean>>;
+  /** The level just reached. */
+  level: number;
+}
 
-export function describeChoice(id: UpgradeId, up: UpgradeLevels, meta: MetaLevels): UpgradeChoice {
+export const DEFAULT_CONTEXT: ChoiceContext = { known: ['bolt', 'lightning', 'nova'], evolved: {}, level: 1 };
+
+export const RESTORE_HEAL = 40;
+/** New sigils start appearing at this level; every third level guarantees one while any are unknown. */
+export const LEARN_FROM_LEVEL = 3;
+const LEARN_CHANCE = 0.35;
+
+export function describeChoice(id: UpgradeId, up: UpgradeLevels, meta: MetaLevels, mods: RunMods = NO_MODS): UpgradeChoice {
   const def = UPGRADES[id];
   const next = { ...up, [id]: up[id] + 1 };
   return {
     id,
+    kind: 'upgrade',
+    upgrade: id,
     name: def.name,
     glyph: def.glyph,
     nextLevel: up[id] + 1,
     maxLevel: def.maxLevel,
-    description: def.describe(computeStats(up, meta), computeStats(next, meta)),
+    description: def.describe(computeStats(up, meta, mods), computeStats(next, meta, mods)),
   };
 }
 
-/** Picks `count` distinct upgrades that are not maxed; pads with a heal if the pool runs dry. */
+export function learnChoice(spell: SpellId): UpgradeChoice {
+  return {
+    id: `learn-${spell}`,
+    kind: 'learn',
+    spell,
+    name: SPELLS[spell].name,
+    glyph: '✧',
+    nextLevel: 1,
+    maxLevel: 1,
+    description: `New sigil: draw a ${SPELL_INFO[spell].shape.toLowerCase()}. ${SPELL_INFO[spell].blurb}`,
+  };
+}
+
+export function evolveChoice(spell: SpellId): UpgradeChoice {
+  const evo = EVOLUTIONS[spell];
+  return {
+    id: `evolve-${spell}`,
+    kind: 'evolve',
+    spell,
+    name: evo.name,
+    glyph: '✹',
+    nextLevel: 1,
+    maxLevel: 1,
+    description: `${SPELLS[spell].name} evolves. ${evo.description}`,
+  };
+}
+
+/** True when a known, unevolved spell has its own upgrade maxed and enough partner ranks. */
+export function evolutionReady(spell: SpellId, up: UpgradeLevels, ctx: ChoiceContext): boolean {
+  const [own, partner] = EVOLUTIONS[spell].requires as readonly [UpgradeId, UpgradeId];
+  return (
+    ctx.known.includes(spell) &&
+    !ctx.evolved[spell] &&
+    up[own] >= UPGRADES[own].maxLevel &&
+    up[partner] >= EVOLUTION_PARTNER_RANKS
+  );
+}
+
+function shuffle<T>(list: T[], rng: () => number): T[] {
+  // Fisher-Yates using the injected RNG for testability.
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return list;
+}
+
+/**
+ * Builds a level-up offer: a ready evolution always gets a slot, a new sigil sometimes does
+ * (always on every third level from LEARN_FROM_LEVEL), and distinct non-maxed upgrades for known
+ * spells fill the rest. Pads with a heal if the pool runs dry.
+ */
 export function rollUpgradeChoices(
   up: UpgradeLevels,
   meta: MetaLevels,
   rng: () => number,
   count = 3,
+  ctx: ChoiceContext = DEFAULT_CONTEXT,
+  mods: RunMods = NO_MODS,
 ): UpgradeChoice[] {
-  const pool = UPGRADE_IDS.filter((id) => up[id] < UPGRADES[id].maxLevel);
-  // Fisher-Yates using the injected RNG for testability.
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+  const choices: UpgradeChoice[] = [];
+  const ready = SPELL_IDS.filter((s) => evolutionReady(s, up, ctx));
+  if (ready.length > 0) choices.push(evolveChoice(ready[Math.floor(rng() * ready.length) % ready.length]));
+  const unknown = SPELL_IDS.filter((s) => !ctx.known.includes(s));
+  if (
+    unknown.length > 0 &&
+    ctx.level >= LEARN_FROM_LEVEL &&
+    ((ctx.level - LEARN_FROM_LEVEL) % 3 === 0 || rng() < LEARN_CHANCE)
+  ) {
+    choices.push(learnChoice(unknown[Math.floor(rng() * unknown.length) % unknown.length]));
   }
-  const choices = pool.slice(0, count).map((id) => describeChoice(id, up, meta));
+  const pool = shuffle(
+    UPGRADE_IDS.filter((id) => {
+      const def = UPGRADES[id];
+      return up[id] < def.maxLevel && (!def.spell || ctx.known.includes(def.spell));
+    }),
+    rng,
+  );
+  for (const id of pool) {
+    if (choices.length >= count) break;
+    choices.push(describeChoice(id, up, meta, mods));
+  }
   while (choices.length < count && !choices.some((c) => c.id === 'restore')) {
     choices.push({
       id: 'restore',
+      kind: 'restore',
       name: 'Restorative Draught',
       glyph: '⚗︎',
       nextLevel: 1,
@@ -237,17 +406,24 @@ export interface RunSummary {
   kills: number;
   level: number;
   bossKills: number;
+  /** Bonus from curses chosen before the run (1 = none). */
+  shardMult?: number;
 }
+
+/** The most curses can multiply a run's shards by. */
+export const MAX_SHARD_MULT = 3;
 
 export function computeReward(run: RunSummary): number {
   const t = Math.max(0, run.time);
+  const mult = Math.max(1, Math.min(MAX_SHARD_MULT, Number.isFinite(run.shardMult) ? run.shardMult! : 1));
   return Math.max(
     0,
     Math.floor(
-      Math.floor(t / 10) * REWARDS.perTenSeconds +
+      (Math.floor(t / 10) * REWARDS.perTenSeconds +
         Math.max(0, run.kills) * REWARDS.perKill +
         Math.max(0, run.level - 1) * REWARDS.perLevel +
-        Math.max(0, run.bossKills) * REWARDS.perBoss,
+        Math.max(0, run.bossKills) * REWARDS.perBoss) *
+        mult,
     ),
   );
 }

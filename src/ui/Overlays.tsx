@@ -1,8 +1,11 @@
-import { useEffect, useState, type ComponentProps } from 'react';
+import { useEffect, useState, type ComponentProps, type CSSProperties } from 'react';
+import { SPELL_IDS, SPELLS } from '../game/config';
 import { formatTime } from '../game/math';
 import type { CommitOutcome, RunResult } from '../game/persistence';
 import type { UpgradeChoice } from '../game/progression';
-import { Shard, UpgradeGlyph } from './art';
+import { describeHurt, worstHurt, type DamageSource, type RunRecap } from '../game/recap';
+import { CoilIcon, Shard, UpgradeGlyph } from './art';
+import { SigilIcon, SPELL_UI } from './SigilIcon';
 import { VolumeControls } from './VolumeControls';
 
 /** Prevents a click that was already in flight from instantly choosing a card. */
@@ -44,15 +47,29 @@ export function LevelUpPanel({
         <p className="overlay-sub">Choose a rune to inscribe</p>
         <div className={`cards${armed ? ' armed' : ''}`}>
           {choices.map((c, i) => (
-            <button key={`${c.id}-${i}`} className="upgrade-card" disabled={!armed} onClick={() => onChoose(c)}>
+            <button
+              key={`${c.id}-${i}`}
+              className={`upgrade-card ${c.kind}`}
+              style={c.spell ? ({ '--spell': SPELL_UI[c.spell].color } as CSSProperties) : undefined}
+              disabled={!armed}
+              onClick={() => onChoose(c)}
+            >
               <span className="card-key">{i + 1}</span>
-              <UpgradeGlyph id={c.id} glyph={c.glyph} />
+              {c.spell ? <SigilIcon spell={c.spell} size={48} /> : <UpgradeGlyph id={c.id} glyph={c.glyph} />}
               <span className="card-name">{c.name}</span>
               <span className="card-level">
-                {c.id === 'restore' ? 'Bonus' : c.nextLevel === 1 ? `New · max ${c.maxLevel}` : `Lv ${c.nextLevel - 1} → ${c.nextLevel} / ${c.maxLevel}`}
+                {c.kind === 'restore'
+                  ? 'Bonus'
+                  : c.kind === 'learn'
+                    ? `New sigil · ${SPELL_UI[c.spell!].shape}`
+                    : c.kind === 'evolve'
+                      ? 'Evolution'
+                      : c.nextLevel === 1
+                        ? `New · max ${c.maxLevel}`
+                        : `Lv ${c.nextLevel - 1} → ${c.nextLevel} / ${c.maxLevel}`}
               </span>
               <span className="card-pips">
-                {c.id !== 'restore' &&
+                {c.kind === 'upgrade' &&
                   Array.from({ length: c.maxLevel }, (_, k) => (
                     <i key={k} className={k < c.nextLevel - 1 ? 'on' : k === c.nextLevel - 1 ? 'next' : ''} />
                   ))}
@@ -112,6 +129,68 @@ export function PauseMenu({
   );
 }
 
+/** What ended the run, and how much each spell contributed. */
+function RunRecapView({ recap }: { recap: RunRecap }) {
+  const used: DamageSource[] = SPELL_IDS.filter((id) => recap.spells[id].casts > 0);
+  const rows: DamageSource[] = used.length > 0 ? used : SPELL_IDS.slice(0, 3);
+  if (recap.spells.constrict.casts > 0) rows.push('constrict');
+  const total = rows.reduce((sum, id) => sum + recap.spells[id].damage, 0);
+  const worst = worstHurt(recap);
+  const { perfect, clean, rough } = recap.casts;
+  const sigils = perfect + clean + rough;
+  const extras = [
+    sigils > 0 && `Sigils: ${perfect} perfect · ${clean} clean of ${sigils}`,
+    recap.blocked > 0 && `Ward blocked ${recap.blocked} ${recap.blocked === 1 ? 'hit' : 'hits'}`,
+    recap.elitesSlain > 0 && `${recap.elitesSlain} ${recap.elitesSlain === 1 ? 'elite' : 'elites'} slain`,
+  ].filter(Boolean);
+  return (
+    <div className="recap">
+      <p className="recap-cause">
+        {recap.killedBy ? (
+          <>
+            Slain by <b>{describeHurt(recap.killedBy)}</b>
+          </>
+        ) : (
+          'You ended the run'
+        )}
+      </p>
+      <div className="recap-spells">
+        {rows.map((id) => {
+          const s = recap.spells[id];
+          const coil = id === 'constrict';
+          const style = {
+            '--spell': coil ? 'var(--coil)' : SPELL_UI[id].color,
+            '--share': `${total > 0 ? (s.damage / total) * 100 : 0}%`,
+          } as CSSProperties;
+          return (
+            <div key={id} className="recap-row" style={style} data-source={id}>
+              {coil ? <CoilIcon size={26} /> : <SigilIcon spell={id} size={26} />}
+              <span className="recap-name">
+                {coil ? 'Constrict' : SPELLS[id].name}
+                <span className="recap-sub">
+                  {s.kills} {s.kills === 1 ? 'kill' : 'kills'} · {s.casts} {coil ? (s.casts === 1 ? 'loop' : 'loops') : s.casts === 1 ? 'cast' : 'casts'}
+                </span>
+              </span>
+              <span className="recap-bar">
+                <i />
+              </span>
+              <span className="recap-num" title="Damage dealt">
+                {Math.round(s.damage).toLocaleString()}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {worst && (
+        <p className="recap-taken">
+          Hurt most by {describeHurt(worst.key)} · {worst.amount} damage
+        </p>
+      )}
+      {extras.length > 0 && <p className="recap-taken">{extras.join(' · ')}</p>}
+    </div>
+  );
+}
+
 export function GameOverPanel({
   result,
   outcome,
@@ -165,12 +244,21 @@ export function GameOverPanel({
               <span className="stat-value">{result.bossKills}</span>
             </div>
           )}
+          {(result.recap?.depth ?? 1) > 1 && (
+            <div className="stat">
+              <span className="stat-label">Depth</span>
+              <span className="stat-value">{result.recap!.depth}</span>
+            </div>
+          )}
         </div>
+        {result.recap && <RunRecapView recap={result.recap} />}
         <div className="reward">
           <span className="reward-gain">
             +{result.reward} <Shard scale={4} />
           </span>
-          <span className="reward-total">Arcane Shards · {totalCurrency} total</span>
+          <span className="reward-total">
+            Arcane Shards{(result.shardMult ?? 1) > 1 && ` · ×${result.shardMult!.toFixed(2)} from curses`} · {totalCurrency} total
+          </span>
         </div>
         <div className="menu-buttons row">
           <button className="btn primary" onClick={onRestart} disabled={!armed}>

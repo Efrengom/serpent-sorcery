@@ -2,6 +2,7 @@ import { ENEMIES, PIXEL_ART, SNAKE } from '../config';
 import { TAU } from '../math';
 import { bakeShape, gridSprite, type Edge, type Sprite } from './bake';
 import { PX } from './palette';
+import { WIZARDS, type WizardId } from '../wizards';
 
 const P = PIXEL_ART.worldPerPixel;
 /** Headings are quantized to 16 directions, the usual compromise for rotating pixel sprites. */
@@ -75,9 +76,12 @@ const HEAD_STYLE: Record<HeadKind, { radius: number; size: number; head: Ramp; h
  * A head wearing a floppy wizard hat, seen from above: the brim sits on the back of the head and
  * the cone trails behind, bending with `sway` (-1, 0, 1).
  */
-export function wizardHead(kind: HeadKind, dir: number, sway: number, variant: Variant = 'normal'): Sprite {
-  return cached(`head:${kind}:${dir}:${sway}:${variant}`, () => {
-    const st = HEAD_STYLE[kind];
+export function wizardHead(kind: HeadKind, dir: number, sway: number, variant: Variant = 'normal', wizard: WizardId = 'arcanist'): Sprite {
+  return cached(`head:${kind}:${dir}:${sway}:${variant}:${kind === 'player' ? wizard : ''}`, () => {
+    const base = HEAD_STYLE[kind];
+    const px = WIZARDS[wizard].look.px;
+    // The player's head wears the chosen wizard's colours.
+    const st = kind === 'player' ? { ...base, head: px.body, hat: px.hat, brim: px.brim, band: px.band, star: px.band } : base;
     const toLocal = local(dir);
     const R = st.radius / P;
     const u0 = -0.5 * R;
@@ -139,8 +143,10 @@ export function segmentOutline(r: number): Sprite {
   return cached(`segO:${r}`, () => bakeShape(2 * (r + 2), (x, y) => (x * x + y * y <= (r + 1.25) ** 2 ? 'o' : null), () => PX.ink, null));
 }
 
-export function segmentFill(r: number, style: SegmentStyle): Sprite {
-  return cached(`segF:${r}:${style}`, () =>
+export function segmentFill(r: number, style: SegmentStyle, wizard: WizardId = 'arcanist'): Sprite {
+  const own = style === 'body' || style === 'stripe';
+  const ramp: Ramp = own ? WIZARDS[wizard].look.px[style] : SEGMENT[style];
+  return cached(`segF:${r}:${style}:${own ? wizard : ''}`, () =>
     bakeShape(
       2 * (r + 2),
       (x, y) => {
@@ -148,7 +154,7 @@ export function segmentFill(r: number, style: SegmentStyle): Sprite {
         if (style === 'bossSpot' && d2 <= (r * 0.38) ** 2) return 'spot';
         return d2 <= (r + 0.25) ** 2 ? 'b' : null;
       },
-      (region, e) => (region === 'spot' ? shade(e, [PX.gold0, PX.gold1, PX.gold0]) : shade(e, SEGMENT[style])),
+      (region, e) => (region === 'spot' ? shade(e, [PX.gold0, PX.gold1, PX.gold0]) : shade(e, ramp)),
       null,
     ),
   );

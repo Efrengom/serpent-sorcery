@@ -1,6 +1,7 @@
 import { ENEMIES, PIXEL_ART, SNAKE } from '../config';
 import { clamp, mulberry32, TAU, type Vec } from '../math';
 import { PLAY_AREA } from '../snake';
+import { WIZARDS } from '../wizards';
 import type { Enemy, GestureView, World } from '../world';
 import { bayer, blit, createCanvas } from './bake';
 import type { PixelFloor } from './floor';
@@ -427,7 +428,177 @@ export function drawEnemies(ctx: CanvasRenderingContext2D, world: World): void {
         drawEnemySnake(ctx, e, world.time);
         break;
     }
+    drawEnemyStatus(ctx, e, world.time);
     if (e.kind !== 'chaser' && e.kind !== 'boss' && e.hp < e.maxHp) hpBar(ctx, e, e.x / P, (e.y - e.r) / P - 6);
+  }
+}
+
+/** Elite auras, the frosty dither on chilled foes and the ice block around frozen ones. */
+function drawEnemyStatus(ctx: CanvasRenderingContext2D, e: Enemy, time: number): void {
+  const x = e.x / P;
+  const y = e.y / P;
+  const R = e.r / P;
+  if (e.elite) {
+    const color = e.elite === 'shielded' ? PX.eliteShield : e.elite === 'swift' ? PX.eliteSwift : PX.eliteSplit;
+    if (e.elite === 'shielded' && e.shield > 0) {
+      const k = e.shield / e.shieldMax;
+      const hex: number[] = [];
+      for (let i = 0; i < 6; i++) {
+        const a0 = (i / 6) * TAU + time * 0.6;
+        const a1 = ((i + 1) / 6) * TAU + time * 0.6;
+        hex.push(
+          ...linePixels(x + Math.cos(a0) * R * 1.55, y + Math.sin(a0) * R * 1.55, x + Math.cos(a1) * R * 1.55, y + Math.sin(a1) * R * 1.55, (_, X, Y) => bayer(X, Y) < 0.35 + 0.65 * k),
+        );
+      }
+      pixels(ctx, hex, color);
+    } else if (e.elite === 'swift') {
+      const back = e.heading + Math.PI;
+      const c = Math.cos(back);
+      const sn = Math.sin(back);
+      const streak: number[] = [];
+      for (const side of [-1, 1]) {
+        const ox = -sn * side * R * 0.6;
+        const oy = c * side * R * 0.6;
+        const len = R * (1.2 + 0.4 * Math.sin(time * 20 + side));
+        streak.push(...linePixels(x + c * R * 1.2 + ox, y + sn * R * 1.2 + oy, x + c * (R * 1.2 + len) + ox, y + sn * (R * 1.2 + len) + oy));
+      }
+      pixels(ctx, streak, color);
+    } else if (e.elite === 'splitting') {
+      const spin = time * 3;
+      pixels(
+        ctx,
+        circlePixels(x, y, R * 1.45, (X, Y) => Math.floor((((Math.atan2(Y - y, X - x) + spin) % TAU) + TAU) / 0.45) % 2 === 0),
+        color,
+      );
+    }
+    // Crown marker so elites read at a glance.
+    const cx = Math.round(x);
+    const cy = Math.round(y - R - 6);
+    px(ctx, cx - 1, cy, color, 3, 1);
+    px(ctx, cx, cy - 1, color, 1, 3);
+    px(ctx, cx, cy, PX.white);
+  }
+  if (e.stunned > 0) {
+    // Held by Constrict: little stars circling overhead.
+    for (let i = 0; i < 3; i++) {
+      const a = time * 5 + (i / 3) * TAU;
+      px(ctx, x + Math.cos(a) * (R + 2), y - R - 3 + Math.sin(a) * 2, PX.crackHot);
+    }
+  }
+  if (e.frozen > 0) {
+    const r = Math.round(R) + 2;
+    const box = [
+      ...linePixels(x - r, y - r, x + r, y - r),
+      ...linePixels(x + r, y - r, x + r, y + r),
+      ...linePixels(x + r, y + r, x - r, y + r),
+      ...linePixels(x - r, y + r, x - r, y - r),
+    ];
+    const fill: number[] = [];
+    for (let yy = Math.round(y - r + 1); yy < y + r; yy++) for (let xx = Math.round(x - r + 1); xx < x + r; xx++) if (bayer(xx, yy) < 0.35) fill.push(xx, yy);
+    pixels(ctx, fill, PX.ice2);
+    pixels(ctx, box, PX.ice3);
+  } else if (e.chill > 0) {
+    const r = Math.round(R);
+    const frost: number[] = [];
+    for (let yy = -r; yy <= r; yy++) {
+      for (let xx = -r; xx <= r; xx++) {
+        const X = Math.round(x) + xx;
+        const Y = Math.round(y) + yy;
+        if (xx * xx + yy * yy <= r * r && bayer(X, Y) < 0.22) frost.push(X, Y);
+      }
+    }
+    pixels(ctx, frost, PX.ice3);
+  }
+}
+
+// ---------------------------------------------------------------- new spells
+
+/** Frost Fields: a dithered icy pool with a turning dashed rim and snowflake glints. */
+export function drawFrostFields(ctx: CanvasRenderingContext2D, world: World, t: number): void {
+  for (const f of world.frostFields) {
+    const grow = clamp(f.t / 0.25, 0, 1);
+    const k = grow * clamp((f.duration - f.t) / 0.5, 0, 1);
+    const x = Math.round(f.x / P);
+    const y = Math.round(f.y / P);
+    const R = Math.max(3, Math.round((f.radius * (0.85 + 0.15 * grow)) / P));
+    withArenaClip(ctx, () => {
+      ctx.beginPath();
+      ctx.arc(x, y, R, 0, TAU);
+      ctx.fillStyle = ditherPattern(ctx, PX.ice0, k > 0.5 ? 0.38 : 0.2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x, y, R - 2, 0, TAU);
+      ctx.arc(x, y, R * 0.7, 0, TAU, true);
+      ctx.fillStyle = ditherPattern(ctx, PX.ice1, 0.13);
+      ctx.fill();
+    });
+    const spin = t * 0.6 + f.id;
+    pixels(
+      ctx,
+      circlePixels(x, y, R, (X, Y) => inArena(X, Y) && Math.floor((((Math.atan2(Y - y, X - x) + spin) % TAU) + TAU) / 0.22) % 2 === 0 && bayer(X, Y) < k + 0.25),
+      PX.ice3,
+    );
+    pixels(ctx, circlePixels(x, y, R - 1, (X, Y) => inArena(X, Y) && bayer(X, Y) < 0.5 * k), PX.ice2);
+    if (k > 0.3) {
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * TAU + t * 0.25 + f.id;
+        const d = R * (i % 2 === 0 ? 0.72 : 0.42);
+        const fx = x + Math.cos(a) * d;
+        const fy = y + Math.sin(a) * d;
+        px(ctx, fx - 1, fy, PX.ice3, 3, 1);
+        px(ctx, fx, fy - 1, PX.ice3, 1, 3);
+      }
+    }
+  }
+}
+
+/** Arcane Ward: a dithered ring, a turning triangle, and one glint per remaining charge. */
+export function drawWard(ctx: CanvasRenderingContext2D, world: World, t: number): void {
+  const w = world.ward;
+  if (!w) return;
+  const s = world.snake;
+  if (w.duration - w.t < 1.5 && Math.floor(t * 10) % 2 === 0) return;
+  const x = s.x / P;
+  const y = s.y / P;
+  const R = (SNAKE.headRadius * 2.3) / P;
+  pixels(ctx, circlePixels(x, y, R, (X, Y) => bayer(X, Y) < 0.55 + 0.45 * w.flash), PX.ward1);
+  if (w.flash > 0.2) pixels(ctx, circlePixels(x, y, R + 2, (X, Y) => bayer(X, Y) < w.flash * 0.6), PX.ward2);
+  const rot = t * 1.6;
+  const tri: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const a0 = rot + (i / 3) * TAU;
+    const a1 = rot + ((i + 1) / 3) * TAU;
+    tri.push(...linePixels(x + Math.cos(a0) * R * 1.12, y + Math.sin(a0) * R * 1.12, x + Math.cos(a1) * R * 1.12, y + Math.sin(a1) * R * 1.12));
+  }
+  pixels(ctx, tri, PX.ward2);
+  for (let i = 0; i < w.charges; i++) {
+    const a = -rot * 0.7 + (i / Math.max(1, w.charges)) * TAU;
+    const cx = x + Math.cos(a) * R * 1.4;
+    const cy = y + Math.sin(a) * R * 1.4;
+    px(ctx, cx - 1, cy, PX.white, 3, 1);
+    px(ctx, cx, cy - 1, PX.white, 1, 3);
+  }
+}
+
+/** Arcane Lance beams: a white core inside cyan bands that dither away as the beam fades. */
+export function drawBeams(ctx: CanvasRenderingContext2D, world: World): void {
+  for (const b of world.beams) {
+    const k = b.life / b.maxLife;
+    const x0 = b.x0 / P;
+    const y0 = b.y0 / P;
+    const x1 = b.x1 / P;
+    const y1 = b.y1 / P;
+    const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+    const nx = -(y1 - y0) / len;
+    const ny = (x1 - x0) / len;
+    const half = Math.max(1, Math.round((b.width / P) * 0.5 * (0.6 + 0.4 * k)));
+    for (let o = half; o >= 1; o--) {
+      const color = o === half ? PX.cyan1 : PX.cyan2;
+      const keep = (_: number, X: number, Y: number) => inArena(X, Y) && bayer(X, Y) < k + 0.15;
+      pixels(ctx, linePixels(x0 + nx * o, y0 + ny * o, x1 + nx * o, y1 + ny * o, keep), color);
+      pixels(ctx, linePixels(x0 - nx * o, y0 - ny * o, x1 - nx * o, y1 - ny * o, keep), color);
+    }
+    pixels(ctx, linePixels(x0, y0, x1, y1, (_, X, Y) => inArena(X, Y)), k > 0.4 ? PX.white : PX.cyan3);
   }
 }
 
@@ -444,7 +615,7 @@ export function drawSerpent(ctx: CanvasRenderingContext2D, world: World, gesture
   for (let i = segs.length - 1; i >= 0; i--) blit(ctx, segmentOutline(radii[i]), segs[i].x / P, segs[i].y / P);
   for (let i = segs.length - 1; i >= 0; i--) {
     const style: SegmentStyle = hurt ? 'hurt' : i % 4 === 1 ? 'stripe' : 'body';
-    blit(ctx, segmentFill(radii[i], style), segs[i].x / P, segs[i].y / P);
+    blit(ctx, segmentFill(radii[i], style, world.wizard), segs[i].x / P, segs[i].y / P);
   }
 
   // Magic sparkles along the body grow with spell power.
@@ -462,7 +633,7 @@ export function drawSerpent(ctx: CanvasRenderingContext2D, world: World, gesture
   const sway = clamp(Math.round(Math.sin(s.anim * 3.2) * 1.3), -1, 1);
   const hx = s.x / P;
   const hy = s.y / P;
-  blit(ctx, wizardHead('player', directionIndex(s.heading), sway, hurt ? 'hurt' : 'normal'), hx, hy);
+  blit(ctx, wizardHead('player', directionIndex(s.heading), sway, hurt ? 'hurt' : 'normal', world.wizard), hx, hy);
 
   // Eyes: 2x2 whites with a pupil pixel that looks toward the recorded aim target.
   const R = SNAKE.headRadius / P;
@@ -682,4 +853,52 @@ export function buildVignette(w: number, h: number, level: number): HTMLCanvasEl
   }
   pixels(g, list, PX.hurt1);
   return c;
+}
+
+// ---------------------------------------------------------------- Constrict
+
+function loopPath(ctx: CanvasRenderingContext2D, pts: readonly Vec[]): void {
+  ctx.beginPath();
+  ctx.moveTo(Math.round(pts[0].x / P), Math.round(pts[0].y / P));
+  for (const p of pts) ctx.lineTo(Math.round(p.x / P), Math.round(p.y / P));
+  ctx.closePath();
+}
+
+/**
+ * Constrict visuals. Under the bodies (`hint` false): the dithered flash of a loop that just
+ * crushed foes. Over the serpent (`hint` true): the gap still to close around enclosed foes.
+ */
+export function drawCoilPixel(ctx: CanvasRenderingContext2D, world: World, t: number, hint: boolean): void {
+  const ramp = WIZARDS[world.wizard].look.px.body;
+  if (!hint) {
+    for (const c of world.constricts) {
+      const k = c.life / c.maxLife;
+      withArenaClip(ctx, () => {
+        loopPath(ctx, c.points);
+        ctx.fillStyle = ditherPattern(ctx, ramp[0], k > 0.5 ? 0.5 : 0.25);
+        ctx.fill();
+      });
+      const edge: number[] = [];
+      for (let i = 0; i < c.points.length; i++) {
+        const a = c.points[i];
+        const b = c.points[(i + 1) % c.points.length];
+        edge.push(...linePixels(a.x / P, a.y / P, b.x / P, b.y / P, (_, X, Y) => inArena(X, Y) && bayer(X, Y) < k + 0.2));
+      }
+      pixels(ctx, edge, PX.white);
+    }
+    return;
+  }
+  const coil = world.coil;
+  if (!coil || coil.closed) return;
+  const s = world.snake;
+  const seg = s.segments[coil.index];
+  if (!seg) return;
+  const loop = [{ x: s.x, y: s.y }, ...s.segments.slice(0, coil.index + 1)];
+  withArenaClip(ctx, () => {
+    loopPath(ctx, loop);
+    ctx.fillStyle = ditherPattern(ctx, ramp[0], 0.13);
+    ctx.fill();
+  });
+  const off = Math.floor(t * 20);
+  pixels(ctx, linePixels(s.x / P, s.y / P, seg.x / P, seg.y / P, (i) => (i + off) % 4 < 2), Math.floor(t * 10) % 2 === 0 ? PX.white : ramp[1]);
 }

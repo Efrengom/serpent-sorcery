@@ -161,6 +161,92 @@ describe('gesture recognition: V shapes', () => {
   });
 });
 
+/** Triangle corners around (cx, cy), rotated, closed back to the start. */
+function triangle(cx: number, cy: number, r: number, rotDeg: number, dir: 1 | -1 = 1): Pt[] {
+  const pts = [0, 1, 2].map((i) => {
+    const a = ((rotDeg + dir * i * 120) * Math.PI) / 180;
+    return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+  });
+  return [...pts, pts[0]];
+}
+
+describe('gesture recognition: triangles', () => {
+  it('recognizes triangles at any rotation, drawn either way round', () => {
+    for (let rot = 0; rot < 360; rot += 30) {
+      for (const dir of [1, -1] as const) {
+        const pts = stroke(polyline(triangle(300, 300, 90, rot, dir)), { seed: rot + (dir > 0 ? 1 : 2), samples: 80 });
+        expect(recognize(pts).kind, `triangle rot=${rot} dir=${dir}`).toBe('triangle');
+      }
+    }
+  });
+
+  it('accepts lopsided triangles, a start partway along a side, and a small overlap', () => {
+    const lopsided = [
+      { x: 0, y: 0 },
+      { x: 200, y: 20 },
+      { x: 60, y: 120 },
+      { x: 0, y: 0 },
+    ];
+    expect(recognize(stroke(polyline(lopsided), { seed: 71, samples: 80 })).kind).toBe('triangle');
+    const midSide = [
+      { x: 50, y: 0 },
+      { x: 100, y: 0 },
+      { x: 50, y: 90 },
+      { x: 0, y: 0 },
+      { x: 55, y: 0 },
+    ];
+    expect(recognize(stroke(polyline(midSide), { seed: 72, samples: 80 })).kind).toBe('triangle');
+    // Ends 30% of the way along the first side again.
+    const corners = triangle(0, 0, 70, -90);
+    const overlap = [...corners, { x: corners[0].x + (corners[1].x - corners[0].x) * 0.3, y: corners[0].y + (corners[1].y - corners[0].y) * 0.3 }];
+    expect(recognize(stroke(polyline(overlap), { seed: 73, samples: 80 })).kind).toBe('triangle');
+  });
+});
+
+describe('gesture recognition: zigzags', () => {
+  it('recognizes Z, N, W and longer saw-tooth zigzags in any direction', () => {
+    const z = [
+      { x: 0, y: 0 },
+      { x: 120, y: 0 },
+      { x: 0, y: 110 },
+      { x: 120, y: 110 },
+    ];
+    const n = [
+      { x: 0, y: 120 },
+      { x: 0, y: 0 },
+      { x: 100, y: 120 },
+      { x: 100, y: 0 },
+    ];
+    const w = [
+      { x: 0, y: 0 },
+      { x: 40, y: 100 },
+      { x: 80, y: 20 },
+      { x: 120, y: 100 },
+      { x: 160, y: 0 },
+    ];
+    const saw = [
+      { x: 0, y: 0 },
+      { x: 40, y: 80 },
+      { x: 80, y: 0 },
+      { x: 120, y: 80 },
+      { x: 160, y: 0 },
+      { x: 200, y: 80 },
+    ];
+    [z, n, w, saw].forEach((shape, i) => {
+      for (const rot of [0, 90, 200]) {
+        const a = (rot * Math.PI) / 180;
+        const turned = shape.map((p) => ({ x: p.x * Math.cos(a) - p.y * Math.sin(a), y: p.x * Math.sin(a) + p.y * Math.cos(a) }));
+        expect(recognize(stroke(polyline(turned), { seed: 80 + i * 7 + rot, samples: 90 })).kind, `zigzag ${i} rot=${rot}`).toBe('zigzag');
+      }
+    });
+  });
+
+  it('also accepts a quick zigzag whose corners came out rounded', () => {
+    const wave = stroke((t) => ({ x: t * 240, y: Math.sin(t * Math.PI * 4) * 40 }), { seed: 56, samples: 90 });
+    expect(recognize(wave).kind).toBe('zigzag');
+  });
+});
+
 describe('gesture recognition: rejections', () => {
   it('treats clicks and tiny drags as tiny, never as a sigil', () => {
     expect(recognize([]).reason).toBe('tiny');
@@ -170,18 +256,18 @@ describe('gesture recognition: rejections', () => {
     expect(recognize(stroke(circle(0, 0, 8, 0, 1, 1), { seed: 42 })).kind).toBeNull();
   });
 
-  it('rejects scribbles, zigzags, spirals and upside-down Vs', () => {
-    const zigzag = stroke(
+  it('rejects scribbles, squares, spirals, S-curves and upside-down Vs', () => {
+    const square = stroke(
       polyline([
         { x: 0, y: 0 },
-        { x: 40, y: 80 },
-        { x: 80, y: 0 },
-        { x: 120, y: 80 },
-        { x: 160, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+        { x: 0, y: 100 },
+        { x: 0, y: 0 },
       ]),
-      { seed: 51 },
+      { seed: 51, samples: 90 },
     );
-    expect(recognize(zigzag).kind).toBeNull();
+    expect(recognize(square).kind).toBeNull();
 
     const rng = mulberry32(52);
     const walk: Pt[] = [{ x: 200, y: 200 }];

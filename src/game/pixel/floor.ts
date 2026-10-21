@@ -26,15 +26,92 @@ const GLYPHS = [
   ['100', '110', '101', '110', '100'],
 ];
 
-const LIGHTER: Record<string, string> = {
-  [PX.stone0]: PX.stone1,
-  [PX.stone1]: PX.stone2,
-  [PX.stone2]: PX.stone3,
-  [PX.stone3]: PX.stoneHi,
+/** The themed colours of one area's floor and walls. */
+interface FloorPalette {
+  grout: string;
+  void: string;
+  stone0: string;
+  stone1: string;
+  stone2: string;
+  stone3: string;
+  stoneHi: string;
+  wall0: string;
+  wall1: string;
+  wall2: string;
+  wallHi: string;
+  moss0: string;
+  moss1: string;
+  rune: string;
+  runeHi: string;
+  mush: string;
+  mushDim: string;
+  torchGlow: string;
+  torchGlow2: string;
+  /** Glowing lava in the cracks (the Ember Depths), or null for plain grout. */
+  lava: string | null;
+  lavaHot: string | null;
+}
+
+const RUINS: FloorPalette = {
+  grout: PX.grout,
+  void: PX.void,
+  stone0: PX.stone0,
+  stone1: PX.stone1,
+  stone2: PX.stone2,
+  stone3: PX.stone3,
+  stoneHi: PX.stoneHi,
+  wall0: PX.wall0,
+  wall1: PX.wall1,
+  wall2: PX.wall2,
+  wallHi: PX.wallHi,
+  moss0: PX.moss0,
+  moss1: PX.moss1,
+  rune: PX.rune,
+  runeHi: PX.runeHi,
+  mush: PX.mush,
+  mushDim: PX.mushDim,
+  torchGlow: PX.torchGlow,
+  torchGlow2: PX.torchGlow2,
+  lava: null,
+  lavaHot: null,
 };
 
-/** Builds the whole arena floor + walls as one low-res image, pixel by pixel. */
-export function buildPixelFloor(): PixelFloor {
+/** The Ember Depths: scorched red-brown stone, ash instead of moss, embers and lava cracks. */
+const EMBER: FloorPalette = {
+  grout: '#1a0806',
+  void: '#120504',
+  stone0: '#2a0f0a',
+  stone1: '#3a1610',
+  stone2: '#471c14',
+  stone3: '#55241a',
+  stoneHi: '#6e3524',
+  wall0: '#1f0906',
+  wall1: '#3a150e',
+  wall2: '#552417',
+  wallHi: '#8a4228',
+  moss0: '#2e1410',
+  moss1: '#45201a',
+  rune: '#6a2a16',
+  runeHi: '#c0522a',
+  mush: '#ffb35c',
+  mushDim: '#a8441a',
+  torchGlow: '#4a1c12',
+  torchGlow2: '#622616',
+  lava: '#d8461c',
+  lavaHot: '#ffb35c',
+};
+
+const PALETTES = [RUINS, EMBER];
+
+/** Builds the whole arena floor + walls for an area as one low-res image, pixel by pixel. */
+export function buildPixelFloor(area = 0): PixelFloor {
+  const C = PALETTES[area] ?? RUINS;
+  const LIGHTER: Record<string, string> = {
+    [C.stone0]: C.stone1,
+    [C.stone1]: C.stone2,
+    [C.stone2]: C.stone3,
+    [C.stone3]: C.stoneHi,
+  };
   const P = PIXEL_ART.worldPerPixel;
   const LW = Math.round(ARENA.width / P);
   const LH = Math.round(ARENA.height / P);
@@ -100,43 +177,43 @@ export function buildPixelFloor(): PixelFloor {
 
   // --- Flagstones: bevelled slabs in a running bond, with cracks, chips and speckle.
   const T = 16;
-  const shades = [PX.stone1, PX.stone2, PX.stone2, PX.stone3];
+  const shades = [C.stone1, C.stone2, C.stone2, C.stone3];
   for (let row = 0; row * T < LH; row++) {
     const off = (row % 2) * (T / 2);
     for (let col = -1; col * T - off < LW; col++) {
       const x0 = col * T + off;
       const y0 = row * T;
-      const base = rng() < 0.08 ? PX.stone0 : shades[Math.floor(rng() * shades.length)];
+      const base = rng() < 0.08 ? C.stone0 : shades[Math.floor(rng() * shades.length)];
       const light = LIGHTER[base] ?? base;
       for (let dy = 0; dy < T; dy++) {
         for (let dx = 0; dx < T; dx++) {
           const x = x0 + dx;
           const y = y0 + dy;
-          if (dx === 0 || dy === 0) set(x, y, PX.grout, Kind.Grout);
+          if (dx === 0 || dy === 0) set(x, y, C.grout, Kind.Grout);
           else if (dx === 1 || dy === 1) set(x, y, light, Kind.Stone);
-          else if (dx === T - 1 || dy === T - 1) set(x, y, PX.stone0, Kind.Stone);
+          else if (dx === T - 1 || dy === T - 1) set(x, y, C.stone0, Kind.Stone);
           else {
             const n = rng();
-            set(x, y, n < 0.04 ? light : n < 0.08 ? PX.stone0 : base, Kind.Stone);
+            set(x, y, n < 0.04 ? light : n < 0.08 ? C.stone0 : base, Kind.Stone);
           }
         }
       }
-      if (rng() < 0.15) {
+      if (rng() < (C.lava ? 0.3 : 0.15)) {
         let cx = x0 + 4 + Math.floor(rng() * 8);
         let cy = y0 + 4 + Math.floor(rng() * 8);
         const steps = 4 + Math.floor(rng() * 5);
         const bias = rng() < 0.5 ? 1 : -1;
         for (let s = 0; s < steps; s++) {
-          set(cx, cy, PX.grout, Kind.Grout);
+          set(cx, cy, C.lava && s % 3 === 1 ? (C.lavaHot ?? C.lava) : (C.lava ?? C.grout), Kind.Grout);
           cx += rng() < 0.6 ? bias : 0;
           cy += rng() < 0.6 ? 1 : 0;
         }
       }
       if (rng() < 0.12) {
         // chipped corner
-        set(x0 + 1, y0 + 1, PX.grout, Kind.Grout);
-        set(x0 + 2, y0 + 1, PX.grout, Kind.Grout);
-        set(x0 + 1, y0 + 2, PX.grout, Kind.Grout);
+        set(x0 + 1, y0 + 1, C.grout, Kind.Grout);
+        set(x0 + 2, y0 + 1, C.grout, Kind.Grout);
+        set(x0 + 1, y0 + 2, C.grout, Kind.Grout);
       }
     }
   }
@@ -158,12 +235,12 @@ export function buildPixelFloor(): PixelFloor {
         const intensity = 1 - d / r;
         const k = kindAt(x, y);
         if (k === Kind.Grout) {
-          if (rng() < intensity * 1.3) set(x, y, PX.moss1);
+          if (rng() < intensity * 1.3) set(x, y, C.moss1);
         } else if (k === Kind.Stone) {
           // Only stone right next to a grout line gets moss, so it hugs the cracks.
           const touchesGrout =
             kindAt(x - 1, y) === Kind.Grout || kindAt(x + 1, y) === Kind.Grout || kindAt(x, y - 1) === Kind.Grout || kindAt(x, y + 1) === Kind.Grout;
-          if (touchesGrout && rng() < intensity * 0.55) set(x, y, PX.moss0);
+          if (touchesGrout && rng() < intensity * 0.55) set(x, y, C.moss0);
         }
       }
     }
@@ -172,14 +249,14 @@ export function buildPixelFloor(): PixelFloor {
   // --- Ancient summoning circle with runes.
   const cx = LW / 2;
   const cy = LH / 2;
-  circle(cx, cy, Math.round(210 / P), PX.rune);
-  circle(cx, cy, Math.round(190 / P), PX.rune);
-  circle(cx, cy, Math.round(120 / P), PX.rune);
+  circle(cx, cy, Math.round(210 / P), C.rune);
+  circle(cx, cy, Math.round(190 / P), C.rune);
+  circle(cx, cy, Math.round(120 / P), C.rune);
   const hr = 190 / P;
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
     const b = ((i + 2) / 6) * Math.PI * 2 - Math.PI / 2;
-    line(cx + Math.cos(a) * hr, cy + Math.sin(a) * hr, cx + Math.cos(b) * hr, cy + Math.sin(b) * hr, PX.rune);
+    line(cx + Math.cos(a) * hr, cy + Math.sin(a) * hr, cx + Math.cos(b) * hr, cy + Math.sin(b) * hr, C.rune);
   }
   const glyphR = 200 / P;
   for (let i = 0; i < 16; i++) {
@@ -187,7 +264,7 @@ export function buildPixelFloor(): PixelFloor {
     const gx = Math.round(cx + Math.cos(a) * glyphR) - 1;
     const gy = Math.round(cy + Math.sin(a) * glyphR) - 2;
     const glyph = GLYPHS[i % GLYPHS.length];
-    for (let y = 0; y < 5; y++) for (let x = 0; x < 3; x++) if (glyph[y][x] === '1') set(gx + x, gy + y, PX.runeHi);
+    for (let y = 0; y < 5; y++) for (let x = 0; x < 3; x++) if (glyph[y][x] === '1') set(gx + x, gy + y, C.runeHi);
   }
 
   // --- Rubble pebbles and glowing mushrooms near the walls.
@@ -197,18 +274,18 @@ export function buildPixelFloor(): PixelFloor {
   };
   for (let i = 0; i < 70; i++) {
     const p = nearEdge();
-    set(p.x, p.y, PX.stone0);
-    set(p.x + 1, p.y, PX.stone0);
-    set(p.x, p.y - 1, PX.stoneHi);
-    if (rng() < 0.4) set(p.x + 1, p.y - 1, PX.stone3);
+    set(p.x, p.y, C.stone0);
+    set(p.x + 1, p.y, C.stone0);
+    set(p.x, p.y - 1, C.stoneHi);
+    if (rng() < 0.4) set(p.x + 1, p.y - 1, C.stone3);
   }
   for (let i = 0; i < 30; i++) {
     const p = nearEdge();
-    set(p.x, p.y, PX.mush);
-    set(p.x, p.y + 1, PX.mushDim);
+    set(p.x, p.y, C.mush);
+    set(p.x, p.y + 1, C.mushDim);
     if (rng() < 0.6) {
-      set(p.x + 2, p.y + 1, PX.mushDim);
-      set(p.x + 2, p.y + 2, PX.moss1);
+      set(p.x + 2, p.y + 1, C.mushDim);
+      set(p.x + 2, p.y + 2, C.moss1);
     }
   }
 
@@ -218,7 +295,7 @@ export function buildPixelFloor(): PixelFloor {
       const nx = (x - cx) / cx;
       const ny = (y - cy) / cy;
       const v = Math.max(0, Math.hypot(nx * 0.9, ny) - 0.82) / 0.5;
-      if (v > 0 && bayer(x, y) < v * 0.45) set(x, y, kindAt(x, y) === Kind.Grout ? PX.void : PX.stone0);
+      if (v > 0 && bayer(x, y) < v * 0.45) set(x, y, kindAt(x, y) === Kind.Grout ? C.void : C.stone0);
     }
   }
 
@@ -239,9 +316,9 @@ export function buildPixelFloor(): PixelFloor {
         if (d > R) continue;
         const k = 1 - d / R;
         const th = bayer(x, y);
-        if (k > 0.62) set(x, y, k > 0.8 ? PX.torchGlow2 : th < (k - 0.62) * 5 ? PX.torchGlow2 : PX.torchGlow);
-        else if (k > 0.35) set(x, y, PX.torchGlow);
-        else if (th < (k / 0.35) * 0.5) set(x, y, PX.torchGlow);
+        if (k > 0.62) set(x, y, k > 0.8 ? C.torchGlow2 : th < (k - 0.62) * 5 ? C.torchGlow2 : C.torchGlow);
+        else if (k > 0.35) set(x, y, C.torchGlow);
+        else if (th < (k / 0.35) * 0.5) set(x, y, C.torchGlow);
       }
     }
   }
@@ -254,10 +331,10 @@ export function buildPixelFloor(): PixelFloor {
     const local = across % 5;
     const shift = course % 2 === 0 ? 0 : 6;
     const pos = (along + shift) % 12;
-    if (local === 0 || pos === 0) return PX.wall0;
-    if (local === 1) return PX.wall2;
-    if (pos === 11 || local === 4) return PX.wall0;
-    return PX.wall1;
+    if (local === 0 || pos === 0) return C.wall0;
+    if (local === 1) return C.wall2;
+    if (pos === 11 || local === 4) return C.wall0;
+    return C.wall1;
   };
   for (let y = 0; y < LH; y++) {
     for (let x = 0; x < LW; x++) {
@@ -273,17 +350,17 @@ export function buildPixelFloor(): PixelFloor {
     }
   }
   for (let x = WB - 1; x <= LW - WB; x++) {
-    set(x, WB - 1, PX.wallHi, Kind.Wall);
+    set(x, WB - 1, C.wallHi, Kind.Wall);
     set(x, WB, PX.ink);
     if (bayer(x, WB + 1) < 0.5) set(x, WB + 1, PX.ink);
-    set(x, LH - WB, PX.wallHi, Kind.Wall);
+    set(x, LH - WB, C.wallHi, Kind.Wall);
     set(x, LH - WB - 1, PX.ink);
   }
   for (let y = WB - 1; y <= LH - WB; y++) {
-    set(WB - 1, y, PX.wallHi, Kind.Wall);
+    set(WB - 1, y, C.wallHi, Kind.Wall);
     set(WB, y, PX.ink);
     if (bayer(WB + 1, y) < 0.5) set(WB + 1, y, PX.ink);
-    set(LW - WB, y, PX.wallHi, Kind.Wall);
+    set(LW - WB, y, C.wallHi, Kind.Wall);
     set(LW - WB - 1, y, PX.ink);
   }
 
@@ -305,11 +382,11 @@ export function buildPixelFloor(): PixelFloor {
       for (let x = Math.floor(px - PR - 1); x <= px + PR + 1; x++) {
         if (inDisc(x, y)) {
           const d = Math.hypot(x - px, y - py);
-          let col: string = PX.wall2;
-          if (!inDisc(x - 1, y - 1)) col = PX.wallHi;
-          else if (!inDisc(x + 1, y + 1)) col = PX.wall0;
-          else if (Math.abs(d - 7) < 0.6) col = PX.wall1;
-          else if (d < 3) col = PX.wall1;
+          let col: string = C.wall2;
+          if (!inDisc(x - 1, y - 1)) col = C.wallHi;
+          else if (!inDisc(x + 1, y + 1)) col = C.wall0;
+          else if (Math.abs(d - 7) < 0.6) col = C.wall1;
+          else if (d < 3) col = C.wall1;
           set(x, y, col, Kind.Wall);
         } else if (inDisc(x - 1, y) || inDisc(x + 1, y) || inDisc(x, y - 1) || inDisc(x, y + 1)) {
           set(x, y, PX.ink, Kind.Wall);
@@ -321,7 +398,7 @@ export function buildPixelFloor(): PixelFloor {
   // --- Torch brackets (flames are drawn per frame).
   for (const t of torches) {
     set(t.x - 1, t.y + 1, PX.ink);
-    set(t.x, t.y + 1, PX.wall0);
+    set(t.x, t.y + 1, C.wall0);
     set(t.x + 1, t.y + 1, PX.ink);
     set(t.x, t.y + 2, PX.ink);
   }

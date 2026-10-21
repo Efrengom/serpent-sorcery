@@ -1,8 +1,11 @@
-import { ENEMIES, PROGRESSION, SNAKE } from './config';
-import { addShake, burst, floater } from './effects';
-import { dist2, TAU } from './math';
+import { DEPTH, ELITE, ENEMIES, EVOLUTIONS, HIT_STOP, PROGRESSION, SNAKE, SPELLS } from './config';
+import { addShake, burst, floater, hitStop } from './effects';
+import { spawnEnemy } from './enemies';
+import { clamp, dist2, TAU } from './math';
 import { COLORS } from './palette';
+import { hurtKey, type DamageSource, type HurtSource } from './recap';
 import { PLAY_AREA } from './snake';
+import { frostAt } from './spells';
 import type { Crystal, Enemy, World } from './world';
 
 /** Circle test against an enemy's head and (for snakes) body segments. */
@@ -31,6 +34,7 @@ export function damageEnemy(
   world: World,
   e: Enemy,
   amount: number,
+  spell: DamageSource,
   color: string,
   knockX = 0,
   knockY = 0,
@@ -39,6 +43,26 @@ export function damageEnemy(
 ): void {
   if (e.dead) return;
   if (e.kind === 'brute' && e.state === 'recover') amount *= ENEMIES.brute.stunnedVulnerability;
+  // Glacier: frozen-field foes are brittle.
+  if (world.evolved.frost && e.chill > 0) amount *= EVOLUTIONS.frost.brittle;
+  const stats = world.recap.spells[spell];
+  if (e.shield > 0) {
+    // A shielded elite's barrier soaks damage (and knockback) until it breaks.
+    const soaked = Math.min(e.shield, amount);
+    e.shield -= soaked;
+    amount -= soaked;
+    stats.damage += soaked;
+    e.flash = 0.08;
+    burst(world, hitX, hitY, COLORS.eliteShield, 4, 160, { kind: 'glow', size: 3, life: 0.25 });
+    if (e.shield <= 0) {
+      burst(world, e.x, e.y, COLORS.eliteShield, 18, 260, { kind: 'shard', size: 3, life: 0.5 });
+      floater(world, e.x, e.y - e.r - 10, 'Shield broken', COLORS.eliteShield, { size: 14, life: 0.8 });
+    }
+    world.sfx('shieldHit');
+    if (amount <= 0) return;
+  }
+  stats.damage += Math.min(amount, Math.max(0, e.hp));
+  if (e.hp > 0 && e.hp - amount <= 0) stats.kills++;
   e.hp -= amount;
   e.flash = 0.12;
   const knockScale = e.kind === 'boss' ? 0.05 : e.kind === 'brute' ? 0.4 : e.kind === 'rival' ? 0.3 : 1;
@@ -66,16 +90,55 @@ export function killEnemy(world: World, e: Enemy): void {
   burst(world, e.x, e.y, '#ffffff', isBoss ? 20 : 4, 160, { kind: 'glow', size: isBoss ? 14 : 7, life: 0.35 });
   for (const s of e.segments) burst(world, s.x, s.y, bodyColor, 3, 160, { size: 3, life: 0.5 });
   dropCrystals(world, e.x, e.y, e.xp, isBoss ? 30 : 0);
+  if (e.elite) world.recap.elitesSlain++;
+  if (e.elite === 'splitting') splitEnemy(world, e);
   if (isBoss) {
     world.bossKills++;
     world.boss = null;
-    world.banner = { text: 'The Archmage falls!', sub: 'Its hoard of crystals is yours', t: 0, max: 3.2, color: COLORS.nova };
+    descend(world);
     addShake(world, 0.8);
+    hitStop(world, HIT_STOP.bossKill, true);
+    world.slowMo = HIT_STOP.bossSlowMo;
     world.sfx('bossDie');
   } else {
-    addShake(world, e.kind === 'brute' || e.kind === 'rival' ? 0.12 : 0.04);
+    const heavy = e.kind === 'brute' || e.kind === 'rival';
+    addShake(world, heavy ? 0.12 : 0.04);
+    if (heavy) hitStop(world, HIT_STOP.heavyKill);
     world.sfx('kill');
   }
+}
+
+/**
+ * Defeating the boss opens the next depth: the arena turns into the Ember Depths after the
+ * first, and every depth is harder with more elites (see enemies.ts).
+ */
+function descend(world: World): void {
+  world.depth++;
+  world.recap.depth = Math.max(world.recap.depth, world.depth);
+  const firstTime = world.area === 0;
+  world.area = Math.min(DEPTH.areas - 1, world.depth - 1);
+  world.banner = firstTime
+    ? { text: 'The Archmage falls!', sub: `The floor cracks open: Depth ${world.depth}, the Ember Depths`, t: 0, max: 3.6, color: COLORS.nova }
+    : { text: 'The Archmage falls!', sub: `Deeper still: Depth ${world.depth}`, t: 0, max: 3.4, color: COLORS.nova };
+  world.sfx('descend');
+}
+
+/** A splitting elite bursts into two smaller copies of itself. */
+function splitEnemy(world: World, e: Enemy): void {
+  for (const side of [-1, 1]) {
+    const a = e.heading + (side * Math.PI) / 2;
+    const x = clamp(e.x + Math.cos(a) * e.r, PLAY_AREA.minX + 20, PLAY_AREA.maxX - 20);
+    const y = clamp(e.y + Math.sin(a) * e.r, PLAY_AREA.minY + 20, PLAY_AREA.maxY - 20);
+    const f = spawnEnemy(world, e.kind, x, y);
+    f.fragment = true;
+    f.r = e.r * ELITE.fragmentScale;
+    f.maxHp = f.hp = (e.maxHp / ELITE.hpMult) * ELITE.fragmentHp;
+    f.xp = Math.max(1, Math.round(e.xp / ELITE.xpMult / 2));
+    f.kx = Math.cos(a) * 260;
+    f.ky = Math.sin(a) * 260;
+  }
+  burst(world, e.x, e.y, COLORS.eliteSplit, 16, 240, { kind: 'glow', size: 4, life: 0.4 });
+  world.sfx('split');
 }
 
 export function dropCrystals(world: World, x: number, y: number, totalXp: number, minPieces = 0): void {
@@ -109,13 +172,30 @@ function spawnCrystal(world: World, c: Crystal): void {
   best.value += c.value;
 }
 
-export function hurtPlayer(world: World, amount: number): boolean {
+export function hurtPlayer(world: World, amount: number, source: HurtSource): boolean {
   if (world.invuln > 0 || world.hp <= 0) return false;
+  const ward = world.ward;
+  if (ward && ward.charges > 0 && source.kind !== 'wall') {
+    // Arcane Ward absorbs the hit; its pulse goes off on the next step (spells.updateWard).
+    ward.charges--;
+    ward.pulses++;
+    ward.flash = 1;
+    world.invuln = SPELLS.ward.absorbInvuln;
+    world.recap.blocked++;
+    addShake(world, 0.2);
+    floater(world, world.snake.x, world.snake.y - 30, 'Blocked', COLORS.ward, { size: 18, life: 0.7 });
+    world.sfx('wardHit');
+    return false;
+  }
   const dmg = Math.max(1, Math.round(amount));
+  const key = hurtKey(source);
+  world.recap.taken[key] = (world.recap.taken[key] ?? 0) + Math.min(dmg, world.hp);
   world.hp = Math.max(0, world.hp - dmg);
+  if (world.hp <= 0) world.recap.killedBy = key;
   world.invuln = SNAKE.invulnTime;
   world.hurtFlash = 1;
   addShake(world, 0.45);
+  hitStop(world, HIT_STOP.hurt, true);
   const s = world.snake;
   burst(world, s.x, s.y, COLORS.hurt, 16, 260, { size: 3.5, life: 0.45 });
   floater(world, s.x, s.y - 26, `-${dmg}`, COLORS.hurt, { size: 20, life: 0.8 });
@@ -174,8 +254,10 @@ export function updateShots(world: World, dt: number): void {
   const list = world.shots;
   for (let i = list.length - 1; i >= 0; i--) {
     const p = list[i];
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
+    // Hostile shots crawl through Frost Fields.
+    const slow = frostAt(world, p.x, p.y) ? SPELLS.frost.shotSlow : 1;
+    p.x += p.vx * dt * slow;
+    p.y += p.vy * dt * slow;
     p.life -= dt;
     p.spin += dt * 6;
     let remove = p.life <= 0;
@@ -185,7 +267,8 @@ export function updateShots(world: World, dt: number): void {
     } else {
       const rr = SNAKE.hitRadius + p.r * 0.75;
       if (dist2(p.x, p.y, s.x, s.y) < rr * rr) {
-        if (hurtPlayer(world, p.damage) || world.invuln > 0) {
+        const source: HurtSource = { kind: p.source, attack: p.source === 'boss' ? 'volley' : 'shot' };
+        if (hurtPlayer(world, p.damage, source) || world.invuln > 0) {
           burst(world, p.x, p.y, COLORS.hostile, 8, 160, { size: 3, life: 0.3 });
           remove = true;
         }
@@ -207,6 +290,12 @@ export function contactDamage(e: Enemy): number {
   return e.contact;
 }
 
+function contactSource(e: Enemy): HurtSource {
+  if (e.state === 'attack' && (e.kind === 'brute' || e.kind === 'boss')) return { kind: e.kind, attack: 'charge' };
+  if (e.state === 'attack' && e.kind === 'rival') return { kind: e.kind, attack: 'lunge' };
+  return { kind: e.kind, attack: 'bite' };
+}
+
 /** Enemy heads biting the player's head. Body segments are harmless ("only heads bite"). */
 export function updateContacts(world: World): void {
   const s = world.snake;
@@ -214,7 +303,7 @@ export function updateContacts(world: World): void {
     if (e.dead) continue;
     const rr = SNAKE.hitRadius + e.r * 0.8;
     if (dist2(e.x, e.y, s.x, s.y) < rr * rr) {
-      if (hurtPlayer(world, contactDamage(e))) {
+      if (hurtPlayer(world, contactDamage(e), contactSource(e))) {
         const d = Math.sqrt(dist2(e.x, e.y, s.x, s.y)) || 1;
         const push = e.kind === 'boss' ? 0 : 260;
         e.kx += ((e.x - s.x) / d) * push;

@@ -66,18 +66,99 @@ function randomVee(rng: () => number) {
   };
 }
 
+/** Constant-speed path through a list of points. */
+function polyPath(points: Pt[]): (t: number) => Pt {
+  const lens: number[] = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const l = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    lens.push(l);
+    total += l;
+  }
+  return (t) => {
+    let d = Math.max(0, Math.min(1, t)) * total;
+    for (let i = 0; i < lens.length; i++) {
+      if (d <= lens[i] || i === lens.length - 1) {
+        const u = lens[i] === 0 ? 0 : Math.min(1, d / lens[i]);
+        return { x: points[i].x + (points[i + 1].x - points[i].x) * u, y: points[i].y + (points[i + 1].y - points[i].y) * u };
+      }
+      d -= lens[i];
+    }
+    return points[points.length - 1];
+  };
+}
+
+const rotate = (p: Pt, a: number, c: Pt): Pt => ({
+  x: c.x + (p.x - c.x) * Math.cos(a) - (p.y - c.y) * Math.sin(a),
+  y: c.y + (p.x - c.x) * Math.sin(a) + (p.y - c.y) * Math.cos(a),
+});
+
+/**
+ * Triangles of varied shape (no angle under ~35°), any rotation, either direction, started at a
+ * corner or partway along a side, ending with a small gap or overlap.
+ */
+function randomTriangle(rng: () => number) {
+  const size = 60 + rng() * 140;
+  const c = { x: 300, y: 300 };
+  // Corner angles around the centre, jittered from an equilateral layout.
+  const base = rng() * Math.PI * 2;
+  const verts = [0, 1, 2].map((i) => {
+    const a = base + (i * Math.PI * 2) / 3 + (rng() - 0.5) * 0.5;
+    const r = size * (0.85 + rng() * 0.3);
+    return { x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r };
+  });
+  if (rng() < 0.5) verts.reverse();
+  const loop = [...verts, verts[0]];
+  // Start at a corner or partway along the first side.
+  const startU = rng() < 0.5 ? 0 : 0.2 + rng() * 0.6;
+  const s = { x: loop[0].x + (loop[1].x - loop[0].x) * startU, y: loop[0].y + (loop[1].y - loop[0].y) * startU };
+  const pts = [s, ...loop.slice(1)];
+  if (startU > 0) pts.push(s);
+  // Small overlap past the start, or a small gap before it.
+  const end = pts[pts.length - 1];
+  const prev = pts[pts.length - 2];
+  const nextDir = startU > 0 ? { x: loop[1].x - s.x, y: loop[1].y - s.y } : { x: loop[1].x - loop[0].x, y: loop[1].y - loop[0].y };
+  const nl = Math.hypot(nextDir.x, nextDir.y) || 1;
+  const o = (rng() - 0.4) * 0.12 * size;
+  if (o > 0) pts.push({ x: end.x + (nextDir.x / nl) * o, y: end.y + (nextDir.y / nl) * o });
+  else pts[pts.length - 1] = { x: end.x + (prev.x - end.x) * (-o / Math.hypot(prev.x - end.x, prev.y - end.y)), y: end.y + (prev.y - end.y) * (-o / Math.hypot(prev.x - end.x, prev.y - end.y)) };
+  return { size: size * 1.6, path: polyPath(pts) };
+}
+
+/** Zigzags of 3 to 5 legs (Z, N, W, saw-tooth), any rotation, legs of uneven length and steepness. */
+function randomZigzag(rng: () => number) {
+  const legs = 3 + Math.floor(rng() * 3);
+  const leg = 45 + rng() * 80;
+  const steep = ((35 + rng() * 35) * Math.PI) / 180;
+  const rot = rng() * Math.PI * 2;
+  const c = { x: 300, y: 300 };
+  const pts: Pt[] = [{ ...c }];
+  for (let i = 0; i < legs; i++) {
+    const side = i % 2 === 0 ? 1 : -1;
+    const a = side * (steep + (rng() - 0.5) * 0.3);
+    const l = leg * (0.75 + rng() * 0.5);
+    const p = pts[pts.length - 1];
+    pts.push({ x: p.x + Math.cos(a) * l * 0.6, y: p.y + Math.sin(a) * l });
+  }
+  return { size: leg * 1.5, path: polyPath(pts.map((p) => rotate(p, rot, c))) };
+}
+
 function sweep(kind: SigilKind, gen: (rng: () => number) => { size: number; path: (t: number) => Pt }, seed: number) {
   const rng = mulberry32(seed);
   let correct = 0;
   let wrong = 0;
+  const confused: Partial<Record<SigilKind, number>> = {};
   const N = 300;
   for (let i = 0; i < N; i++) {
     const g = gen(rng);
     const res = recognize(handDrawn(rng, g.path, g.size));
     if (res.kind === kind) correct++;
-    else if (res.kind !== null) wrong++;
+    else if (res.kind !== null) {
+      wrong++;
+      confused[res.kind] = (confused[res.kind] ?? 0) + 1;
+    }
   }
-  return { rate: correct / N, wrong };
+  return { rate: correct / N, wrong, confused };
 }
 
 describe('recognizer robustness sweep (300 random hand-drawn strokes each)', () => {
@@ -97,6 +178,18 @@ describe('recognizer robustness sweep (300 random hand-drawn strokes each)', () 
     const r = sweep('vee', randomVee, 303);
     expect(r.rate).toBeGreaterThan(0.95);
     expect(r.wrong).toBe(0);
+  });
+
+  it('triangles (any rotation and direction, started at a corner or mid-side, small gap or overlap)', () => {
+    const r = sweep('triangle', randomTriangle, 505);
+    expect(r.rate).toBeGreaterThan(0.95);
+    expect(r.wrong, JSON.stringify(r.confused)).toBe(0);
+  });
+
+  it('zigzags (3 to 5 legs, any rotation, uneven legs)', () => {
+    const r = sweep('zigzag', randomZigzag, 606);
+    expect(r.rate).toBeGreaterThan(0.95);
+    expect(r.wrong, JSON.stringify(r.confused)).toBe(0);
   });
 
   it('random scribbles are almost always rejected', () => {

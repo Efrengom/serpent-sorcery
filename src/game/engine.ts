@@ -1,11 +1,15 @@
 import { audio } from './audio';
-import { ARENA, ENEMIES, GESTURE, SIM, SPELLS, type SpellId } from './config';
+import { castPower, castTier, tierBonusLabel } from './cast';
+import { ARENA, CLEAN_CAST, ENEMIES, EVOLUTIONS, GESTURE, HIT_STOP, SIM, SPELL_IDS, SPELL_INFO, SPELLS, type SpellId } from './config';
+import { updateConstrict } from './constrict';
 import { gainXp, hurtPlayer, updateContacts, updateCrystals, updateShots } from './combat';
 import { updateDirector, updateEnemies, updatePortals } from './enemies';
 import { burst, floater, updateEffects } from './effects';
 import { recognize, type Pt } from './gesture';
 import { InputManager } from './input';
 import { clamp, type Vec } from './math';
+import { arenaPressure, IntensityTracker } from './music/mood';
+import type { MusicScene } from './music/score';
 import { COLORS } from './palette';
 import type { RunResult } from './persistence';
 import {
@@ -23,8 +27,20 @@ import {
 } from './progression';
 import { Renderer } from './render';
 import { PLAY_AREA } from './snake';
-import { castSpell, SIGIL_TO_SPELL, SPELL_COLORS, updateBolts, updateNovas } from './spells';
-import { createWorld, type GestureView, type World } from './world';
+import { shardMultiplier } from './curses';
+import {
+  castSpell,
+  SIGIL_TO_SPELL,
+  SPELL_COLORS,
+  spellName,
+  updateBeams,
+  updateBolts,
+  updateEchoes,
+  updateFrost,
+  updateNovas,
+  updateWard,
+} from './spells';
+import { createWorld, DEFAULT_SETUP, type GestureView, type RunSetup, type SigilReading, type World } from './world';
 
 export type Phase = 'playing' | 'paused' | 'levelup' | 'dying' | 'gameover';
 
@@ -37,6 +53,11 @@ export interface HudSnapshot {
   time: number;
   kills: number;
   cooldowns: Record<SpellId, { remaining: number; total: number; cast: number; deny: number }>;
+  /** Spells known this run, in HUD order, with their current (possibly evolved) names. */
+  known: SpellId[];
+  spellNames: Record<SpellId, string>;
+  evolved: Record<SpellId, boolean>;
+  depth: number;
   boss: { name: string; hp: number; maxHp: number; enraged: boolean } | null;
   bossIncoming: number | null;
 }
@@ -69,13 +90,17 @@ export class Game {
   private finished = false;
   private destroyed = false;
   private runId = newRunId();
-  private readonly gesture: GestureView = { active: false, points: [], target: null, fade: null };
+  private intensity = new IntensityTracker();
+  private readonly gesture: GestureView = { active: false, points: [], target: null, fade: null, reading: null };
+  /** Seconds until the stroke being drawn is read again (live trail tint). */
+  private readTimer = 0;
 
   constructor(
     canvas: HTMLCanvasElement,
     private meta: MetaLevels,
     private readonly events: GameEvents,
     pixelArt = false,
+    private setup: RunSetup = DEFAULT_SETUP,
   ) {
     this.world = this.makeWorld();
     this.renderer = new Renderer(canvas, pixelArt);
@@ -93,7 +118,7 @@ export class Game {
   }
 
   private makeWorld(): World {
-    return createWorld(this.meta, (name) => audio.play(name, name === 'pickup' ? this.world.pickupPitch : 0));
+    return createWorld(this.meta, (name) => audio.play(name, name === 'pickup' ? this.world.pickupPitch : 0), Date.now(), this.setup);
   }
 
   start(): void {
@@ -150,10 +175,12 @@ export class Game {
     else if (this.phase === 'paused') this.resume();
   }
 
-  restart(meta: MetaLevels = this.meta): void {
+  restart(meta: MetaLevels = this.meta, setup: RunSetup = this.setup): void {
     this.meta = meta;
+    this.setup = setup;
     this.world = this.makeWorld();
     this.runId = newRunId();
+    this.intensity = new IntensityTracker();
     this.finished = false;
     this.pendingLevelUps = 0;
     this.dyingTime = 0;
@@ -172,23 +199,37 @@ export class Game {
   chooseUpgrade(choice: UpgradeChoice): void {
     if (this.phase !== 'levelup') return;
     const w = this.world;
-    if (choice.id === 'restore') {
+    const s = w.snake;
+    let label = choice.name;
+    let color: string = COLORS.nova;
+    if (choice.kind === 'restore') {
       w.hp = Math.min(w.stats.maxHp, w.hp + RESTORE_HEAL);
-    } else {
+      audio.play('select');
+    } else if (choice.kind === 'learn' && choice.spell) {
+      if (!w.known.includes(choice.spell)) w.known.push(choice.spell);
+      w.cooldowns[choice.spell] = 0;
+      label = `New sigil: ${SPELLS[choice.spell].name}`;
+      color = SPELL_COLORS[choice.spell];
+      audio.play('evolve');
+    } else if (choice.kind === 'evolve' && choice.spell) {
+      w.evolved[choice.spell] = true;
+      w.cooldowns[choice.spell] = 0;
+      label = `${SPELLS[choice.spell].name} → ${EVOLUTIONS[choice.spell].name}`;
+      color = SPELL_COLORS[choice.spell];
+      burst(w, s.x, s.y, '#ffffff', 30, 340, { kind: 'shard', size: 4, life: 0.7 });
+      audio.play('evolve');
+    } else if (choice.upgrade) {
       const prevMax = w.stats.maxHp;
-      w.upgrades = applyUpgrade(w.upgrades, choice.id);
-      w.stats = computeStats(w.upgrades, w.meta);
-      if (choice.id === 'vitality') w.hp += w.stats.maxHp - prevMax + 30;
+      w.upgrades = applyUpgrade(w.upgrades, choice.upgrade);
+      w.stats = computeStats(w.upgrades, w.meta, w.mods);
+      if (choice.upgrade === 'vitality') w.hp += w.stats.maxHp - prevMax + 30;
       w.hp = Math.min(w.stats.maxHp, w.hp);
       // Refresh cooldown totals so HUD sweeps match the new cooldowns.
-      for (const id of Object.keys(w.cooldowns) as SpellId[]) {
-        w.cooldowns[id] = Math.min(w.cooldowns[id], spellCooldown(id, w.stats));
-      }
+      for (const id of SPELL_IDS) w.cooldowns[id] = Math.min(w.cooldowns[id], spellCooldown(id, w.stats));
+      audio.play('select');
     }
-    audio.play('select');
-    const s = w.snake;
-    burst(w, s.x, s.y, COLORS.nova, 24, 260, { kind: 'glow', size: 8, life: 0.5 });
-    floater(w, s.x, s.y - 30, choice.name, COLORS.nova, { size: 18, life: 1.2 });
+    burst(w, s.x, s.y, color, 24, 260, { kind: 'glow', size: 8, life: 0.5 });
+    floater(w, s.x, s.y - 30, label, color, { size: 18, life: 1.4 });
     this.pendingLevelUps--;
     if (this.pendingLevelUps > 0) {
       this.offerLevelUp();
@@ -200,8 +241,15 @@ export class Game {
 
   private offerLevelUp(): void {
     const w = this.world;
-    const choices = rollUpgradeChoices(w.upgrades, w.meta, Math.random);
     const levelShown = w.level - this.pendingLevelUps + 1;
+    const choices = rollUpgradeChoices(
+      w.upgrades,
+      w.meta,
+      Math.random,
+      3,
+      { known: w.known, evolved: w.evolved, level: levelShown },
+      w.mods,
+    );
     this.setPhase('levelup');
     this.events.onLevelUp(levelShown, choices);
   }
@@ -223,6 +271,15 @@ export class Game {
     this.gesture.active = false;
     this.gesture.target = null;
     this.gesture.points = [];
+    this.gesture.reading = null;
+  }
+
+  /** What the stroke so far reads as, for the live trail tint. */
+  private readStroke(points: Pt[]): SigilReading | null {
+    const r = recognize(points);
+    if (!r.kind) return null;
+    const spell = SIGIL_TO_SPELL[r.kind];
+    return { kind: r.kind, spell, known: this.world.known.includes(spell), tier: castTier(r.kind, r.score) };
   }
 
   private endGesture(points: Pt[]): void {
@@ -241,7 +298,14 @@ export class Game {
       return;
     }
     const spell = SIGIL_TO_SPELL[result.kind];
-    const name = SPELLS[spell].name;
+    const name = spellName(w, spell);
+    if (!w.known.includes(spell)) {
+      // A real sigil this serpent hasn't learned yet: say so, and that level-ups teach it.
+      floater(w, c.x, fy, `${SPELL_INFO[spell].shape}: ${name} not learned yet`, COLORS.unclear, { size: 18, life: 1.1, screen: true });
+      this.gesture.fade = { points, color: '#8090c0', t: 0 };
+      audio.play('unclear');
+      return;
+    }
     if (w.cooldowns[spell] > 0) {
       floater(w, c.x, fy, `${name} recharging ${w.cooldowns[spell].toFixed(1)}s`, '#b9c4ff', {
         size: 18,
@@ -253,12 +317,23 @@ export class Game {
       audio.play('cooldown');
       return;
     }
-    castSpell(w, spell, target);
+    // A cleanly drawn sigil is stronger.
+    const tier = castTier(result.kind, result.score);
+    castSpell(w, spell, target, castPower(tier));
+    w.recap.casts[tier]++;
     const cd = spellCooldown(spell, w.stats);
     w.cooldowns[spell] = cd;
     w.cooldownTotals[spell] = cd;
     w.castFlash[spell] = 1;
     floater(w, c.x, fy, `${name}!`, SPELL_COLORS[spell], { size: 24, life: 0.9, screen: true });
+    if (tier !== 'rough') {
+      floater(w, c.x, fy + 26, `${tier === 'perfect' ? 'Perfect' : 'Clean'} ${tierBonusLabel(tier)}`, tier === 'perfect' ? COLORS.nova : '#dfe8ff', {
+        size: tier === 'perfect' ? 18 : 15,
+        life: 0.9,
+        screen: true,
+      });
+      if (tier === 'perfect') audio.play('perfect');
+    }
     this.gesture.fade = { points, color: SPELL_COLORS[spell], t: 0 };
   }
 
@@ -272,7 +347,17 @@ export class Game {
     this.realTime += dt;
 
     if (this.phase === 'playing' || this.phase === 'dying') {
-      const scale = this.phase === 'dying' ? SIM.dyingTimeScale : 1;
+      const w = this.world;
+      let scale = this.phase === 'dying' ? SIM.dyingTimeScale : 1;
+      // Hit-stop and slow motion run on real time, so they last the same at any frame rate.
+      w.hitStopGap = Math.max(0, w.hitStopGap - dt);
+      if (w.hitStop > 0) {
+        w.hitStop = Math.max(0, w.hitStop - dt);
+        scale = 0;
+      } else if (w.slowMo > 0) {
+        w.slowMo = Math.max(0, w.slowMo - dt);
+        scale *= HIT_STOP.slowMoScale;
+      }
       this.acc += dt * scale;
       let steps = 0;
       while (this.acc >= SIM.step && steps < SIM.maxSubSteps) {
@@ -280,9 +365,15 @@ export class Game {
         this.acc -= SIM.step;
         steps++;
         if (this.phase !== 'playing' && this.phase !== 'dying') break;
+        if (w.hitStop > 0) {
+          // A big hit just landed: freeze from this exact step.
+          this.acc = 0;
+          break;
+        }
       }
       if (steps >= SIM.maxSubSteps) this.acc = 0;
     }
+    this.updateMusic(dt);
 
     if (this.phase === 'dying') {
       this.dyingTime += dt;
@@ -295,6 +386,16 @@ export class Game {
     }
     this.gesture.active = this.input.isDrawing && this.phase === 'playing';
     this.gesture.points = this.input.points;
+    if (this.gesture.active && this.gesture.points.length > 3) {
+      this.readTimer -= dt;
+      if (this.readTimer <= 0) {
+        this.readTimer = CLEAN_CAST.liveInterval;
+        this.gesture.reading = this.readStroke(this.gesture.points);
+      }
+    } else {
+      this.gesture.reading = null;
+      this.readTimer = 0;
+    }
 
     const showSnake = this.phase !== 'dying' && this.phase !== 'gameover';
     this.renderer.render(this.world, this.gesture, this.realTime, showSnake);
@@ -316,6 +417,7 @@ export class Game {
       const dir = this.input.direction();
       this.input.endStep();
       if (w.snake.update(dt, dir.x, dir.y)) this.onWallHit();
+      updateConstrict(w, dt);
     }
 
     updateDirector(w, dying ? 0 : dt);
@@ -323,6 +425,10 @@ export class Game {
     updateEnemies(w, dt);
     updateBolts(w, dt);
     updateNovas(w, dt);
+    updateFrost(w, dt);
+    updateBeams(w, dt);
+    updateWard(w, dt);
+    if (!dying) updateEchoes(w);
     if (!dying) {
       updateShots(w, dt);
       updateContacts(w);
@@ -365,7 +471,20 @@ export class Game {
     const w = this.world;
     const s = w.snake;
     burst(w, s.x, s.y, '#c9b8ff', 10, 200, { size: 3, life: 0.35 });
-    if (!hurtPlayer(w, ARENA.wallDamage)) audio.play('wall');
+    if (!hurtPlayer(w, ARENA.wallDamage, { kind: 'wall', attack: 'wall' })) audio.play('wall');
+  }
+
+  /** Picks the soundtrack arrangement: layered by danger, a hush before the boss, its theme during the fight. */
+  private updateMusic(dt: number): void {
+    const w = this.world;
+    if (this.phase === 'playing') this.intensity.update(arenaPressure(w), dt);
+    let scene: MusicScene;
+    if (this.phase === 'dying') scene = 'silent';
+    else if (this.phase === 'gameover') scene = 'calm';
+    else if (w.boss) scene = w.boss.enraged ? 'boss2' : 'boss1';
+    else if (w.bossWarned || w.portals.some((p) => p.kind === 'boss')) scene = 'warning';
+    else scene = (['run0', 'run1', 'run2'] as const)[this.intensity.level];
+    audio.setMusicScene(scene);
   }
 
   private die(): void {
@@ -384,8 +503,15 @@ export class Game {
     if (this.finished || this.destroyed) return;
     this.finished = true;
     const w = this.world;
-    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills };
-    const result: RunResult = { ...summary, runId: this.runId, reward: computeReward(summary) };
+    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills, shardMult: shardMultiplier(w.curses) };
+    const result: RunResult = {
+      ...summary,
+      runId: this.runId,
+      reward: computeReward(summary),
+      recap: w.recap,
+      wizard: w.wizard,
+      curses: [...w.curses],
+    };
     this.setPhase('gameover');
     this.events.onGameOver(result);
   }
@@ -411,6 +537,10 @@ export class Game {
       time: w.time,
       kills: w.kills,
       cooldowns: cds,
+      known: [...w.known],
+      spellNames: Object.fromEntries(SPELL_IDS.map((id) => [id, spellName(w, id)])) as Record<SpellId, string>,
+      evolved: { ...w.evolved },
+      depth: w.depth,
       boss: w.boss
         ? { name: ENEMIES.boss.name, hp: Math.max(0, w.boss.hp), maxHp: w.boss.maxHp, enraged: w.boss.enraged }
         : null,
