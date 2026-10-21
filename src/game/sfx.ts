@@ -59,6 +59,29 @@ export const SFX_SAMPLES: Record<SfxName, SampleLayer[]> = {
     { files: ['impactBell_heavy_001'], gain: 0.55, rate: [0.45, 0.45], delay: 0.15 },
   ],
   select: [{ files: ['select_005'], gain: 0.16 }],
+  ward: [
+    { files: ['impactBell_heavy_003'], gain: 0.37, rate: [1.6, 1.7] },
+    { files: ['forceField_001'], gain: 0.24, rate: [1.3, 1.35] },
+  ],
+  wardHit: [
+    { files: range('impactPlate_medium', 0, 2), gain: 0.63, rate: [0.95, 1.05] },
+    { files: ['impactBell_heavy_003'], gain: 0.27, rate: [1.9, 2] },
+  ],
+  frost: [
+    { files: ['impactGlass_heavy_000', 'impactGlass_heavy_001'], gain: 0.93, rate: [0.8, 0.88] },
+    { files: ['glass_004'], gain: 0.44, rate: [0.9, 1], delay: 0.04 },
+  ],
+  lance: [{ files: ['laserLarge_000', 'laserLarge_001'], gain: 0.44, rate: [0.72, 0.78] }],
+  evolve: [
+    { files: ['confirmation_002'], gain: 0.28 },
+    { files: ['impactBell_heavy_000'], gain: 0.31, rate: [1.2, 1.2], delay: 0.08 },
+  ],
+  shieldHit: [{ files: range('impactMetal_light', 0, 2), gain: 0.126, rate: [1.1, 1.3] }],
+  split: [{ files: ['slime_000'], gain: 0.7, rate: [0.9, 1.1] }],
+  descend: [
+    { files: ['lowFrequency_explosion_001'], gain: 0.24, rate: [0.6, 0.6] },
+    { files: ['impactBell_heavy_001'], gain: 0.24, rate: [0.7, 0.7], delay: 0.3 },
+  ],
 };
 
 export const SFX_FILES: string[] = [...new Set(Object.values(SFX_SAMPLES).flatMap((ls) => ls.flatMap((l) => l.files)))];
@@ -185,6 +208,34 @@ export function playSynth(
       break;
     case 'select':
       tone(660, 990, 0.1, 'triangle', 0.14);
+      break;
+    case 'ward':
+      [880, 1320].forEach((f, i) => tone(f, f * 1.02, 0.4, 'sine', 0.26, i * 0.05));
+      break;
+    case 'wardHit':
+      tone(1200, 900, 0.18, 'triangle', 0.21);
+      hiss(0.1, 0.2, 3000);
+      break;
+    case 'frost':
+      hiss(0.4, 0.55, 5000, 'highpass');
+      tone(1800, 2400, 0.3, 'sine', 0.13);
+      break;
+    case 'lance':
+      tone(900, 300, 0.25, 'sawtooth', 0.3);
+      hiss(0.2, 0.5, 2500);
+      break;
+    case 'evolve':
+      [523, 784, 1047, 1568].forEach((f, i) => tone(f, f, 0.3, 'triangle', 0.16, i * 0.08));
+      break;
+    case 'shieldHit':
+      tone(1500, 1300, 0.05, 'square', 0.06);
+      break;
+    case 'split':
+      tone(300, 600, 0.12, 'sine', 0.14);
+      break;
+    case 'descend':
+      tone(90, 45, 1.2, 'sawtooth', 0.25);
+      hiss(1.0, 0.31, 500, 'lowpass');
       break;
   }
 }

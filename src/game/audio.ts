@@ -27,6 +27,8 @@ const MIN_GAP: Partial<Record<SfxName, number>> = {
   telegraph: 0.15,
   portal: 0.2,
   wall: 0.2,
+  shieldHit: 0.06,
+  split: 0.08,
 };
 
 const SAMPLE_URLS: Record<string, string> = {};
@@ -202,6 +204,10 @@ class AudioEngine {
 
   get samplesFailed(): number {
     return this.failedFiles;
+  }
+
+  get samplesTotal(): number {
+    return SFX_FILES.length;
   }
 
   private applyVolume(): void {

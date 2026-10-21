@@ -1,5 +1,5 @@
 import { audio } from './audio';
-import { ARENA, ENEMIES, GESTURE, HIT_STOP, SIM, SPELLS, type SpellId } from './config';
+import { ARENA, ENEMIES, EVOLUTIONS, GESTURE, HIT_STOP, SIM, SPELL_IDS, SPELL_INFO, SPELLS, type SpellId } from './config';
 import { gainXp, hurtPlayer, updateContacts, updateCrystals, updateShots } from './combat';
 import { updateDirector, updateEnemies, updatePortals } from './enemies';
 import { burst, floater, updateEffects } from './effects';
@@ -25,8 +25,20 @@ import {
 } from './progression';
 import { Renderer } from './render';
 import { PLAY_AREA } from './snake';
-import { castSpell, SIGIL_TO_SPELL, SPELL_COLORS, updateBolts, updateNovas } from './spells';
-import { createWorld, type GestureView, type World } from './world';
+import { shardMultiplier } from './curses';
+import {
+  castSpell,
+  SIGIL_TO_SPELL,
+  SPELL_COLORS,
+  spellName,
+  updateBeams,
+  updateBolts,
+  updateEchoes,
+  updateFrost,
+  updateNovas,
+  updateWard,
+} from './spells';
+import { createWorld, DEFAULT_SETUP, type GestureView, type RunSetup, type World } from './world';
 
 export type Phase = 'playing' | 'paused' | 'levelup' | 'dying' | 'gameover';
 
@@ -39,6 +51,11 @@ export interface HudSnapshot {
   time: number;
   kills: number;
   cooldowns: Record<SpellId, { remaining: number; total: number; cast: number; deny: number }>;
+  /** Spells known this run, in HUD order, with their current (possibly evolved) names. */
+  known: SpellId[];
+  spellNames: Record<SpellId, string>;
+  evolved: Record<SpellId, boolean>;
+  depth: number;
   boss: { name: string; hp: number; maxHp: number; enraged: boolean } | null;
   bossIncoming: number | null;
 }
@@ -79,6 +96,7 @@ export class Game {
     private meta: MetaLevels,
     private readonly events: GameEvents,
     pixelArt = false,
+    private setup: RunSetup = DEFAULT_SETUP,
   ) {
     this.world = this.makeWorld();
     this.renderer = new Renderer(canvas, pixelArt);
@@ -96,7 +114,7 @@ export class Game {
   }
 
   private makeWorld(): World {
-    return createWorld(this.meta, (name) => audio.play(name, name === 'pickup' ? this.world.pickupPitch : 0));
+    return createWorld(this.meta, (name) => audio.play(name, name === 'pickup' ? this.world.pickupPitch : 0), Date.now(), this.setup);
   }
 
   start(): void {
@@ -153,8 +171,9 @@ export class Game {
     else if (this.phase === 'paused') this.resume();
   }
 
-  restart(meta: MetaLevels = this.meta): void {
+  restart(meta: MetaLevels = this.meta, setup: RunSetup = this.setup): void {
     this.meta = meta;
+    this.setup = setup;
     this.world = this.makeWorld();
     this.runId = newRunId();
     this.intensity = new IntensityTracker();
@@ -176,23 +195,37 @@ export class Game {
   chooseUpgrade(choice: UpgradeChoice): void {
     if (this.phase !== 'levelup') return;
     const w = this.world;
-    if (choice.id === 'restore') {
+    const s = w.snake;
+    let label = choice.name;
+    let color: string = COLORS.nova;
+    if (choice.kind === 'restore') {
       w.hp = Math.min(w.stats.maxHp, w.hp + RESTORE_HEAL);
-    } else {
+      audio.play('select');
+    } else if (choice.kind === 'learn' && choice.spell) {
+      if (!w.known.includes(choice.spell)) w.known.push(choice.spell);
+      w.cooldowns[choice.spell] = 0;
+      label = `New sigil: ${SPELLS[choice.spell].name}`;
+      color = SPELL_COLORS[choice.spell];
+      audio.play('evolve');
+    } else if (choice.kind === 'evolve' && choice.spell) {
+      w.evolved[choice.spell] = true;
+      w.cooldowns[choice.spell] = 0;
+      label = `${SPELLS[choice.spell].name} → ${EVOLUTIONS[choice.spell].name}`;
+      color = SPELL_COLORS[choice.spell];
+      burst(w, s.x, s.y, '#ffffff', 30, 340, { kind: 'shard', size: 4, life: 0.7 });
+      audio.play('evolve');
+    } else if (choice.upgrade) {
       const prevMax = w.stats.maxHp;
-      w.upgrades = applyUpgrade(w.upgrades, choice.id);
-      w.stats = computeStats(w.upgrades, w.meta);
-      if (choice.id === 'vitality') w.hp += w.stats.maxHp - prevMax + 30;
+      w.upgrades = applyUpgrade(w.upgrades, choice.upgrade);
+      w.stats = computeStats(w.upgrades, w.meta, w.mods);
+      if (choice.upgrade === 'vitality') w.hp += w.stats.maxHp - prevMax + 30;
       w.hp = Math.min(w.stats.maxHp, w.hp);
       // Refresh cooldown totals so HUD sweeps match the new cooldowns.
-      for (const id of Object.keys(w.cooldowns) as SpellId[]) {
-        w.cooldowns[id] = Math.min(w.cooldowns[id], spellCooldown(id, w.stats));
-      }
+      for (const id of SPELL_IDS) w.cooldowns[id] = Math.min(w.cooldowns[id], spellCooldown(id, w.stats));
+      audio.play('select');
     }
-    audio.play('select');
-    const s = w.snake;
-    burst(w, s.x, s.y, COLORS.nova, 24, 260, { kind: 'glow', size: 8, life: 0.5 });
-    floater(w, s.x, s.y - 30, choice.name, COLORS.nova, { size: 18, life: 1.2 });
+    burst(w, s.x, s.y, color, 24, 260, { kind: 'glow', size: 8, life: 0.5 });
+    floater(w, s.x, s.y - 30, label, color, { size: 18, life: 1.4 });
     this.pendingLevelUps--;
     if (this.pendingLevelUps > 0) {
       this.offerLevelUp();
@@ -204,8 +237,15 @@ export class Game {
 
   private offerLevelUp(): void {
     const w = this.world;
-    const choices = rollUpgradeChoices(w.upgrades, w.meta, Math.random);
     const levelShown = w.level - this.pendingLevelUps + 1;
+    const choices = rollUpgradeChoices(
+      w.upgrades,
+      w.meta,
+      Math.random,
+      3,
+      { known: w.known, evolved: w.evolved, level: levelShown },
+      w.mods,
+    );
     this.setPhase('levelup');
     this.events.onLevelUp(levelShown, choices);
   }
@@ -245,7 +285,14 @@ export class Game {
       return;
     }
     const spell = SIGIL_TO_SPELL[result.kind];
-    const name = SPELLS[spell].name;
+    const name = spellName(w, spell);
+    if (!w.known.includes(spell)) {
+      // A real sigil this serpent hasn't learned yet: say so, and that level-ups teach it.
+      floater(w, c.x, fy, `${SPELL_INFO[spell].shape}: ${name} not learned yet`, COLORS.unclear, { size: 18, life: 1.1, screen: true });
+      this.gesture.fade = { points, color: '#8090c0', t: 0 };
+      audio.play('unclear');
+      return;
+    }
     if (w.cooldowns[spell] > 0) {
       floater(w, c.x, fy, `${name} recharging ${w.cooldowns[spell].toFixed(1)}s`, '#b9c4ff', {
         size: 18,
@@ -343,6 +390,10 @@ export class Game {
     updateEnemies(w, dt);
     updateBolts(w, dt);
     updateNovas(w, dt);
+    updateFrost(w, dt);
+    updateBeams(w, dt);
+    updateWard(w, dt);
+    if (!dying) updateEchoes(w);
     if (!dying) {
       updateShots(w, dt);
       updateContacts(w);
@@ -417,8 +468,15 @@ export class Game {
     if (this.finished || this.destroyed) return;
     this.finished = true;
     const w = this.world;
-    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills };
-    const result: RunResult = { ...summary, runId: this.runId, reward: computeReward(summary), recap: w.recap };
+    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills, shardMult: shardMultiplier(w.curses) };
+    const result: RunResult = {
+      ...summary,
+      runId: this.runId,
+      reward: computeReward(summary),
+      recap: w.recap,
+      wizard: w.wizard,
+      curses: [...w.curses],
+    };
     this.setPhase('gameover');
     this.events.onGameOver(result);
   }
@@ -444,6 +502,10 @@ export class Game {
       time: w.time,
       kills: w.kills,
       cooldowns: cds,
+      known: [...w.known],
+      spellNames: Object.fromEntries(SPELL_IDS.map((id) => [id, spellName(w, id)])) as Record<SpellId, string>,
+      evolved: { ...w.evolved },
+      depth: w.depth,
       boss: w.boss
         ? { name: ENEMIES.boss.name, hp: Math.max(0, w.boss.hp), maxHp: w.boss.maxHp, enraged: w.boss.enraged }
         : null,

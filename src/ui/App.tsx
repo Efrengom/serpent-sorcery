@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { audio } from '../game/audio';
 import { buyMeta, commitRunResult, loadSave, writeSave, type RunResult, type SaveData } from '../game/persistence';
+import type { CurseId } from '../game/curses';
 import type { MetaId } from '../game/progression';
+import { playableWizard, type WizardId } from '../game/wizards';
+import type { RunSetup } from '../game/world';
 import { PixelArtContext, pixelFloorUrl } from './art';
 import { GameView } from './GameView';
-import { HowToPlay, ShopScreen, TitleScreen } from './Menus';
+import { HowToPlay, SetupScreen, ShopScreen, TitleScreen } from './Menus';
 
-type Screen = 'title' | 'howto' | 'shop' | 'game';
+type Screen = 'title' | 'howto' | 'shop' | 'setup' | 'game';
 
 export function App() {
   const [save, setSave] = useState<SaveData>(() => loadSave());
@@ -103,6 +106,26 @@ export function App() {
     }
   }, []);
 
+  const pickWizard = useCallback((wizard: WizardId) => {
+    setSave((s) => ({ ...s, settings: { ...s.settings, wizard } }));
+    audio.play('select');
+  }, []);
+
+  const toggleCurse = useCallback((id: CurseId) => {
+    setSave((s) => {
+      const on = s.settings.curses.includes(id);
+      const curses = on ? s.settings.curses.filter((c) => c !== id) : [...s.settings.curses, id];
+      return { ...s, settings: { ...s.settings, curses } };
+    });
+    audio.play('select');
+  }, []);
+
+  // A locked wizard (say, from an edited save) quietly falls back to the Arcanist.
+  const setup: RunSetup = {
+    wizard: playableWizard(save.settings.wizard, save.records),
+    curses: save.settings.curses,
+  };
+
   const pixel = save.settings.pixelArt;
 
   const play = useCallback(() => {
@@ -120,6 +143,7 @@ export function App() {
         <TitleScreen
           save={save}
           onPlay={play}
+          onSetup={() => setScreen('setup')}
           onHowTo={() => setScreen('howto')}
           onShop={() => setScreen('shop')}
           onToggleMute={toggleMute}
@@ -129,10 +153,20 @@ export function App() {
       )}
       {screen === 'howto' && <HowToPlay onBack={() => setScreen('title')} onPlay={play} />}
       {screen === 'shop' && <ShopScreen save={save} onBuy={buy} onBack={() => setScreen('title')} onPlay={play} />}
+      {screen === 'setup' && (
+        <SetupScreen
+          save={save}
+          onPickWizard={pickWizard}
+          onToggleCurse={toggleCurse}
+          onBack={() => setScreen('title')}
+          onPlay={play}
+        />
+      )}
       {screen === 'game' && (
         <GameView
           key={gameKey}
           meta={save.meta}
+          setup={setup}
           muted={save.settings.muted}
           pixelArt={save.settings.pixelArt}
           volume={volume}

@@ -4,6 +4,7 @@ import { buildPixelFloor } from '../game/pixel/floor';
 import { PX } from '../game/pixel/palette';
 import { segmentFill, segmentOutline, wizardHead } from '../game/pixel/sprites';
 import { blit } from '../game/pixel/bake';
+import { WIZARDS, type WizardId } from '../game/wizards';
 
 /** True when the pixel-art style is active; menus and HUD switch their art from this. */
 export const PixelArtContext = createContext(false);
@@ -74,6 +75,18 @@ const ICONS = {
     rows: ['ww.ww', 'ww.ww', 'ww.ww', 'ww.ww', 'ww.ww', 'ww.ww'],
     colors: { w: PX.eye },
   },
+  triangle: {
+    rows: ['....w....', '...wcw...', '...c.c...', '..c...c..', '..c...c..', '.c.....c.', '.c.....c.', 'ccccccccc'],
+    colors: { c: PX.ward1, w: PX.ward2 },
+  },
+  snowflake: {
+    rows: ['....w....', '.w..i..w.', '..w.i.w..', '...iii...', 'wiiiwiiiw', '...iii...', '..w.i.w..', '.w..i..w.', '....w....'],
+    colors: { i: PX.ice2, w: PX.ice3 },
+  },
+  skull: {
+    rows: ['.kkkkk.', 'kwwwwwk', 'kwkwkwk', 'kwwwwwk', '.kwwwk.', '.kwkwk.', '..kkk..'],
+    colors: { k: PX.ink, w: PX.hurt2 },
+  },
 } satisfies Record<string, Bitmap>;
 
 export type IconName = keyof typeof ICONS;
@@ -107,6 +120,8 @@ const UPGRADE_ICON: Record<string, IconName> = {
   vitality: 'heart',
   magnet: 'crystal',
   regen: 'plus',
+  wardRunes: 'triangle',
+  deepFrost: 'snowflake',
   restore: 'potion',
   // permanent upgrades
   health: 'heart',
@@ -148,6 +163,14 @@ function sigilPixels(spell: SpellId): [number, number][] {
   else if (spell === 'lightning') {
     line(1, 1, 5, 10);
     line(6, 10, 10, 1);
+  } else if (spell === 'ward') {
+    line(5, 1, 10, 10);
+    line(10, 10, 1, 10);
+    line(1, 10, 5, 1);
+  } else if (spell === 'frost') {
+    line(0, 3, 3, 10);
+    line(3, 10, 6, 2);
+    line(6, 2, 10, 9);
   } else {
     for (let i = 0; i <= 48; i++) {
       const a = -Math.PI / 2 + (i / 48) * Math.PI * 2;
@@ -186,8 +209,42 @@ export function PixelSigil({ spell, size, animate }: { spell: SpellId; size: num
 
 // ---------------------------------------------------------------- title screen pieces
 
+/** A wizard's serpent, small and static: pixel sprites in pixel style, vector shapes otherwise. */
+export function WizardPortrait({ id }: { id: WizardId }) {
+  const pixel = usePixelArt();
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const pts = Array.from({ length: 6 }, (_, i) => ({ x: 6 + i * 4.2, y: 17 + Math.sin(i * 0.9) * 3 }));
+    for (let i = 0; i < pts.length; i++) blit(ctx, segmentOutline(2 + Math.round(i / 2)), pts[i].x, pts[i].y);
+    for (let i = 0; i < pts.length; i++) blit(ctx, segmentFill(2 + Math.round(i / 2), i % 4 === 2 ? 'stripe' : 'body', id), pts[i].x, pts[i].y);
+    blit(ctx, wizardHead('player', 0, 0, 'normal', id), 36, 17);
+    ctx.fillStyle = PX.eye;
+    ctx.fillRect(38, 14, 2, 2);
+    ctx.fillRect(38, 19, 2, 2);
+  }, [id, pixel]);
+  if (pixel) return <canvas ref={ref} width={52} height={30} className="wizard-portrait px" aria-hidden="true" />;
+  const look = WIZARDS[id].look;
+  return (
+    <svg className="wizard-portrait" viewBox="0 0 120 70" aria-hidden="true">
+      {[14, 30, 46, 62].map((x, i) => (
+        <circle key={x} cx={x} cy={40 + Math.sin(i) * 5} r={7 + i * 1.5} fill={i % 2 ? look.bodyDark : look.body} stroke="#140a24" strokeWidth="3" />
+      ))}
+      <ellipse cx="86" cy="40" rx="17" ry="14" fill={look.body} stroke="#140a24" strokeWidth="3" />
+      <circle cx="93" cy="34" r="3.5" fill="#fff" />
+      <circle cx="93" cy="46" r="3.5" fill="#fff" />
+      <path d="M78 30 Q 60 6, 40 8 Q 62 22, 72 46 Z" fill={look.hat} stroke="#140a24" strokeWidth="3" />
+      <path d="M70 26 L 76 40" stroke={look.band} strokeWidth="4" />
+      <circle cx="40" cy="8" r="4" fill={look.band} />
+    </svg>
+  );
+}
+
 /** The real game sprites, slithering on a tiny canvas that CSS scales up with crisp pixels. */
-export function PixelTitleSerpent() {
+export function PixelTitleSerpent({ wizard = 'arcanist' }: { wizard?: WizardId }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -205,13 +262,13 @@ export function PixelTitleSerpent() {
       }));
       const radius = (i: number) => Math.max(2, Math.round(2 + (i / (N - 1)) * 3.5));
       for (let i = 0; i < N - 1; i++) blit(ctx, segmentOutline(radius(i)), pts[i].x, pts[i].y);
-      for (let i = 0; i < N - 1; i++) blit(ctx, segmentFill(radius(i), i % 4 === 2 ? 'stripe' : 'body'), pts[i].x, pts[i].y);
+      for (let i = 0; i < N - 1; i++) blit(ctx, segmentFill(radius(i), i % 4 === 2 ? 'stripe' : 'body', wizard), pts[i].x, pts[i].y);
       const head = pts[N - 1];
       const prev = pts[N - 2];
       const heading = Math.atan2(head.y - prev.y, head.x - prev.x);
       const dir = ((Math.round((heading / (Math.PI * 2)) * 16) % 16) + 16) % 16;
       const sway = Math.max(-1, Math.min(1, Math.round(Math.sin(t * 3.2) * 1.3)));
-      blit(ctx, wizardHead('player', dir, sway), head.x, head.y);
+      blit(ctx, wizardHead('player', dir, sway, 'normal', wizard), head.x, head.y);
       ctx.fillStyle = PX.eye;
       for (const side of [-1, 1]) {
         const a = heading + side * 0.62;
@@ -226,7 +283,7 @@ export function PixelTitleSerpent() {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [wizard]);
   return <canvas ref={ref} width={150} height={44} className="pixel-title-serpent" aria-hidden="true" />;
 }
 

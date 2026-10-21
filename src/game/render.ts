@@ -8,9 +8,11 @@ import {
   buildVignette,
   drawAim,
   drawArcs,
+  drawBeams,
   drawBolts,
   drawCrystals,
   drawEnemies,
+  drawFrostFields,
   drawNovas,
   drawParticles,
   drawPortals,
@@ -20,8 +22,10 @@ import {
   drawTorches,
   drawTrail,
   drawTrailTip,
+  drawWard,
 } from './pixel/draw';
 import { buildPixelFloor, type PixelFloor } from './pixel/floor';
+import { WIZARDS } from './wizards';
 import type { Enemy, GestureView, World } from './world';
 
 const W = ARENA.width;
@@ -33,6 +37,44 @@ const PIXEL_FONT = "'Silkscreen', 'Courier New', monospace";
 const LW = Math.round(W / PIXEL_ART.worldPerPixel);
 const LH = Math.round(H / PIXEL_ART.worldPerPixel);
 const VIGNETTE_LEVELS = 6;
+
+/** Colours of the classic arena per area: the violet ruins, then the Ember Depths. */
+const AREA_STYLE = [
+  {
+    floor: ['#33204f', '#24153d', '#170d2a'],
+    tileLight: '190,160,255',
+    moss: '60,140,90',
+    glow: '120,255,230',
+    glowCore: '200,255,245',
+    circle: '160,130,255',
+    runes: '180,150,255',
+    rubble: [90, 70, 120],
+    wall: '#120a22',
+    brick: '120,95,170',
+    rim: '200,170,255',
+    pillar: ['#5d4b80', '#231638'],
+    torch: '255,190,110',
+    ambient: '#a58cff',
+    cracks: null as string | null,
+  },
+  {
+    floor: ['#40211a', '#2b130e', '#170806'],
+    tileLight: '255,170,120',
+    moss: '120,50,20',
+    glow: '255,150,60',
+    glowCore: '255,232,170',
+    circle: '255,130,80',
+    runes: '255,170,110',
+    rubble: [120, 70, 55],
+    wall: '#1c0a06',
+    brick: '170,90,60',
+    rim: '255,170,120',
+    pillar: ['#7a4630', '#2c120a'],
+    torch: '255,150,70',
+    ambient: '#ff8a4a',
+    cracks: '255,110,40',
+  },
+];
 
 interface Torch {
   x: number;
@@ -52,6 +94,9 @@ export class Renderer {
   ox = 0;
   oy = 0;
   private bg: HTMLCanvasElement | null = null;
+  /** Which area's arena art is built (see AREA_STYLE and buildPixelFloor). */
+  private area = 0;
+  private pixelFloors: (PixelFloor | undefined)[] = [];
   private glows = new Map<string, HTMLCanvasElement>();
   private torches: Torch[] = [];
   // Pixel-art style
@@ -121,7 +166,7 @@ export class Renderer {
     if (!this.low) {
       this.low = createCanvas(LW, LH);
       this.lowCtx = this.low.getContext('2d')!;
-      this.pixelFloor = buildPixelFloor();
+      this.pixelFloor = this.floorFor(this.area);
       void document.fonts?.load(`16px ${PIXEL_FONT}`).catch(() => undefined);
     }
     const dpr = this.dpr;
@@ -148,6 +193,23 @@ export class Renderer {
       this.uiCtx = this.ui.getContext('2d')!;
       this.vignettes = [];
     }
+  }
+
+  private floorFor(area: number): PixelFloor {
+    let f = this.pixelFloors[area];
+    if (!f) {
+      f = buildPixelFloor(area);
+      this.pixelFloors[area] = f;
+    }
+    return f;
+  }
+
+  /** Swaps the arena art when the run descends into a new area. */
+  private setArea(area: number): void {
+    if (area === this.area) return;
+    this.area = area;
+    if (this.pixel) this.pixelFloor = this.floorFor(area);
+    else this.buildBackground();
   }
 
   private font(size: number, weight: number, title = false): string {
@@ -198,12 +260,13 @@ export class Renderer {
     const g = c.getContext('2d')!;
     g.scale(k, k);
     const rng = mulberry32(1337);
+    const st = AREA_STYLE[this.area] ?? AREA_STYLE[0];
 
     // Floor
     const floor = g.createRadialGradient(W / 2, H / 2, 60, W / 2, H / 2, W * 0.62);
-    floor.addColorStop(0, '#33204f');
-    floor.addColorStop(0.6, '#24153d');
-    floor.addColorStop(1, '#170d2a');
+    floor.addColorStop(0, st.floor[0]);
+    floor.addColorStop(0.6, st.floor[1]);
+    floor.addColorStop(1, st.floor[2]);
     g.fillStyle = floor;
     g.fillRect(0, 0, W, H);
 
@@ -215,7 +278,7 @@ export class Renderer {
         const tx = x + off + (rng() - 0.5) * 6;
         const ty = row * tile + (rng() - 0.5) * 6;
         const shade = rng();
-        g.fillStyle = shade > 0.5 ? `rgba(190,160,255,${0.02 + shade * 0.035})` : `rgba(0,0,0,${0.05 + shade * 0.1})`;
+        g.fillStyle = shade > 0.5 ? `rgba(${st.tileLight},${0.02 + shade * 0.035})` : `rgba(0,0,0,${0.05 + shade * 0.1})`;
         roundRect(g, tx + 3, ty + 3, tile - 6, tile - 6, 6);
         g.fill();
         g.strokeStyle = 'rgba(8,3,18,0.45)';
@@ -244,8 +307,8 @@ export class Renderer {
       const y = rng() * H;
       const r = 20 + rng() * 50;
       const m = g.createRadialGradient(x, y, 0, x, y, r);
-      m.addColorStop(0, 'rgba(60,140,90,0.16)');
-      m.addColorStop(1, 'rgba(60,140,90,0)');
+      m.addColorStop(0, `rgba(${st.moss},0.16)`);
+      m.addColorStop(1, `rgba(${st.moss},0)`);
       g.fillStyle = m;
       g.beginPath();
       g.arc(x, y, r, 0, TAU);
@@ -257,13 +320,13 @@ export class Renderer {
       const y = edge ? 40 + rng() * (H - 80) : rng() < 0.5 ? 40 + rng() * 50 : H - 40 - rng() * 50;
       const r = 2 + rng() * 2.5;
       const m = g.createRadialGradient(x, y, 0, x, y, r * 4);
-      m.addColorStop(0, 'rgba(120,255,230,0.5)');
-      m.addColorStop(1, 'rgba(120,255,230,0)');
+      m.addColorStop(0, `rgba(${st.glow},0.5)`);
+      m.addColorStop(1, `rgba(${st.glow},0)`);
       g.fillStyle = m;
       g.beginPath();
       g.arc(x, y, r * 4, 0, TAU);
       g.fill();
-      g.fillStyle = 'rgba(200,255,245,0.8)';
+      g.fillStyle = `rgba(${st.glowCore},0.8)`;
       g.beginPath();
       g.arc(x, y, r * 0.6, 0, TAU);
       g.fill();
@@ -272,7 +335,7 @@ export class Renderer {
     // Ancient summoning circle in the centre
     g.save();
     g.translate(W / 2, H / 2);
-    g.strokeStyle = 'rgba(160,130,255,0.16)';
+    g.strokeStyle = `rgba(${st.circle},0.16)`;
     g.lineWidth = 3;
     for (const r of [210, 190, 120]) {
       g.beginPath();
@@ -288,7 +351,7 @@ export class Renderer {
       g.lineTo(Math.cos(b) * 190, Math.sin(b) * 190);
     }
     g.stroke();
-    g.fillStyle = 'rgba(180,150,255,0.2)';
+    g.fillStyle = `rgba(${st.runes},0.2)`;
     g.font = `20px ${TITLE_FONT}`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
@@ -312,7 +375,7 @@ export class Renderer {
         else y = rng() < 0.5 ? ARENA.wall + rng() * 40 : H - ARENA.wall - rng() * 40;
       }
       const r = 2 + rng() * 6;
-      g.fillStyle = `rgba(${90 + rng() * 40},${70 + rng() * 30},${120 + rng() * 40},0.55)`;
+      g.fillStyle = `rgba(${st.rubble[0] + rng() * 40},${st.rubble[1] + rng() * 30},${st.rubble[2] + rng() * 40},0.55)`;
       g.beginPath();
       g.ellipse(x, y, r, r * (0.6 + rng() * 0.4), rng() * TAU, 0, TAU);
       g.fill();
@@ -320,12 +383,12 @@ export class Renderer {
 
     // Walls
     const wl = ARENA.wall;
-    g.fillStyle = '#120a22';
+    g.fillStyle = st.wall;
     g.fillRect(0, 0, W, wl);
     g.fillRect(0, H - wl, W, wl);
     g.fillRect(0, 0, wl, H);
     g.fillRect(W - wl, 0, wl, H);
-    g.strokeStyle = 'rgba(120,95,170,0.35)';
+    g.strokeStyle = `rgba(${st.brick},0.35)`;
     g.lineWidth = 1.5;
     const brick = 38;
     for (let x = 0; x < W; x += brick) {
@@ -340,7 +403,7 @@ export class Renderer {
       g.strokeRect(W - wl + 2, y, wl / 2 - 2, brick);
       g.strokeRect(W - wl / 2, y + brick / 2, wl / 2 - 2, brick);
     }
-    g.strokeStyle = 'rgba(200,170,255,0.45)';
+    g.strokeStyle = `rgba(${st.rim},0.45)`;
     g.lineWidth = 2.5;
     g.strokeRect(wl, wl, W - wl * 2, H - wl * 2);
     g.strokeStyle = 'rgba(0,0,0,0.5)';
@@ -360,8 +423,8 @@ export class Renderer {
     ];
     for (const p of pillars) {
       const pg = g.createRadialGradient(p.x - 8, p.y - 8, 2, p.x, p.y, 30);
-      pg.addColorStop(0, '#5d4b80');
-      pg.addColorStop(1, '#231638');
+      pg.addColorStop(0, st.pillar[0]);
+      pg.addColorStop(1, st.pillar[1]);
       g.fillStyle = pg;
       g.beginPath();
       g.arc(p.x, p.y, 28, 0, TAU);
@@ -369,7 +432,7 @@ export class Renderer {
       g.strokeStyle = 'rgba(0,0,0,0.6)';
       g.lineWidth = 3;
       g.stroke();
-      g.strokeStyle = 'rgba(200,170,255,0.25)';
+      g.strokeStyle = `rgba(${st.rim},0.25)`;
       g.lineWidth = 1.5;
       g.beginPath();
       g.arc(p.x, p.y, 18, 0, TAU);
@@ -385,12 +448,42 @@ export class Renderer {
     }
     for (const t of this.torches) {
       const tg = g.createRadialGradient(t.x, t.y, 0, t.x, t.y, 120);
-      tg.addColorStop(0, 'rgba(255,190,110,0.22)');
-      tg.addColorStop(1, 'rgba(255,190,110,0)');
+      tg.addColorStop(0, `rgba(${st.torch},0.22)`);
+      tg.addColorStop(1, `rgba(${st.torch},0)`);
       g.fillStyle = tg;
       g.beginPath();
       g.arc(t.x, t.y, 120, 0, TAU);
       g.fill();
+    }
+
+    // Glowing lava cracks through the Ember Depths floor.
+    if (st.cracks) {
+      for (let i = 0; i < 26; i++) {
+        let x = ARENA.wall + 30 + rng() * (W - 2 * ARENA.wall - 60);
+        let y = ARENA.wall + 30 + rng() * (H - 2 * ARENA.wall - 60);
+        const pts: Vec[] = [{ x, y }];
+        let a = rng() * TAU;
+        const steps = 5 + Math.floor(rng() * 5);
+        for (let k = 0; k < steps; k++) {
+          a += (rng() - 0.5) * 1.4;
+          x += Math.cos(a) * (14 + rng() * 22);
+          y += Math.sin(a) * (14 + rng() * 22);
+          pts.push({ x, y });
+        }
+        for (const [width, alpha] of [
+          [9, 0.12],
+          [4, 0.35],
+          [1.6, 0.9],
+        ] as const) {
+          g.strokeStyle = width < 2 ? 'rgba(255,220,150,0.9)' : `rgba(${st.cracks},${alpha})`;
+          g.lineWidth = width;
+          g.lineJoin = 'round';
+          g.beginPath();
+          g.moveTo(pts[0].x, pts[0].y);
+          for (const p of pts) g.lineTo(p.x, p.y);
+          g.stroke();
+        }
+      }
     }
 
     // Vignette
@@ -406,6 +499,7 @@ export class Renderer {
   // ------------------------------------------------------------ frame
 
   render(world: World, gesture: GestureView, realTime: number, showSnake: boolean): void {
+    this.setArea(world.area);
     if (this.pixel) {
       this.renderPixel(world, gesture, realTime, showSnake);
       return;
@@ -423,12 +517,20 @@ export class Renderer {
     if (this.bg) ctx.drawImage(this.bg, 0, 0, W, H);
     this.drawAmbient(world, realTime);
     this.drawPortals(world, realTime);
+    this.drawFrostFields(world, realTime);
     this.drawCrystals(world);
     this.drawTelegraphs(world);
-    for (const e of world.enemies) this.drawEnemy(e, world);
-    if (showSnake) this.drawSnake(world, gesture);
+    for (const e of world.enemies) {
+      this.drawEnemy(e, world);
+      this.drawEnemyStatus(e, world);
+    }
+    if (showSnake) {
+      this.drawSnake(world, gesture);
+      this.drawWard(world, realTime);
+    }
     this.drawNovas(world);
     this.drawBolts(world);
+    this.drawBeams(world);
     this.drawArcs(world, realTime);
     this.drawShots(world);
     this.drawParticles(world);
@@ -457,13 +559,18 @@ export class Renderer {
     low.imageSmoothingEnabled = false;
     low.drawImage(this.pixelFloor!.canvas, 0, 0);
     drawTorches(low, this.pixelFloor!, realTime);
+    drawFrostFields(low, world, realTime);
     drawPortals(low, world, realTime);
     drawCrystals(low, world);
     drawTelegraphs(low, world);
     drawEnemies(low, world);
-    if (showSnake) drawSerpent(low, world, gesture, realTime);
+    if (showSnake) {
+      drawSerpent(low, world, gesture, realTime);
+      drawWard(low, world, realTime);
+    }
     drawNovas(low, world);
     drawBolts(low, world);
+    drawBeams(low, world);
     drawArcs(low, world, realTime);
     drawShots(low, world);
     drawParticles(low, world);
@@ -536,7 +643,7 @@ export class Renderer {
     // Central circle pulses faintly, brighter when the boss is out.
     const pulse = 0.12 + Math.sin(t * 1.3) * 0.05 + (world.boss ? 0.15 : 0);
     ctx.globalAlpha = pulse;
-    ctx.strokeStyle = world.boss ? '#ff6a8a' : '#a58cff';
+    ctx.strokeStyle = world.boss ? '#ff6a8a' : (AREA_STYLE[this.area] ?? AREA_STYLE[0]).ambient;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(W / 2, H / 2, 210, 0, TAU);
@@ -934,6 +1041,7 @@ export class Renderer {
     const ctx = this.ctx;
     const s = world.snake;
     const segs = s.segments;
+    const look = WIZARDS[world.wizard].look;
     const blinking = world.invuln > 0 && Math.floor(world.invuln * 14) % 2 === 0 && world.time > 1.6;
     ctx.globalAlpha = blinking ? 0.4 : 1;
 
@@ -958,7 +1066,7 @@ export class Renderer {
     ctx.fill();
     for (let i = segs.length - 1; i >= 0; i--) {
       const r = s.segmentRadius(i);
-      ctx.fillStyle = i % 4 === 1 ? COLORS.snakeBodyDark : COLORS.snakeBody;
+      ctx.fillStyle = i % 4 === 1 ? look.bodyDark : look.body;
       ctx.beginPath();
       ctx.arc(segs[i].x, segs[i].y, r, 0, TAU);
       ctx.fill();
@@ -980,7 +1088,7 @@ export class Renderer {
     ctx.save();
     ctx.translate(s.x, s.y);
     ctx.rotate(s.heading);
-    ctx.fillStyle = world.hurtFlash > 0.6 ? '#ff9aa8' : COLORS.snakeBody;
+    ctx.fillStyle = world.hurtFlash > 0.6 ? '#ff9aa8' : look.body;
     ctx.beginPath();
     ctx.ellipse(0, 0, SNAKE.headRadius * 1.2, SNAKE.headRadius, 0, 0, TAU);
     ctx.fill();
@@ -999,10 +1107,10 @@ export class Renderer {
     }
     ctx.restore();
 
-    this.drawHat(s.x, s.y, s.heading, SNAKE.headRadius, COLORS.hat, COLORS.hatBand, s.anim, false, power);
+    this.drawHat(s.x, s.y, s.heading, SNAKE.headRadius, look.hat, look.band, s.anim, false, power);
 
     // Eyes look toward the recorded target while drawing.
-    const look = gesture.active && gesture.target ? Math.atan2(gesture.target.y - s.y, gesture.target.x - s.x) : s.heading;
+    const gaze = gesture.active && gesture.target ? Math.atan2(gesture.target.y - s.y, gesture.target.x - s.x) : s.heading;
     for (const side of [-1, 1]) {
       const a = s.heading + side * 0.55;
       const ex = s.x + Math.cos(a) * SNAKE.headRadius * 0.62;
@@ -1013,7 +1121,7 @@ export class Renderer {
       ctx.fill();
       ctx.fillStyle = '#140a24';
       ctx.beginPath();
-      ctx.arc(ex + Math.cos(look) * 1.8, ey + Math.sin(look) * 1.8, 2.3, 0, TAU);
+      ctx.arc(ex + Math.cos(gaze) * 1.8, ey + Math.sin(gaze) * 1.8, 2.3, 0, TAU);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -1120,6 +1228,177 @@ export class Renderer {
     }
     ctx.globalCompositeOperation = 'source-over';
     ctx.lineCap = 'butt';
+  }
+
+  /** Frost Fields lie on the floor under everything else: icy pool, dashed frosted rim, snowflakes. */
+  private drawFrostFields(world: World, t: number): void {
+    const ctx = this.ctx;
+    for (const f of world.frostFields) {
+      const grow = clamp(f.t / 0.25, 0, 1);
+      const k = grow * clamp((f.duration - f.t) / 0.5, 0, 1);
+      const r = f.radius * (0.85 + 0.15 * grow);
+      const g = ctx.createRadialGradient(f.x, f.y, r * 0.15, f.x, f.y, r);
+      g.addColorStop(0, `rgba(127,178,255,${0.08 * k})`);
+      g.addColorStop(0.75, `rgba(127,178,255,${0.2 * k})`);
+      g.addColorStop(1, `rgba(210,232,255,${0.34 * k})`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, r, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(226,240,255,${0.75 * k})`;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([14, 9]);
+      ctx.lineDashOffset = -t * 18;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, r, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Snowflakes resting around the field.
+      ctx.strokeStyle = `rgba(240,248,255,${0.8 * k})`;
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * TAU + t * 0.25 + f.id;
+        const d = r * (i % 2 === 0 ? 0.72 : 0.42);
+        const fx = f.x + Math.cos(a) * d;
+        const fy = f.y + Math.sin(a) * d;
+        for (let j = 0; j < 3; j++) {
+          const b = (j / 3) * Math.PI + a;
+          ctx.beginPath();
+          ctx.moveTo(fx - Math.cos(b) * 5, fy - Math.sin(b) * 5);
+          ctx.lineTo(fx + Math.cos(b) * 5, fy + Math.sin(b) * 5);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  /** Elite auras, the frosty tint of chilled foes and the ice block around frozen ones. */
+  private drawEnemyStatus(e: Enemy, world: World): void {
+    const ctx = this.ctx;
+    const t = world.time;
+    if (e.elite) {
+      const color = e.elite === 'shielded' ? COLORS.eliteShield : e.elite === 'swift' ? COLORS.eliteSwift : COLORS.eliteSplit;
+      ctx.globalCompositeOperation = 'lighter';
+      this.drawGlow(color, e.x, e.y, e.r * 2.6, 0.22 + 0.08 * Math.sin(t * 6 + e.wobble));
+      ctx.globalCompositeOperation = 'source-over';
+      if (e.elite === 'shielded' && e.shield > 0) {
+        const k = e.shield / e.shieldMax;
+        ctx.fillStyle = hexAlpha(COLORS.eliteShield, 0.1 + 0.12 * k);
+        ctx.strokeStyle = hexAlpha(COLORS.eliteShield, 0.35 + 0.5 * k);
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        // A hexagonal barrier.
+        for (let i = 0; i <= 6; i++) {
+          const a = (i / 6) * TAU + t * 0.6;
+          const x = e.x + Math.cos(a) * e.r * 1.55;
+          const y = e.y + Math.sin(a) * e.r * 1.55;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.fill();
+        ctx.stroke();
+      } else if (e.elite === 'swift') {
+        // Speed streaks trailing behind.
+        ctx.strokeStyle = hexAlpha(COLORS.eliteSwift, 0.6);
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        const back = e.heading + Math.PI;
+        for (const side of [-1, 0, 1]) {
+          const ox = Math.cos(back + Math.PI / 2) * side * e.r * 0.6;
+          const oy = Math.sin(back + Math.PI / 2) * side * e.r * 0.6;
+          const len = e.r * (1.2 + 0.4 * Math.sin(t * 20 + side));
+          ctx.beginPath();
+          ctx.moveTo(e.x + Math.cos(back) * e.r * 1.1 + ox, e.y + Math.sin(back) * e.r * 1.1 + oy);
+          ctx.lineTo(e.x + Math.cos(back) * (e.r * 1.1 + len) + ox, e.y + Math.sin(back) * (e.r * 1.1 + len) + oy);
+          ctx.stroke();
+        }
+        ctx.lineCap = 'butt';
+      } else if (e.elite === 'splitting') {
+        ctx.strokeStyle = hexAlpha(COLORS.eliteSplit, 0.75);
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 6]);
+        ctx.lineDashOffset = -t * 30;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r * 1.45, 0, TAU);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      // Crown marker so elites read at a glance.
+      drawStar(ctx, e.x, e.y - e.r - 12, 5, color);
+    }
+    if (e.frozen > 0) {
+      ctx.fillStyle = 'rgba(200,230,255,0.45)';
+      ctx.strokeStyle = 'rgba(240,250,255,0.9)';
+      ctx.lineWidth = 2;
+      roundRect(ctx, e.x - e.r * 1.25, e.y - e.r * 1.25, e.r * 2.5, e.r * 2.5, 4);
+      ctx.fill();
+      ctx.stroke();
+    } else if (e.chill > 0) {
+      ctx.fillStyle = 'rgba(150,195,255,0.3)';
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r * 1.05, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  /** Arcane Ward: a glowing ring with a turning triangle; one bright pip per remaining charge. */
+  private drawWard(world: World, t: number): void {
+    const w = world.ward;
+    if (!w) return;
+    const ctx = this.ctx;
+    const s = world.snake;
+    const R = SNAKE.headRadius * 2.3;
+    const ending = w.duration - w.t < 1.5;
+    const vis = ending && Math.floor(t * 10) % 2 === 0 ? 0.35 : 1;
+    ctx.globalCompositeOperation = 'lighter';
+    this.drawGlow(COLORS.ward, s.x, s.y, R * 1.7, (0.2 + 0.45 * w.flash) * vis);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = hexAlpha(COLORS.ward, 0.55 * vis);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, R, 0, TAU);
+    ctx.stroke();
+    const rot = t * 1.6;
+    ctx.strokeStyle = hexAlpha(COLORS.wardCore, 0.85 * vis);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let i = 0; i <= 3; i++) {
+      const a = rot + (i / 3) * TAU;
+      const x = s.x + Math.cos(a) * R * 1.12;
+      const y = s.y + Math.sin(a) * R * 1.12;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    for (let i = 0; i < w.charges; i++) {
+      const a = -rot * 0.7 + (i / Math.max(1, w.charges)) * TAU;
+      drawStar(ctx, s.x + Math.cos(a) * R * 1.35, s.y + Math.sin(a) * R * 1.35, 4, COLORS.wardCore);
+    }
+  }
+
+  /** Arcane Lance beams: a wide glow, a bright band and a white core that fade together. */
+  private drawBeams(world: World): void {
+    const ctx = this.ctx;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    for (const b of world.beams) {
+      const k = b.life / b.maxLife;
+      for (const [width, color, alpha] of [
+        [b.width * 1.6, COLORS.bolt, 0.3],
+        [b.width * 0.6, COLORS.bolt, 0.8],
+        [3, COLORS.boltCore, 1],
+      ] as const) {
+        ctx.strokeStyle = hexAlpha(color, alpha * k);
+        ctx.lineWidth = width * (0.6 + 0.4 * k);
+        ctx.beginPath();
+        ctx.moveTo(b.x0, b.y0);
+        ctx.lineTo(b.x1, b.y1);
+        ctx.stroke();
+      }
+      this.drawGlow(COLORS.bolt, b.x1, b.y1, 30, k);
+    }
+    ctx.lineCap = 'butt';
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   /** Hostile projectiles: dark outline + hot core so they read against every friendly effect. */

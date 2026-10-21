@@ -13,7 +13,9 @@ import {
   type MetaLevels,
   type RunSummary,
 } from './progression';
+import { CURSE_IDS, type CurseId } from './curses';
 import type { RunRecap } from './recap';
+import { WIZARD_IDS, type WizardId } from './wizards';
 
 export const SAVE_KEY = 'serpent-sorcery-save-v1';
 export const SAVE_VERSION = 1;
@@ -27,6 +29,8 @@ export interface SaveData {
     bestKills: number;
     bestLevel: number;
     totalRuns: number;
+    /** Lifetime Archmages defeated (unlocks a wizard). */
+    bossKills: number;
   };
   settings: {
     muted: boolean;
@@ -35,6 +39,9 @@ export interface SaveData {
     pixelArt: boolean;
     /** Music slider, 0..1 (0 = off). `volume` above is the sound-effects slider. */
     musicVolume: number;
+    /** Run setup, kept between runs. A locked wizard falls back to the Arcanist at run start. */
+    wizard: WizardId;
+    curses: CurseId[];
   };
   /** Id of the last run whose reward was banked; guarantees one award per run. */
   lastRunId: string;
@@ -45,8 +52,8 @@ export function defaultSave(): SaveData {
     version: SAVE_VERSION,
     currency: 0,
     meta: emptyMetaLevels(),
-    records: { bestTime: 0, bestKills: 0, bestLevel: 0, totalRuns: 0 },
-    settings: { muted: false, volume: 0.7, pixelArt: false, musicVolume: 0.55 },
+    records: { bestTime: 0, bestKills: 0, bestLevel: 0, totalRuns: 0, bossKills: 0 },
+    settings: { muted: false, volume: 0.7, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [] },
     lastRunId: '',
   };
 }
@@ -78,6 +85,7 @@ export function sanitizeSave(input: unknown): SaveData {
       bestKills: num(records.bestKills, 0, 0, 1e9, true),
       bestLevel: num(records.bestLevel, 0, 0, 1e5, true),
       totalRuns: num(records.totalRuns, 0, 0, 1e9, true),
+      bossKills: num(records.bossKills, 0, 0, 1e9, true),
     },
     settings: {
       muted: typeof settings.muted === 'boolean' ? settings.muted : d.settings.muted,
@@ -85,6 +93,10 @@ export function sanitizeSave(input: unknown): SaveData {
       pixelArt: typeof settings.pixelArt === 'boolean' ? settings.pixelArt : d.settings.pixelArt,
       // Saves from before the slider stored an on/off flag; "off" becomes a silent slider.
       musicVolume: num(settings.musicVolume, settings.music === false ? 0 : d.settings.musicVolume, 0, 1),
+      wizard: WIZARD_IDS.includes(settings.wizard as WizardId) ? (settings.wizard as WizardId) : d.settings.wizard,
+      curses: Array.isArray(settings.curses)
+        ? CURSE_IDS.filter((id) => (settings.curses as unknown[]).includes(id))
+        : d.settings.curses,
     },
     lastRunId: typeof o.lastRunId === 'string' ? o.lastRunId.slice(0, 64) : '',
   };
@@ -134,6 +146,8 @@ export interface RunResult extends RunSummary {
   reward: number;
   /** Spell and damage statistics for the game-over screen; not saved. */
   recap?: RunRecap;
+  wizard?: WizardId;
+  curses?: CurseId[];
 }
 
 export interface CommitOutcome {
@@ -160,6 +174,7 @@ export function commitRunResult(save: SaveData, run: RunResult): CommitOutcome {
         bestKills: Math.max(save.records.bestKills, run.kills),
         bestLevel: Math.max(save.records.bestLevel, run.level),
         totalRuns: save.records.totalRuns + 1,
+        bossKills: save.records.bossKills + Math.max(0, Math.floor(run.bossKills)),
       },
       lastRunId: run.runId,
     },

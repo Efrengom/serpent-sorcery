@@ -1,11 +1,7 @@
-import type { SpellId } from '../game/config';
-import { SPELLS } from '../game/config';
 import type { HudSnapshot } from '../game/engine';
 import { formatTime } from '../game/math';
 import { PixelIcon, usePixelArt } from './art';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
-
-const ORDER: SpellId[] = ['bolt', 'lightning', 'nova'];
 
 interface Props {
   hud: HudSnapshot | null;
@@ -45,23 +41,26 @@ export function Hud({ hud, muted, onPause, onToggleMute }: Props) {
 
         <div className="hud-center">
           <div className="clock">{formatTime(hud.time)}</div>
-          <div className="kills">{hud.kills} defeated</div>
+          <div className="kills">
+            {hud.kills} defeated
+            {hud.depth > 1 && <span className="depth"> · Depth {hud.depth}</span>}
+          </div>
         </div>
 
-        <div className="hud-right">
-          {ORDER.map((id) => {
+        <div className={`hud-right${hud.known.length > 3 ? ' many' : ''}`}>
+          {hud.known.map((id) => {
             const cd = hud.cooldowns[id];
             const ready = cd.remaining <= 0;
             const pct = ready ? 0 : Math.min(1, cd.remaining / Math.max(0.01, cd.total));
             return (
               <div
                 key={id}
-                className={`spell-card${ready ? ' ready' : ''}${cd.cast > 0.4 ? ' cast' : ''}${cd.deny > 0.4 ? ' deny' : ''}`}
+                className={`spell-card${ready ? ' ready' : ''}${cd.cast > 0.4 ? ' cast' : ''}${cd.deny > 0.4 ? ' deny' : ''}${hud.evolved[id] ? ' evolved' : ''}`}
                 style={{ ['--spell' as string]: SPELL_UI[id].color }}
               >
                 <SigilIcon spell={id} size={34} />
                 <div className="spell-text">
-                  <span className="spell-name">{SPELLS[id].name}</span>
+                  <span className="spell-name">{hud.spellNames[id]}</span>
                   <span className="spell-shape">Draw {SPELL_UI[id].shape}</span>
                 </div>
                 {!ready && (

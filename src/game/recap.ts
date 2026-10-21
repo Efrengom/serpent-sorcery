@@ -20,11 +20,23 @@ export interface RunRecap {
   taken: Record<string, number>;
   /** The hurtKey() of the blow that ended the run, or null if it was ended from the menu. */
   killedBy: string | null;
+  /** Hits the Arcane Ward absorbed. */
+  blocked: number;
+  elitesSlain: number;
+  /** Deepest depth reached (1 before the first boss falls). */
+  depth: number;
 }
 
 export function emptyRecap(): RunRecap {
   const spell = (): SpellRecap => ({ casts: 0, damage: 0, kills: 0 });
-  return { spells: { bolt: spell(), lightning: spell(), nova: spell() }, taken: {}, killedBy: null };
+  return {
+    spells: { bolt: spell(), lightning: spell(), nova: spell(), ward: spell(), frost: spell() },
+    taken: {},
+    killedBy: null,
+    blocked: 0,
+    elitesSlain: 0,
+    depth: 1,
+  };
 }
 
 export function hurtKey(src: HurtSource): string {

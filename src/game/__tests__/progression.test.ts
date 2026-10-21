@@ -144,7 +144,12 @@ describe('rewards and persistence', () => {
     expect(weird.meta).toEqual({ health: 5, damage: 0, pickup: 1, wisdom: 0 });
     expect(weird.records.bestTime).toBe(0);
     expect(weird.records.totalRuns).toBe(3);
-    expect(weird.settings).toEqual({ muted: false, volume: 1, pixelArt: false, musicVolume: 0.55 });
+    expect(weird.settings).toEqual({ muted: false, volume: 1, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [] });
+    // Unknown wizards and curses are dropped; duplicates collapse.
+    const odd = parseSave(JSON.stringify({ settings: { wizard: 'lich', curses: ['glass', 'nope', 'glass', 3] }, records: { bossKills: -2 } }));
+    expect(odd.settings.wizard).toBe('arcanist');
+    expect(odd.settings.curses).toEqual(['glass']);
+    expect(odd.records.bossKills).toBe(0);
     // Older saves stored music as an on/off flag.
     expect(parseSave(JSON.stringify({ settings: { music: false } })).settings.musicVolume).toBe(0);
     expect(parseSave(JSON.stringify({ settings: { music: true } })).settings.musicVolume).toBe(0.55);
@@ -179,7 +184,11 @@ describe('rewards and persistence', () => {
   it('round-trips through storage and survives a throwing store', () => {
     const map = new Map<string, string>();
     const store = { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => void map.set(k, v) };
-    const save = { ...defaultSave(), currency: 77, settings: { muted: true, volume: 0.3, pixelArt: true, musicVolume: 0.2 } };
+    const save = {
+      ...defaultSave(),
+      currency: 77,
+      settings: { ...defaultSave().settings, muted: true, volume: 0.3, pixelArt: true, musicVolume: 0.2, wizard: 'frostcoil' as const, curses: ['glass' as const] },
+    };
     expect(writeSave(save, store)).toBe(true);
     expect(map.has(SAVE_KEY)).toBe(true);
     expect(loadSave(store)).toEqual(save);

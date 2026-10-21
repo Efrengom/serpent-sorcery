@@ -3,12 +3,15 @@ import { audio } from '../game/audio';
 import { Game, type HudSnapshot, type Phase } from '../game/engine';
 import type { CommitOutcome, RunResult } from '../game/persistence';
 import type { MetaLevels, UpgradeChoice } from '../game/progression';
+import type { RunSetup } from '../game/world';
 import { Hud } from './Hud';
 import { GameOverPanel, LevelUpPanel, PauseMenu } from './Overlays';
 import type { VolumeControls } from './VolumeControls';
 
 interface Props {
   meta: MetaLevels;
+  /** Wizard and curses for the next run; a restart picks up the latest choice. */
+  setup: RunSetup;
   muted: boolean;
   pixelArt: boolean;
   volume: ComponentProps<typeof VolumeControls>;
@@ -25,6 +28,7 @@ interface Props {
  */
 export function GameView({
   meta,
+  setup,
   muted,
   pixelArt,
   volume,
@@ -42,8 +46,8 @@ export function GameView({
   const [over, setOver] = useState<{ result: RunResult; outcome: CommitOutcome } | null>(null);
 
   // Keep latest callbacks/props reachable from the long-lived Game without re-creating it.
-  const latest = useRef({ meta, pixelArt, onCommitRun, onToggleMute, onToggleArt });
-  latest.current = { meta, pixelArt, onCommitRun, onToggleMute, onToggleArt };
+  const latest = useRef({ meta, setup, pixelArt, onCommitRun, onToggleMute, onToggleArt });
+  latest.current = { meta, setup, pixelArt, onCommitRun, onToggleMute, onToggleArt };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -63,6 +67,7 @@ export function GameView({
         onToggleArt: () => latest.current.onToggleArt(),
       },
       latest.current.pixelArt,
+      latest.current.setup,
     );
     gameRef.current = game;
     game.start();
@@ -94,7 +99,7 @@ export function GameView({
   const restart = useCallback(() => {
     setOver(null);
     setLevelUp(null);
-    gameRef.current?.restart(latest.current.meta);
+    gameRef.current?.restart(latest.current.meta, latest.current.setup);
   }, []);
 
   return (

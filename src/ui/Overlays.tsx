@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentProps, type CSSProperties } from 'react';
-import { SPELLS, type SpellId } from '../game/config';
+import { SPELL_IDS, SPELLS } from '../game/config';
 import { formatTime } from '../game/math';
 import type { CommitOutcome, RunResult } from '../game/persistence';
 import type { UpgradeChoice } from '../game/progression';
@@ -47,15 +47,29 @@ export function LevelUpPanel({
         <p className="overlay-sub">Choose a rune to inscribe</p>
         <div className={`cards${armed ? ' armed' : ''}`}>
           {choices.map((c, i) => (
-            <button key={`${c.id}-${i}`} className="upgrade-card" disabled={!armed} onClick={() => onChoose(c)}>
+            <button
+              key={`${c.id}-${i}`}
+              className={`upgrade-card ${c.kind}`}
+              style={c.spell ? ({ '--spell': SPELL_UI[c.spell].color } as CSSProperties) : undefined}
+              disabled={!armed}
+              onClick={() => onChoose(c)}
+            >
               <span className="card-key">{i + 1}</span>
-              <UpgradeGlyph id={c.id} glyph={c.glyph} />
+              {c.spell ? <SigilIcon spell={c.spell} size={48} /> : <UpgradeGlyph id={c.id} glyph={c.glyph} />}
               <span className="card-name">{c.name}</span>
               <span className="card-level">
-                {c.id === 'restore' ? 'Bonus' : c.nextLevel === 1 ? `New · max ${c.maxLevel}` : `Lv ${c.nextLevel - 1} → ${c.nextLevel} / ${c.maxLevel}`}
+                {c.kind === 'restore'
+                  ? 'Bonus'
+                  : c.kind === 'learn'
+                    ? `New sigil · ${SPELL_UI[c.spell!].shape}`
+                    : c.kind === 'evolve'
+                      ? 'Evolution'
+                      : c.nextLevel === 1
+                        ? `New · max ${c.maxLevel}`
+                        : `Lv ${c.nextLevel - 1} → ${c.nextLevel} / ${c.maxLevel}`}
               </span>
               <span className="card-pips">
-                {c.id !== 'restore' &&
+                {c.kind === 'upgrade' &&
                   Array.from({ length: c.maxLevel }, (_, k) => (
                     <i key={k} className={k < c.nextLevel - 1 ? 'on' : k === c.nextLevel - 1 ? 'next' : ''} />
                   ))}
@@ -115,12 +129,16 @@ export function PauseMenu({
   );
 }
 
-const SPELL_ORDER: SpellId[] = ['bolt', 'lightning', 'nova'];
-
 /** What ended the run, and how much each spell contributed. */
 function RunRecapView({ recap }: { recap: RunRecap }) {
-  const total = SPELL_ORDER.reduce((sum, id) => sum + recap.spells[id].damage, 0);
+  const used = SPELL_IDS.filter((id) => recap.spells[id].casts > 0);
+  const rows = used.length > 0 ? used : SPELL_IDS.slice(0, 3);
+  const total = rows.reduce((sum, id) => sum + recap.spells[id].damage, 0);
   const worst = worstHurt(recap);
+  const extras = [
+    recap.blocked > 0 && `Ward blocked ${recap.blocked} ${recap.blocked === 1 ? 'hit' : 'hits'}`,
+    recap.elitesSlain > 0 && `${recap.elitesSlain} ${recap.elitesSlain === 1 ? 'elite' : 'elites'} slain`,
+  ].filter(Boolean);
   return (
     <div className="recap">
       <p className="recap-cause">
@@ -133,7 +151,7 @@ function RunRecapView({ recap }: { recap: RunRecap }) {
         )}
       </p>
       <div className="recap-spells">
-        {SPELL_ORDER.map((id) => {
+        {rows.map((id) => {
           const s = recap.spells[id];
           const style = {
             '--spell': SPELL_UI[id].color,
@@ -163,6 +181,7 @@ function RunRecapView({ recap }: { recap: RunRecap }) {
           Hurt most by {describeHurt(worst.key)} · {worst.amount} damage
         </p>
       )}
+      {extras.length > 0 && <p className="recap-taken">{extras.join(' · ')}</p>}
     </div>
   );
 }
@@ -220,13 +239,21 @@ export function GameOverPanel({
               <span className="stat-value">{result.bossKills}</span>
             </div>
           )}
+          {(result.recap?.depth ?? 1) > 1 && (
+            <div className="stat">
+              <span className="stat-label">Depth</span>
+              <span className="stat-value">{result.recap!.depth}</span>
+            </div>
+          )}
         </div>
         {result.recap && <RunRecapView recap={result.recap} />}
         <div className="reward">
           <span className="reward-gain">
             +{result.reward} <Shard scale={4} />
           </span>
-          <span className="reward-total">Arcane Shards · {totalCurrency} total</span>
+          <span className="reward-total">
+            Arcane Shards{(result.shardMult ?? 1) > 1 && ` · ×${result.shardMult!.toFixed(2)} from curses`} · {totalCurrency} total
+          </span>
         </div>
         <div className="menu-buttons row">
           <button className="btn primary" onClick={onRestart} disabled={!armed}>

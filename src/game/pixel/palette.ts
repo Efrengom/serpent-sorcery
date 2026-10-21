@@ -110,6 +110,18 @@ export const PX = {
   enrage: '#ff2a50',
   hpBack: '#140a1e',
   hpFill: '#ff5a6e',
+  // Frost Field and Arcane Ward
+  ice0: '#1d3a6e',
+  ice1: '#3f6fc0',
+  ice2: '#7fb2ff',
+  ice3: '#e2f0ff',
+  ward0: '#5a4a8a',
+  ward1: '#b8a4f0',
+  ward2: '#e6d8ff',
+  // Elite auras
+  eliteShield: '#9fd0ff',
+  eliteSwift: '#ffe066',
+  eliteSplit: '#7dff9a',
 } as const;
 
 export type PxColor = (typeof PX)[keyof typeof PX];

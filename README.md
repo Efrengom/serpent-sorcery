@@ -1,6 +1,6 @@
 # Serpent Sorcery
 
-A top-down action roguelite for desktop browsers. One hand steers a wizard snake that never stops moving; the other hand draws magic sigils with the mouse to cast spells. Survive as long as you can. Your snake grows longer and stronger, and the ruins send ever nastier foes, including a rival Archmage serpent at 5:00.
+A top-down action roguelite for desktop browsers. One hand steers a wizard snake that never stops moving; the other hand draws magic sigils with the mouse to cast spells. Survive as long as you can. Your snake grows longer and stronger, learns new sigils and evolves its spells, and the ruins send ever nastier foes, including a rival Archmage serpent at 5:00. Defeat it and the floor cracks open into ever deeper, harder depths. Before each run you pick a wizard and, if you dare, curses that raise the reward.
 
 ## Setup
 
@@ -9,7 +9,7 @@ Requires Node 18+.
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap)
+npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap, spells, depth)
 npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 npm run playtest   # ~5 min end-to-end play-test in a headless Edge/Chrome
@@ -27,7 +27,10 @@ On Windows PowerShell with script execution disabled, `npm` itself is blocked (`
 - Escape, focus loss and resize handling
 - every sound sample loading, music start/mute/duck/slider behavior
 - the boss warning hushing the music, the boss theme crossfading in, the freeze and slow motion when the boss dies, and the main theme returning
+- drawing an unlearned triangle, then learning the triangle and zigzag sigils from level-up cards and casting them with real strokes, the ward blocking a real hit, frost slowing a foe, and an evolution card turning Arcane Bolt into Arcane Lance
+- descending to Depth 2 (the Ember Depths) after the boss falls
 - an autopilot run with level-ups through death, music layers building as the arena fills, the death recap, the reward banked once, and an instant restart
+- the setup screen: locked and unlocked wizards, picking Frostcoil and a curse with real clicks, the run starting with them, and the curse multiplying the banked shards
 - shop purchases and reload persistence
 - a 400-action random keyboard/mouse fuzz asserting that permanent upgrades only change through a "Learn" click
 
@@ -44,6 +47,7 @@ Screenshots and `results.json` go to `playtest-output/`. Set `PLAYTEST_BROWSER` 
 | **M** | Mute everything (volume sliders are on the title screen and pause menu) |
 | **P** | Switch art style (Classic / Pixel), even mid-run |
 | **1 / 2 / 3** | Pick a level-up card |
+| **Enter** (title) | Play with the saved wizard and curses; **Wizard & Curses** changes them |
 | **R / Enter** | Play again from the game-over screen |
 
 ### Sigils
@@ -53,8 +57,12 @@ Screenshots and `results.json` go to `playtest-output/`. Set `PLAYTEST_BROWSER` 
 | Straight line (any direction) | **Arcane Bolt** | Fast projectile from the head toward your target; hits the first enemy (more with Piercing). |
 | V (opening roughly upward, tilt up to ~60°) | **Forked Lightning** | Strikes an enemy near the aimed direction, then chains to nearby enemies. |
 | Circle (either direction) | **Arcane Nova** | Shockwave centered on the snake. Knocks enemies back and dispels enemy shots. |
+| Triangle (any rotation, either way round) | **Arcane Ward** | A shield around the head that blocks the next hit (walls still sting) and shoves nearby foes away, for 8 s. |
+| Zigzag (Z, N, W or longer, any direction) | **Frost Field** | Freezing ground at your target for 5 s: foes inside move and attack at 45% speed, take damage over time, and enemy shots crawl through it. |
 
-**Aiming is independent of the stroke's shape.** On mouse-down the cursor's arena position is recorded and marked with a reticle, with a faint dashed guide from the head. On release, Bolt and Lightning fire from the snake's **current** head toward that recorded point, so the snake can keep moving while you draw. If you press within ~48 units of the head, spells fire along the current heading instead.
+Each wizard starts a run knowing three sigils. Drawing one you haven't learned says so and costs nothing. From level 3, level-up cards offer the missing sigils (guaranteed on levels 3, 6, 9 and so on while any are unknown); their own upgrades (Warding Runes, Deep Frost) only appear once you know them.
+
+**Aiming is independent of the stroke's shape.** On mouse-down the cursor's arena position is recorded and marked with a reticle, with a faint dashed guide from the head. On release, Bolt and Lightning fire from the snake's **current** head toward that recorded point, and Frost Field lands on it, so the snake can keep moving while you draw. If you press within ~48 units of the head, spells fire along the current heading instead.
 
 Each spell has its own cooldown. An unrecognized stroke shows "Sigil unclear" and costs nothing. A recognized spell that is still recharging shows "… recharging 1.2s" and shakes its HUD card. Tiny drags and clicks are ignored silently.
 
@@ -65,14 +73,65 @@ All in `src/game/gesture.ts`. It is local, deterministic and has no dependencies
 1. **Reject tiny strokes**: a bounding box under 26 px or a path under 40 px counts as a click.
 2. **Resample** to 64 points equally spaced along the path, so drawing speed doesn't matter. Then **smooth** lightly to remove hand jitter.
 3. **Normalize**: move the centroid to the origin and scale *uniformly* by the larger bounding-box side, which keeps proportions (a thin line stays thin).
-4. **Extract rotation-invariant features**: straightness (chord / path length), PCA elongation, signed and absolute turning, closure gap, radial spread, and the corner found at maximum deviation from the chord.
+4. **Extract rotation-invariant features**: straightness (chord / path length), PCA elongation, signed and absolute turning, closure gap, radial spread, the corner found at maximum deviation from the chord, and **sharp corners**: peaks of the turning summed over a 5-point window, plus the share of all turning that happens at them.
 5. **Score each sigil.** Each one has hard gates plus a confidence score:
    - *Line*: very straight, very thin, tiny deviation from its chord.
    - *Circle*: turns 270–610° consistently one way, ends near its start, roundish, even radius.
    - *V*: one corner splitting the stroke into two straight legs of comparable length, opening between 14° and 122°, and the opening points up the screen within ±62°.
+   - *Triangle*: the stroke closes on itself (overshooting past the start is fine), most of its turning happens at corners, and it simplifies to a three-sided polygon with no interior angle wider than 125° and no side under 30% of the longest. The polygon is fitted from the two most distant points, so it doesn't matter where on the triangle you start, and wobble vertices, overshoot spikes and near-duplicate corners are merged away.
+   - *Zigzag*: an open stroke with 2 to 4 sharp corners (70°+) that turn alternately left and right, joined by straight legs of comparable length. A tiny hook at either end is ignored.
+   - Circles are rejected if they have two or more really sharp (85°+) corners, which keeps triangles from reading as circles.
 6. The best sigil wins. Nothing above 0.5 means **unclear**. Two candidates within 0.08 of each other means **ambiguous**, which also shows "Sigil unclear".
 
-The tests in `src/game/__tests__/gesture*.test.ts` include a sweep of 300 randomized, noisy hand-drawn strokes per shape. Current results: lines 100%, circles 98%, Vs 100%, zero misclassifications, and fewer than 2% of random scribbles accepted.
+The tests in `src/game/__tests__/gesture*.test.ts` include a sweep of 300 randomized, noisy hand-drawn strokes per shape: triangles of varied shape started at a corner or mid-side with a gap or overlap, and zigzags of 3 to 5 legs at any rotation. Across three seeds (900 strokes per shape): lines 100%, circles 96–99%, Vs 100%, triangles 99–100%, zigzags 99%, zero strokes read as the wrong sigil, and about 1% of random scribbles accepted.
+
+## Spell evolutions
+
+When a spell's own upgrade is maxed and its partner upgrade has 2 ranks, the next level-up includes a golden card that evolves it (the HUD card then shows the new name):
+
+| Spell | Needs | Becomes |
+| --- | --- | --- |
+| Arcane Bolt | Piercing Bolt max + Arcane Potency 2 | **Arcane Lance**: instant beams (one per Split Bolt projectile) that pierce everything in a line for 1.8× damage |
+| Forked Lightning | Forked Chains max + Quickened Runes 2 | **Tempest**: chains to 3 more foes, then strikes again 0.3 s later |
+| Arcane Nova | Nova Expanse max + Serpent Vitality 2 | **Supernova**: a second, 1.5× wider ring follows, and each foe hit heals 1 (up to 20 per ring) |
+| Arcane Ward | Warding Runes max + Shed Skin 2 | **Aegis**: lasts 4 s longer, and every blocked hit fires 8 bolts outward |
+| Frost Field | Deep Frost max + Crystal Magnetism 2 | **Glacier**: foes entering the field freeze solid for 1.2 s and take 40% more damage while chilled |
+
+## Wizards
+
+Chosen on the **Wizard & Curses** screen (reached from the title) and remembered between runs. Each has its own colours in both art styles.
+
+| Wizard | Starting sigils | Perks | Unlock |
+| --- | --- | --- | --- |
+| **Arcanist** | Line, V, Circle | Balanced | Always |
+| **Frostcoil** | Line, Zigzag, Circle | +20% Frost Field radius | Survive 3:00 |
+| **Wardscale** | Line, Triangle, V | +25 max health, the ward blocks one more hit | Reach level 10 |
+| **Stormtongue** | V, Line, Zigzag | +20% spell damage, lightning chains once more, −25 max health | Defeat Ouroboros |
+
+## Curses
+
+Optional handicaps toggled on the same screen. Each adds to the run's shard multiplier, shown on the setup screen and the game-over screen (capped at ×3):
+
+| Curse | Effect | Bonus |
+| --- | --- | --- |
+| Frenzied Foes | Enemies move and attack 25% faster | +25% |
+| Glass Scales | 40% less max health | +30% |
+| Swarming Ruins | Enemies spawn 40% faster and more can be out at once | +30% |
+| Sluggish Sigils | Spell cooldowns 30% longer | +25% |
+| Champions' Hunt | Elites appear from the start, and more often | +20% |
+| Impatient Archmage | The boss arrives at 3:30, and every 3:30 after | +20% |
+
+## Depths and elites
+
+The run never ends on its own. Each Archmage defeated takes you one **depth** deeper (shown next to the kill count). The first descent turns the arena into the **Ember Depths**: scorched red stone, ash and glowing lava cracks, in both art styles. Every depth adds 35% enemy health, 20% damage, 15% spawn rate and room for 12 more foes, and the boss keeps returning stronger.
+
+From Depth 2, spawns can be **elites** (10% at Depth 2, +5% per depth, up to 35%): bigger, 1.6× health, 2.5× experience, a crown marker and one modifier:
+
+- **Shielded**: a hexagonal barrier worth 80% of its health soaks damage and knockback until it breaks.
+- **Swift**: lives on a 1.45× faster clock, so it moves, winds up and attacks faster.
+- **Splitting**: bursts into two smaller fragments when it dies.
+
+Frost works the same way in reverse: enemies inside a field run on a slower clock, which slows their attack wind-ups too. The game-over recap also counts hits the ward blocked, elites slain and the depth reached.
 
 ## Music
 
@@ -125,12 +184,15 @@ The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite raster
 - `SNAKE`: speed, turn rate, segment spacing and growth, health, invulnerability, pickup radius, aim fallback distance
 - `SPELLS`: damage, cooldowns and their minimums, speeds, chain counts and range, Nova radius
 - `HIT_STOP`: freeze lengths, what counts as a big hit, boss-kill slow motion
+- `SPELLS.ward`, `SPELLS.frost`: the new spells' cooldowns, duration, charges, slow, damage
+- `EVOLUTIONS`, `EVOLUTION_PARTNER_RANKS`: what each evolution needs and does
+- `DEPTH`, `ELITE`: per-depth scaling and elite chances and modifiers
 - `ENEMIES`: per-type health, speed, damage, XP, telegraph timings, boss attack patterns
 - `DIRECTOR`: spawn rate curve, alive cap, enemy-type unlock times, boss timing, difficulty scaling over time
 - `PROGRESSION`: XP curve, passive survival XP, crystal cap
 - `REWARDS`: Arcane Shards per 10 s survived, per kill, per level and per boss
 
-Run upgrades (stack sizes and per-level effects) and permanent upgrades (costs and caps) are in **`src/game/progression.ts`**.
+Run upgrades (stack sizes and per-level effects), the level-up offer (when new sigils and evolutions appear) and permanent upgrades (costs and caps) are in **`src/game/progression.ts`**. Wizards are in **`src/game/wizards.ts`** and curses in **`src/game/curses.ts`**.
 
 ## Project layout
 
@@ -141,12 +203,14 @@ src/game/            framework-free game code (no React)
   snake.ts           player movement, path trail for body segments, wall bounce
   input.ts           keyboard + pointer capture, clears on blur/resize/pause
   gesture.ts         sigil recognizer
-  spells.ts          Bolt / Lightning / Nova casting and updates, aim logic
-  enemies.ts         spawn director, scaling, AI for chasers/casters/brutes/rivals/boss
+  spells.ts          all five spells and their evolutions, frost and swift time scaling, aim logic
+  enemies.ts         spawn director, depth scaling, elites, AI for chasers/casters/brutes/rivals/boss
   combat.ts          damage, deaths, crystals, contacts, enemy shots
   progression.ts     XP curve, run upgrades, rewards, permanent upgrades
   persistence.ts     validated localStorage save, award-once commit
   recap.ts           per-run spell and damage statistics for the game-over screen
+  wizards.ts         playable wizards: starting sigils, perks, colours, unlocks
+  curses.ts          optional pre-run curses and the shard multiplier
   render.ts          Canvas 2D renderer (cached background, glow sprites)
   effects.ts         capped particles, floating text, screen shake, hit-stop
   audio.ts           WebAudio context, volumes, sample loading, music scheduling
@@ -159,4 +223,4 @@ The animation loop and all fast-changing state live in `Game` outside React. Rea
 
 ## Saves
 
-Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, records (best time, level, kills, run count), and mute/volume. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.
+Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, records (best time, level, kills, run count, lifetime bosses defeated), mute/volume, and the chosen wizard and curses. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.
