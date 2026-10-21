@@ -9,7 +9,7 @@ Requires Node 18+.
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap, spells, depth, clean casts, Constrict)
+npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap, spells, depth, clean casts, Constrict, options, practice)
 npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 npm run playtest   # ~5 min end-to-end play-test in a headless Edge/Chrome
@@ -33,6 +33,8 @@ On Windows PowerShell with script execution disabled, `npm` itself is blocked (`
 - an autopilot run with level-ups through death, music layers building as the arena fills, the death recap, the reward banked once, and an instant restart
 - the setup screen: locked and unlocked wizards, picking Frostcoil and a curse with real clicks, the run starting with them, and the curse multiplying the banked shards
 - shop purchases and reload persistence
+- the options screen: toggles, sliders and rebinding set with real clicks and keys and saved, a key taken from another action, Esc cancelling a rebind, the run steering with the new key (and not the old one), 50% game speed advancing the run at half speed, and canvas pixels showing a struck foe not flashing white with reduced flashing and a charge lane painted in hazard yellow with colorblind-safe warnings
+- the sigil practice room: the live reading while drawing, a V graded as Forked Lightning, a square drawn for the triangle explaining that it has 4 corners, and the tally of attempts
 - a 400-action random keyboard/mouse fuzz asserting that permanent upgrades only change through a "Learn" click
 
 Screenshots and `results.json` go to `playtest-output/`. Set `PLAYTEST_BROWSER` to use a different Chromium-based browser and `AUTOPILOT_SECONDS` to shorten the run.
@@ -47,6 +49,7 @@ Screenshots and `results.json` go to `playtest-output/`. Set `PLAYTEST_BROWSER` 
 | **Esc** | Pause / resume (focus loss also pauses) |
 | **M** | Mute everything (volume sliders are on the title screen and pause menu) |
 | **P** | Switch art style (Classic / Pixel), even mid-run |
+| **Options** | Rebind every key above except Esc; see [Options](#options) |
 | **1 / 2 / 3** | Pick a level-up card |
 | **Enter** (title) | Play with the saved wizard and curses; **Wizard & Curses** changes them |
 | **R / Enter** | Play again from the game-over screen |
@@ -68,6 +71,28 @@ Each wizard starts a run knowing three sigils. Drawing one you haven't learned s
 **Clean casts.** While you draw, the stroke is read about 16 times a second: the trail takes the colour of the spell it currently reads as (grey if you haven't learned it), and a label by the pen names it and how cleanly it's drawn. On release, a **Perfect** sigil casts at +35% power and a **Clean** one at +15% (damage, plus duration for the Ward and size for Frost Field). The grade comes from the recognizer's confidence, compared with per-sigil thresholds in `CLEAN_CAST` (each sigil's scores spread differently: a careful line scores about 0.99, a careful circle about 0.88). They were set from thousands of randomized strokes so that Perfect is roughly the best third of careful strokes. The game-over recap counts your perfect and clean sigils.
 
 Each spell has its own cooldown. An unrecognized stroke shows "Sigil unclear" and costs nothing. A recognized spell that is still recharging shows "… recharging 1.2s" and shakes its HUD card. Tiny drags and clicks are ignored silently.
+
+## Options
+
+**Options** on the title screen and in the pause menu. Every change applies at once, even mid-run, and is saved.
+
+- **Screen shake**: 0 to 100%. 0 turns it off.
+- **Reduce flashing**: blinking and strobing become steady or softer. Foes no longer flash white when hit; the serpent stays see-through while invulnerable instead of blinking; lightning holds one shape instead of re-jittering 30 times a second; the hurt flash is softer and the low-health warning stops pulsing; the Ward fades out instead of blinking; Constrict's flash, the boss's wind-up glow and the blinking interface cues (low health, enraged boss, a refused spell) calm down.
+- **Colorblind-safe warnings**: attack previews switch from red to yellow-and-black hazard stripes with dark casings, and every foe winding up an attack gets a yellow "!". Charge lanes fill with stripes as the charge builds, aim lines become solid with an arrowhead, and the boss's volley ring gets a casing. The colours are told apart by brightness, which every kind of colour vision keeps. A test simulates protanopia, deuteranopia and tritanopia (Machado et al., 2009). The yellow stays above 7:1 contrast against every arena floor under all of them. The standard red lane edge drops below 3:1 on some floors under protanopia.
+- **Game speed**: 50 to 100% in 10% steps. It slows the whole run, but drawing happens in real time, so there's more time to draw. Shards and records count game time, so a slower run earns the same; the run summary notes the speed.
+- **Keys**: two keys per action (steer up, down, left, right, pause, mute, art style). Click a key, then press the new one. Backspace clears it, Esc cancels. A key does one thing: binding one that's in use moves it and says which action lost it. A steering direction left with no key gets a warning. Keys are physical positions, so they work the same on any keyboard layout. Esc always pauses and goes back. Hints across the game (How to Play, the pause menu, button tooltips) show the keys you've bound.
+
+## Sigil practice
+
+**Practice Sigils** on the title screen (and How to Play) opens a drawing pad with nothing at stake. Choose a sigil to practise or leave it on **Any sigil**. While you draw, the trail takes the colour of what it reads, like in a run. On release you see what the recognizer saw:
+
+- **The verdict**: the sigil and spell with its grade (Perfect, Clean or Rough) and a tip, or what went wrong: "Read as Circle, not V", "Too close to call", or the first requirement the chosen sigil missed.
+- **Every sigil's score**: a bar from 0.5 (just readable) to 1, with ticks at that sigil's Clean and Perfect thresholds, or the reason it failed, such as "Simplifies to 4 corners; a triangle has 3", "Goes only 220° around; a circle needs 270°" or "Opens 80° away from up; a V opens upward (within 62°)".
+- **On the pad**: the stroke as drawn and the 64 points the recognizer actually reads, the start and end, each sharp corner with the angle inside the bend, the gap a closed shape has to close, and the shape it fitted: the line's chord, the V's legs, the circle's centre and average radius, the triangle's three corners, the zigzag's legs.
+- **Measurements**: straightness, roundness, turning, end gap, sharp corners and how much of the turning happens at them.
+- **A tally** of recent attempts, how many cast and were perfect, and the current streak.
+
+The explanations come from the game's own recognizer: `analyzeStroke` in `gesture.ts` runs the same pipeline as `recognize` and also reports, for each sigil, the first gate the stroke failed and the points its shape was built from. A test checks that it returns exactly the game's verdict across 600 random strokes and explains every failure.
 
 ## Gesture recognition
 
@@ -212,8 +237,11 @@ src/game/            framework-free game code (no React)
   config.ts          balance values
   engine.ts          Game class: fixed-timestep loop, phases, gesture → spell, events to React
   snake.ts           player movement, path trail for body segments, wall bounce
-  input.ts           keyboard + pointer capture, clears on blur/resize/pause
-  gesture.ts         sigil recognizer
+  input.ts           keyboard (following the key bindings) + pointer capture, clears on blur/resize/pause
+  keys.ts            key bindings: defaults, rebinding, validation, key labels
+  options.ts         comfort and accessibility options: shake, flashing, warnings, game speed
+  gesture.ts         sigil recognizer, and the per-sigil explanations for practice
+  practice.ts        the practice room's verdicts, fitted shapes and measurements
   spells.ts          all five spells and their evolutions, frost and swift time scaling, aim logic
   enemies.ts         spawn director, depth scaling, elites, AI for chasers/casters/brutes/rivals/boss
   combat.ts          damage, deaths, crystals, contacts, enemy shots
@@ -236,4 +264,4 @@ The animation loop and all fast-changing state live in `Game` outside React. Rea
 
 ## Saves
 
-Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, records (best time, level, kills, run count, lifetime bosses defeated), mute/volume, and the chosen wizard and curses. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.
+Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, records (best time, level, kills, run count, lifetime bosses defeated), mute/volume, the chosen wizard and curses, and the options (shake, reduced flashing, safe warnings, game speed, key bindings). Saved bindings are cleaned on load: unknown keys, duplicates and a stray Esc are dropped. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.

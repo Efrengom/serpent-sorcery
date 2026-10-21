@@ -5,8 +5,9 @@
 // autopilot run, and checks the full loop: steering, drawing, aiming, cooldowns, pause/focus/
 // resize handling, music and sound, the boss theme and hit-stop, learning the triangle and zigzag
 // sigils, spell evolution, live sigil reading and clean casts, Constrict, descending after the
-// boss, level-ups, death and its recap, rewards,
-// restart, the shop, the wizard and curse setup screen, and save persistence.
+// boss, level-ups, death and its recap, rewards, restart, the shop, the wizard and curse setup
+// screen, the options (comfort settings, key rebinding, game speed), the sigil practice room, and
+// save persistence.
 //
 //   npm run playtest                       # ~5 minutes
 //   AUTOPILOT_SECONDS=60 npm run playtest  # shorter autopilot run
@@ -1113,6 +1114,248 @@ try {
     check('the curse multiplies the shards the run banks', /×1\.30 from curses/.test(over ?? '') && after - before === gained, { over, before, after });
     await clickButton('Title');
     await sleep(300);
+  }
+
+  // ============================================================== Part F: options
+  {
+    await clickButton('Options');
+    await sleep(250);
+    await clickButton('Reduce flashing');
+    await clickButton('Colorblind-safe warnings');
+    const slide = async (label, presses) => {
+      const el = await page.$(`input[aria-label="${label}"]`);
+      await el.focus();
+      for (let i = 0; i < presses; i++) await page.keyboard.press('ArrowLeft');
+    };
+    await slide('Game speed', 5);
+    await slide('Screen shake', 10);
+    // Rebind Steer up to I, then take D for its second key (D leaves Steer right).
+    await page.click('.key-btn[data-action="up"][data-slot="0"]');
+    const waiting = await page.$eval('.key-btn[data-action="up"][data-slot="0"]', (b) => b.textContent);
+    await page.keyboard.press('KeyI');
+    await page.click('.key-btn[data-action="up"][data-slot="1"]');
+    await page.keyboard.press('KeyD');
+    await sleep(60);
+    const note = await page.$eval('.key-note', (n) => n.textContent);
+    // Esc while a key button waits only cancels the wait.
+    await page.click('.key-btn[data-action="mute"][data-slot="1"]');
+    await page.keyboard.press('Escape');
+    await sleep(60);
+    const stillOptions = !!(await page.$('.screen.options'));
+    const set = (await readSave()).settings;
+    check(
+      'options set with real clicks and keys are saved',
+      set.reduceFlashing && set.safeWarnings && set.gameSpeed === 0.5 && set.shake === 0 && set.bindings.up.join() === 'KeyI,KeyD' && set.bindings.right[0] === null,
+      { reduceFlashing: set.reduceFlashing, safeWarnings: set.safeWarnings, gameSpeed: set.gameSpeed, shake: set.shake, up: set.bindings.up, right: set.bindings.right },
+    );
+    check('a key taken from another action says so, and Esc only cancels a rebind', waiting === 'Press a key…' && /Steer right lost it/.test(note) && stillOptions, { waiting, note, stillOptions });
+    await page.screenshot({ path: path.join(OUT, '16-options.png') });
+    await page.click('.key-btn[data-action="right"][data-slot="0"]');
+    await page.keyboard.press('KeyD');
+    await page.click('.key-btn[data-action="up"][data-slot="1"]');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Escape');
+    await sleep(200);
+    check('Esc leaves the options screen', !!(await page.$('.title-screen')));
+
+    await page.keyboard.press('Enter');
+    await sleep(600);
+    const view = await page.evaluate(() => {
+      const v = window.__serpent.renderer.view;
+      return { shake: v.shake, reduceFlashing: v.reduceFlashing, safeWarnings: v.safeWarnings, gameSpeed: v.gameSpeed };
+    });
+    check('the run uses the saved options', view.shake === 0 && view.reduceFlashing && view.safeWarnings && view.gameSpeed === 0.5, view);
+    const clear = () =>
+      page.evaluate(() => {
+        const w = window.__serpent.debug().world;
+        w.invuln = 1e9;
+        w.xp = -1e6;
+        w.spawnAcc = -1e9;
+        w.enemies.length = 0;
+        w.portals.length = 0;
+        w.shots.length = 0;
+        w.snake.x = 640;
+        w.snake.y = 420;
+        w.snake.heading = 0;
+      });
+    await clear();
+    await setKeys(new Set(['KeyI']));
+    await sleep(700);
+    await setKeys(new Set());
+    const headingI = (await state()).heading;
+    await clear();
+    await setKeys(new Set(['KeyW']));
+    await sleep(700);
+    await setKeys(new Set());
+    const headingW = (await state()).heading;
+    check('steering follows the new key, and the old one no longer steers', angDiff(headingI, -Math.PI / 2) < 0.6 && angDiff(headingW, 0) < 0.05, {
+      headingI: +headingI.toFixed(2),
+      headingW: +headingW.toFixed(2),
+    });
+    {
+      const a = await state();
+      const t0 = Date.now();
+      await sleep(1500);
+      const b = await state();
+      const ratio = (b.t - a.t) / ((Date.now() - t0) / 1000);
+      check('at 50% game speed the run advances half as fast', Math.abs(ratio - 0.5) < 0.08, { ratio: +ratio.toFixed(2) });
+    }
+
+    // Pixels on the canvas: a struck brute, and a brute winding up a charge, with time frozen.
+    const freezeFoes = async (setup) => {
+      await clear();
+      await page.evaluate(() => {
+        const w = window.__serpent.debug().world;
+        w.portals.push({ x: 380, y: 300, kind: 'brute', t: 0, duration: 0.01 });
+      });
+      await sleep(250);
+      return page.evaluate((setup) => {
+        const g = window.__serpent;
+        const w = g.debug().world;
+        const b = w.enemies.find((e) => e.kind === 'brute');
+        b.attackTimer = 1e9;
+        b.speed = 0;
+        b.elite = null;
+        b.heading = 0;
+        if (setup === 'struck') {
+          b.state = 'move';
+          b.flash = 5;
+        } else {
+          b.state = 'windup';
+          b.stateTime = 0.6;
+          b.aim = 0;
+        }
+        w.hitStop = 1e9;
+        return { x: b.x, y: b.y, r: b.r };
+      }, setup);
+    };
+    const countPixels = (box, kind) =>
+      page.evaluate(
+        (box, kind) => {
+          const g = window.__serpent;
+          const c = document.querySelector('.game-canvas');
+          const dpr = c.width / c.clientWidth;
+          const a = g.renderer.worldToScreen({ x: box.x0, y: box.y0 });
+          const b = g.renderer.worldToScreen({ x: box.x1, y: box.y1 });
+          const x = Math.round(a.x * dpr);
+          const y = Math.round(a.y * dpr);
+          const data = c.getContext('2d').getImageData(x, y, Math.round((b.x - a.x) * dpr), Math.round((b.y - a.y) * dpr)).data;
+          let n = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            const [r, gr, bl] = [data[i], data[i + 1], data[i + 2]];
+            if (kind === 'white' ? r > 235 && gr > 235 && bl > 235 : r > 200 && gr > 160 && bl < 90) n++;
+          }
+          return n;
+        },
+        box,
+        kind,
+      );
+    const setView = (patch) => page.evaluate((patch) => (window.__serpent.renderer.view = { ...window.__serpent.renderer.view, ...patch }), patch);
+    const frame = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+    let b = await freezeFoes('struck');
+    const body = { x0: b.x - b.r, y0: b.y - b.r, x1: b.x + b.r, y1: b.y + b.r };
+    await frame();
+    const quietWhite = await countPixels(body, 'white');
+    await setView({ reduceFlashing: false });
+    await frame();
+    const flashWhite = await countPixels(body, 'white');
+    await setView({ reduceFlashing: true });
+    check('with reduced flashing a struck foe keeps its colours instead of flashing white', flashWhite > 40 && quietWhite < flashWhite / 4, { flashWhite, quietWhite });
+
+    await page.evaluate(() => (window.__serpent.debug().world.hitStop = 0));
+    b = await freezeFoes('windup');
+    const lane = { x0: b.x + b.r + 10, y0: b.y - b.r * 0.8, x1: b.x + b.r + 140, y1: b.y + b.r * 0.8 };
+    await frame();
+    const safeYellow = await countPixels(lane, 'yellow');
+    await page.screenshot({ path: path.join(OUT, '17-safe-warnings.png') });
+    await setView({ safeWarnings: false });
+    await frame();
+    const redYellow = await countPixels(lane, 'yellow');
+    await setView({ safeWarnings: true });
+    check('colorblind-safe warnings paint the charge lane in hazard yellow', safeYellow > 200 && redYellow < 20, { safeYellow, standard: redYellow });
+
+    // Esc in the pause menu's options steps back to the pause menu, then resumes.
+    await page.evaluate(() => (window.__serpent.debug().world.hitStop = 0));
+    await page.keyboard.press('Escape');
+    await sleep(150);
+    await clickButton('Options');
+    await sleep(150);
+    const inOverlay = !!(await page.$('.options-overlay'));
+    await page.keyboard.press('Escape');
+    await sleep(150);
+    const back = await state();
+    await page.keyboard.press('Escape');
+    await sleep(150);
+    const resumed = await state();
+    check('Esc in the pause menu options goes back to the pause menu, then resumes', inOverlay && back.overlay === 'Paused' && back.phase === 'paused' && resumed.phase === 'playing', {
+      inOverlay,
+      back: back.overlay,
+      resumed: resumed.phase,
+    });
+    await page.keyboard.press('Escape');
+    await sleep(150);
+    await clickButton('End run');
+    await sleep(900);
+    const over = await page.evaluate(() => document.querySelector('.reward-total')?.textContent ?? '');
+    check('the run summary says it was played at 50% speed', /played at 50% speed/.test(over), { over });
+    await clickButton('Title');
+    await sleep(300);
+  }
+
+  // ============================================================== Part G: sigil practice room
+  {
+    await clickButton('Practice Sigils');
+    await sleep(300);
+    const pad = await page.$eval('.practice-canvas', (c) => {
+      const r = c.getBoundingClientRect();
+      return { x: r.left, y: r.top, w: r.width, h: r.height };
+    });
+    const at = (u, v) => ({ x: pad.x + pad.w * u, y: pad.y + pad.h * v });
+    const along = (corners, per) => {
+      const out = [];
+      for (let i = 1; i < corners.length; i++)
+        for (let k = 0; k < per; k++)
+          out.push({ x: corners[i - 1].x + ((corners[i].x - corners[i - 1].x) * k) / per, y: corners[i - 1].y + ((corners[i].y - corners[i - 1].y) * k) / per });
+      out.push(corners[corners.length - 1]);
+      return out;
+    };
+    const verdict = () =>
+      page.evaluate(() => ({
+        head: document.querySelector('.verdict-head')?.textContent ?? null,
+        detail: document.querySelector('.verdict-detail')?.textContent ?? null,
+        tier: document.querySelector('.tier-chip')?.textContent ?? null,
+        scores: Object.fromEntries([...document.querySelectorAll('.shape-row')].map((r) => [r.dataset.kind, r.querySelector('.shape-score').textContent])),
+        history: document.querySelector('.history-sum')?.textContent ?? null,
+      }));
+    let live = null;
+    await stroke(along([at(0.3, 0.2), at(0.45, 0.75), at(0.6, 0.2)], 14), 600, async () => {
+      await sleep(120);
+      live = (await verdict()).head;
+    });
+    await sleep(150);
+    const vee = await verdict();
+    check('practice: the live reading shows while drawing, then the V reads as Forked Lightning with a grade', /^Reading: /.test(live ?? '') && vee.head === 'V: Forked Lightning' && !!vee.tier && vee.scores.vee !== '✗' && vee.scores.circle === '✗', {
+      live,
+      head: vee.head,
+      tier: vee.tier,
+      scores: vee.scores,
+    });
+    await page.screenshot({ path: path.join(OUT, '18-practice-vee.png') });
+    await clickButton('Triangle');
+    await sleep(100);
+    await stroke(along([at(0.3, 0.2), at(0.6, 0.2), at(0.6, 0.8), at(0.3, 0.8), at(0.3, 0.2)], 10), 500);
+    await sleep(150);
+    const square = await verdict();
+    check('practice: a square drawn for the triangle explains what it missed', square.head === 'Unclear' && /4 corners; a triangle has 3/.test(square.detail ?? ''), square);
+    await page.screenshot({ path: path.join(OUT, '19-practice-square.png') });
+    await stroke(along([at(0.45, 0.15), at(0.68, 0.8), at(0.22, 0.8), at(0.45, 0.15)], 12), 500);
+    await sleep(150);
+    const tri = await verdict();
+    check('practice: the triangle casts Arcane Ward and the tally counts it', tri.head === 'Triangle: Arcane Ward' && /^1 of 2 cast as Triangle/.test(tri.history ?? ''), tri);
+    await page.keyboard.press('Escape');
+    await sleep(200);
+    check('Esc leaves the practice room', !!(await page.$('.title-screen')));
   }
 
   // ============================================================== Part D: upgrade-integrity fuzz

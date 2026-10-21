@@ -348,12 +348,13 @@ export function flame(frame: number): Sprite {
   return cached(`flame:${frame}`, () => gridSprite(FLAME_ROWS[frame], FLAME_COLORS, 2, 5));
 }
 
-export function exclaim(): Sprite {
-  return cached('exclaim', () =>
+/** The "!" over a foe about to attack; `safe` is the colorblind-safe yellow version. */
+export function exclaim(safe = false): Sprite {
+  return cached(safe ? 'exclaim-safe' : 'exclaim', () =>
     gridSprite(['.kk.', 'kwrk', 'krrk', 'krrk', '.kk.', '....', '.kk.', 'krrk', '.kk.'], {
-      k: PX.ink,
-      r: PX.tele,
-      w: PX.hostile4,
+      k: safe ? PX.warn0 : PX.ink,
+      r: safe ? PX.warn2 : PX.tele,
+      w: safe ? PX.warn3 : PX.hostile4,
     }),
   );
 }

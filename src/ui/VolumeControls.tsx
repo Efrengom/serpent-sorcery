@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { useKeyLabel } from './Options';
 
 function Slider({ label, value, onChange }: { label: string; value: number; onChange(v: number): void }) {
   const pct = Math.round(value * 100);
@@ -36,13 +37,14 @@ export function VolumeControls({
   onEffects(v: number): void;
   onUnmute(): void;
 }) {
+  const muteKey = useKeyLabel('mute');
   return (
     <div className="volume-controls">
       <Slider label="Music" value={music} onChange={onMusic} />
       <Slider label="Effects" value={effects} onChange={onEffects} />
       {muted && (
         <button className="volume-muted" onClick={onUnmute}>
-          All sound is muted — click or press M to unmute
+          All sound is muted — click or press {muteKey} to unmute
         </button>
       )}
     </div>

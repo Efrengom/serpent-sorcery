@@ -1,8 +1,9 @@
 import { GESTURE } from './config';
 import type { Pt } from './gesture';
+import { bindingMap, DEFAULT_BINDINGS, RESERVED_KEY, type KeyAction, type KeyBindings, type MoveAction } from './keys';
 
 export interface InputCallbacks {
-  onEscape(): void;
+  onPause(): void;
   onToggleMute(): void;
   onToggleArt(): void;
   /** Return false to refuse the gesture (e.g. while paused). */
@@ -14,26 +15,21 @@ export interface InputCallbacks {
   onUserGesture(): void;
 }
 
-const MOVE_KEYS: Record<string, 'up' | 'down' | 'left' | 'right'> = {
-  KeyW: 'up',
-  KeyS: 'down',
-  KeyA: 'left',
-  KeyD: 'right',
-  ArrowUp: 'up',
-  ArrowDown: 'down',
-  ArrowLeft: 'left',
-  ArrowRight: 'right',
-};
+function isMove(a: KeyAction | undefined): a is MoveAction {
+  return a === 'up' || a === 'down' || a === 'left' || a === 'right';
+}
 
 /**
- * Keyboard + pointer input. Keys are tracked as held state; the drawing gesture is
+ * Keyboard + pointer input. Keys follow the player's bindings and are tracked as held state; Escape
+ * always pauses. The drawing gesture is
  * captured in CSS pixels relative to the canvas. Pointer-down is only accepted on the
  * canvas itself, so clicks on DOM interface elements never start a sigil.
  */
 export class InputManager {
-  private held = new Set<'up' | 'down' | 'left' | 'right'>();
+  private held = new Set<MoveAction>();
   /** Keys pressed since the last simulation step, so a tap shorter than a frame still steers. */
-  private tapped = new Set<'up' | 'down' | 'left' | 'right'>();
+  private tapped = new Set<MoveAction>();
+  private keys = bindingMap(DEFAULT_BINDINGS);
   private drawing = false;
   private pointerId = -1;
   points: Pt[] = [];
@@ -69,9 +65,16 @@ export class InputManager {
     this.canvas.removeEventListener('contextmenu', this.onContextMenu);
   }
 
-  /** WASD/arrow vector; opposite keys cancel out. (0,0) means keep heading. */
+  /** Applies new key bindings; keys held under the old ones are released. */
+  setBindings(b: KeyBindings): void {
+    this.keys = bindingMap(b);
+    this.held.clear();
+    this.tapped.clear();
+  }
+
+  /** Steering vector from the held keys; opposite keys cancel out. (0,0) means keep heading. */
   direction(): { x: number; y: number } {
-    const on = (d: 'up' | 'down' | 'left' | 'right') => this.held.has(d) || this.tapped.has(d);
+    const on = (d: MoveAction) => this.held.has(d) || this.tapped.has(d);
     const x = (on('right') ? 1 : 0) - (on('left') ? 1 : 0);
     const y = (on('down') ? 1 : 0) - (on('up') ? 1 : 0);
     return { x, y };
@@ -118,34 +121,29 @@ export class InputManager {
 
   private onKeyDown = (e: KeyboardEvent) => {
     this.cb.onUserGesture();
-    if (e.code === 'Escape') {
-      if (!e.repeat) this.cb.onEscape();
+    const action = e.code === RESERVED_KEY ? 'pause' : this.keys.get(e.code);
+    if (!action) return;
+    if (action === 'pause' || action === 'mute' || action === 'art') {
+      if (!e.repeat) {
+        if (action === 'pause') this.cb.onPause();
+        else if (action === 'mute') this.cb.onToggleMute();
+        else this.cb.onToggleArt();
+      }
       e.preventDefault();
       return;
     }
-    if (e.code === 'KeyM' && !e.repeat) {
-      this.cb.onToggleMute();
-      return;
-    }
-    if (e.code === 'KeyP' && !e.repeat) {
-      this.cb.onToggleArt();
-      return;
-    }
-    const dir = MOVE_KEYS[e.code];
-    // Arrow keys on a focused form control (the volume sliders) adjust it instead of steering.
+    // Steering keys on a focused form control (the volume sliders) adjust it instead of steering.
     const target = e.target as HTMLElement | null;
-    if (dir && target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
-    if (dir) {
-      // Repeats re-assert held state, so a key still down after a pause resumes steering.
-      this.held.add(dir);
-      this.tapped.add(dir);
-      e.preventDefault();
-    }
+    if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
+    // Repeats re-assert held state, so a key still down after a pause resumes steering.
+    this.held.add(action);
+    this.tapped.add(action);
+    e.preventDefault();
   };
 
   private onKeyUp = (e: KeyboardEvent) => {
-    const dir = MOVE_KEYS[e.code];
-    if (dir) this.held.delete(dir);
+    const dir = this.keys.get(e.code);
+    if (isMove(dir)) this.held.delete(dir);
   };
 
   private onBlur = () => {

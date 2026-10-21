@@ -1,10 +1,13 @@
-import { useEffect, useState, type ComponentProps, type CSSProperties } from 'react';
+import { useCallback, useContext, useEffect, useState, type ComponentProps, type CSSProperties } from 'react';
 import { SPELL_IDS, SPELLS } from '../game/config';
+import { MOVE_ACTIONS, primaryKeyLabel } from '../game/keys';
 import { formatTime } from '../game/math';
+import type { GameOptions } from '../game/options';
 import type { CommitOutcome, RunResult } from '../game/persistence';
 import type { UpgradeChoice } from '../game/progression';
 import { describeHurt, worstHurt, type DamageSource, type RunRecap } from '../game/recap';
 import { CoilIcon, Shard, UpgradeGlyph } from './art';
+import { BindingsContext, KeyHint, OptionsPanel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 import { VolumeControls } from './VolumeControls';
 
@@ -88,14 +91,35 @@ export function PauseMenu({
   onResume,
   onEndRun,
   onToggleArt,
+  options,
+  onOptions,
   volume,
 }: {
   pixelArt: boolean;
   onResume(): void;
   onEndRun(): void;
   onToggleArt(): void;
+  options: GameOptions;
+  onOptions(patch: Partial<GameOptions>): void;
   volume: ComponentProps<typeof VolumeControls>;
 }) {
+  const [showOptions, setShowOptions] = useState(false);
+  const closeOptions = useCallback(() => setShowOptions(false), []);
+  const bindings = useContext(BindingsContext);
+  const steer = MOVE_ACTIONS.map((a) => primaryKeyLabel(bindings, a)).join(' ');
+  if (showOptions) {
+    return (
+      <div className="overlay">
+        <div className="overlay-inner wide options-overlay">
+          <h2 className="overlay-title">Options</h2>
+          <OptionsPanel options={options} onChange={onOptions} onBack={closeOptions} />
+          <button className="btn primary" onClick={closeOptions} autoFocus>
+            Back to pause <kbd>Esc</kbd>
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="overlay">
       <div className="overlay-inner">
@@ -103,19 +127,24 @@ export function PauseMenu({
         <p className="overlay-sub">The ruins hold their breath.</p>
         <div className="menu-buttons">
           <button className="btn primary" onClick={onResume} autoFocus>
-            Resume <kbd>Esc</kbd>
+            Resume <KeyHint action="pause" />
           </button>
           <VolumeControls {...volume} />
-          <button className="btn" onClick={onToggleArt}>
-            Art: {pixelArt ? 'Pixel' : 'Classic'} <kbd>P</kbd>
-          </button>
+          <div className="menu-pair">
+            <button className="btn" onClick={onToggleArt}>
+              Art: {pixelArt ? 'Pixel' : 'Classic'} <KeyHint action="art" />
+            </button>
+            <button className="btn" onClick={() => setShowOptions(true)}>
+              Options
+            </button>
+          </div>
           <button className="btn danger" onClick={onEndRun}>
             End run &amp; bank shards
           </button>
         </div>
         <ul className="mini-help">
           <li>
-            <b>WASD</b> steer — the serpent never stops
+            <b>{steer}</b> steer — the serpent never stops
           </li>
           <li>
             <b>Hold left mouse</b> draw a sigil, release to cast
@@ -258,6 +287,7 @@ export function GameOverPanel({
           </span>
           <span className="reward-total">
             Arcane Shards{(result.shardMult ?? 1) > 1 && ` · ×${result.shardMult!.toFixed(2)} from curses`} · {totalCurrency} total
+            {result.gameSpeed && ` · played at ${Math.round(result.gameSpeed * 100)}% speed`}
           </span>
         </div>
         <div className="menu-buttons row">

@@ -1,5 +1,6 @@
 import { ENEMIES, PIXEL_ART, SNAKE } from '../config';
 import { clamp, mulberry32, TAU, type Vec } from '../math';
+import type { ViewOptions } from '../options';
 import { PLAY_AREA } from '../snake';
 import { WIZARDS } from '../wizards';
 import type { Enemy, GestureView, World } from '../world';
@@ -139,6 +140,24 @@ function ditherPattern(ctx: CanvasRenderingContext2D, color: string, density: nu
   return p;
 }
 
+/** Diagonal yellow-and-black hazard stripes for colorblind-safe charge lanes. */
+function hazardStripes(ctx: CanvasRenderingContext2D): CanvasPattern {
+  let p = patterns.get('hazard');
+  if (!p) {
+    const tile = createCanvas(8, 8);
+    const g = tile.getContext('2d')!;
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        g.fillStyle = (x + y) % 8 < 4 ? PX.warn2 : PX.warn0;
+        g.fillRect(x, y, 1, 1);
+      }
+    }
+    p = ctx.createPattern(tile, 'repeat')!;
+    patterns.set('hazard', p);
+  }
+  return p;
+}
+
 function withArenaClip(ctx: CanvasRenderingContext2D, draw: () => void): void {
   ctx.save();
   ctx.beginPath();
@@ -199,7 +218,7 @@ export function drawCrystals(ctx: CanvasRenderingContext2D, world: World): void 
 // ---------------------------------------------------------------- attack previews
 
 /** Oriented charge lane: solid border, dithered fill that grows with the telegraph, chevrons. */
-function lane(ctx: CanvasRenderingContext2D, x: number, y: number, a: number, L: number, hw: number, k: number): void {
+function lane(ctx: CanvasRenderingContext2D, x: number, y: number, a: number, L: number, hw: number, k: number, safe: boolean): void {
   const c = Math.cos(a);
   const s = Math.sin(a);
   const fillTo = L * k;
@@ -214,11 +233,11 @@ function lane(ctx: CanvasRenderingContext2D, x: number, y: number, a: number, L:
   };
   withArenaClip(ctx, () => {
     quad(fillTo, L);
-    ctx.fillStyle = ditherPattern(ctx, PX.teleDim, 0.13);
+    ctx.fillStyle = ditherPattern(ctx, safe ? PX.warn0 : PX.teleDim, safe ? 0.38 : 0.13);
     ctx.fill();
     if (fillTo > 0) {
       quad(0, fillTo);
-      ctx.fillStyle = ditherPattern(ctx, PX.teleDim, 0.5);
+      ctx.fillStyle = safe ? hazardStripes(ctx) : ditherPattern(ctx, PX.teleDim, 0.5);
       ctx.fill();
     }
   });
@@ -234,7 +253,18 @@ function lane(ctx: CanvasRenderingContext2D, x: number, y: number, a: number, L:
     ...linePixels(cx2, cy2, dx, dy, keep),
     ...linePixels(dx, dy, ax, ay, keep),
   ];
-  pixels(ctx, border, k > 0.5 ? PX.tele : PX.teleDim);
+  if (safe) {
+    // A dark rim outside the yellow border keeps the lane readable on any floor.
+    const corners = [at(-1, -hw - 1), at(L + 1, -hw - 1), at(L + 1, hw + 1), at(-1, hw + 1)];
+    const rim: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const [x0, y0] = corners[i];
+      const [x1, y1] = corners[(i + 1) % 4];
+      rim.push(...linePixels(x0, y0, x1, y1, keep));
+    }
+    pixels(ctx, rim, PX.warn0);
+  }
+  pixels(ctx, border, safe ? (k > 0.5 ? PX.warn3 : PX.warn2) : k > 0.5 ? PX.tele : PX.teleDim);
   // Chevrons pointing along the charge.
   const lit: number[] = [];
   const dim: number[] = [];
@@ -251,16 +281,26 @@ function lane(ctx: CanvasRenderingContext2D, x: number, y: number, a: number, L:
       }
     }
   }
-  pixels(ctx, dim, PX.teleDim);
-  pixels(ctx, lit, PX.hostile3);
+  pixels(ctx, dim, safe ? PX.warn1 : PX.teleDim);
+  pixels(ctx, lit, safe ? PX.warn3 : PX.hostile3);
 }
 
-export function drawTelegraphs(ctx: CanvasRenderingContext2D, world: World): void {
+/** Attack previews. `safe` draws them as yellow-and-black hazard markings (colorblind-safe). */
+export function drawTelegraphs(ctx: CanvasRenderingContext2D, world: World, safe = false): void {
   for (const e of world.enemies) {
     if (e.dead || e.state !== 'windup') continue;
     const x = e.x / P;
     const y = e.y / P;
-    if (e.kind === 'caster') {
+    if (e.kind === 'caster' && safe) {
+      // A solid aim line with a dark casing on both sides.
+      const k = clamp(e.stateTime / ENEMIES.caster.telegraph, 0, 1);
+      const L = 260 / P;
+      const c = Math.cos(e.aim);
+      const s = Math.sin(e.aim);
+      const keep = (i: number, X: number, Y: number) => i > 4 && inArena(X, Y);
+      for (const o of [-1, 1]) pixels(ctx, linePixels(x - s * o, y + c * o, x + c * L - s * o, y + s * L + c * o, keep), PX.warn0);
+      pixels(ctx, linePixels(x, y, x + c * L, y + s * L, keep), k > 0.6 ? PX.warn3 : PX.warn2);
+    } else if (e.kind === 'caster') {
       const k = clamp(e.stateTime / ENEMIES.caster.telegraph, 0, 1);
       const L = 260 / P;
       const off = Math.floor(e.stateTime * 20);
@@ -277,7 +317,12 @@ export function drawTelegraphs(ctx: CanvasRenderingContext2D, world: World): voi
             ? ENEMIES.rival.lungeSpeed * ENEMIES.rival.lungeTime
             : ENEMIES.boss.chargeSpeed * ENEMIES.boss.chargeTime;
       const tele = e.kind === 'brute' ? ENEMIES.brute.telegraph : e.kind === 'rival' ? ENEMIES.rival.telegraph : ENEMIES.boss.chargeTelegraph;
-      lane(ctx, x, y, e.aim, (len + e.r) / P, (e.r * 1.1) / P, clamp(e.stateTime / tele, 0, 1));
+      lane(ctx, x, y, e.aim, (len + e.r) / P, (e.r * 1.1) / P, clamp(e.stateTime / tele, 0, 1), safe);
+    } else if (e.kind === 'boss' && e.bossMove === 'volley' && safe) {
+      const k = clamp(e.stateTime / ENEMIES.boss.volleyTelegraph, 0, 1);
+      const r = (e.r + 20 + 40 * (1 - k)) / P;
+      pixels(ctx, [...circlePixels(x, y, r - 1), ...circlePixels(x, y, r + 1)], PX.warn0);
+      pixels(ctx, circlePixels(x, y, r), k > 0.5 ? PX.warn3 : PX.warn2);
     } else if (e.kind === 'boss' && e.bossMove === 'volley') {
       const k = clamp(e.stateTime / ENEMIES.boss.volleyTelegraph, 0, 1);
       const r = (e.r + 20 + 40 * (1 - k)) / P;
@@ -325,9 +370,9 @@ function eyesAt(
   }
 }
 
-function drawChaser(ctx: CanvasRenderingContext2D, e: Enemy, time: number): void {
+function drawChaser(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quiet: boolean): void {
   const frame = ((Math.floor(time * 8 + e.wobble * 3) % CHASER_FRAMES) + CHASER_FRAMES) % CHASER_FRAMES;
-  const flash = e.flash > 0;
+  const flash = e.flash > 0 && !quiet;
   const bx = Math.round(e.x / P);
   const by = Math.round(e.y / P);
   blit(ctx, chaser(frame, flash), bx, by);
@@ -341,11 +386,11 @@ function drawChaser(ctx: CanvasRenderingContext2D, e: Enemy, time: number): void
   }
 }
 
-function drawCaster(ctx: CanvasRenderingContext2D, e: Enemy): void {
+function drawCaster(ctx: CanvasRenderingContext2D, e: Enemy, quiet: boolean): void {
   const R = e.r / P;
   const x = e.x / P;
   const y = e.y / P;
-  const flash = e.flash > 0;
+  const flash = e.flash > 0 && !quiet;
   blit(ctx, caster(directionIndex(e.heading), flash), x, y);
   if (!flash) eyesAt(ctx, x + Math.cos(e.heading) * R * 0.3, y + Math.sin(e.heading) * R * 0.3, e.heading, 1.4, Math.PI / 2, 1, PX.amber, PX.amber);
   // Staff orb in front: tiny ember normally, swelling with a halo while the shot charges.
@@ -362,16 +407,17 @@ function drawCaster(ctx: CanvasRenderingContext2D, e: Enemy): void {
   }
 }
 
-function drawBrute(ctx: CanvasRenderingContext2D, e: Enemy, time: number): void {
+function drawBrute(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quiet: boolean, safe: boolean): void {
   const R = e.r / P;
   const shakeX = e.state === 'windup' ? (Math.floor(time * 30) % 2 === 0 ? 1 : -1) : 0;
   const x = e.x / P + shakeX;
   const y = e.y / P;
-  const flash = e.flash > 0;
+  const flash = e.flash > 0 && !quiet;
   const hot = e.state === 'windup' || e.state === 'attack';
   blit(ctx, brute(directionIndex(e.heading), hot, flash), x, y);
   if (!flash) eyesAt(ctx, x, y, e.heading, R * 0.5, 0.6, 2, hot ? PX.crackHot : PX.amber, PX.amberHi);
-  if (e.state === 'windup') blit(ctx, exclaim(), x, y - R - 8);
+  // With safe warnings every attacker gets its "!" from drawWarningMarks instead.
+  if (e.state === 'windup' && !safe) blit(ctx, exclaim(), x, y - R - 8);
   if (e.state === 'recover') {
     for (let i = 0; i < 3; i++) {
       const a = time * 5 + (i / 3) * TAU;
@@ -380,9 +426,9 @@ function drawBrute(ctx: CanvasRenderingContext2D, e: Enemy, time: number): void 
   }
 }
 
-function drawEnemySnake(ctx: CanvasRenderingContext2D, e: Enemy, time: number): void {
+function drawEnemySnake(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quiet: boolean): void {
   const boss = e.kind === 'boss';
-  const flash = e.flash > 0;
+  const flash = e.flash > 0 && !quiet;
   const segs = e.segments;
   const n = segs.length;
   const radii = segs.map((_, i) => Math.max(2, Math.round((e.segRadius * (1 - (i / n) * 0.45)) / P)));
@@ -391,7 +437,7 @@ function drawEnemySnake(ctx: CanvasRenderingContext2D, e: Enemy, time: number): 
   const R = e.r / P;
   if (boss && e.enraged && !flash) {
     // Pulsing dithered aura.
-    const pulse = 0.35 + 0.25 * Math.sin(time * 8);
+    const pulse = quiet ? 0.45 : 0.35 + 0.25 * Math.sin(time * 8);
     for (let ring = 0; ring < 3; ring++) {
       pixels(ctx, circlePixels(x, y, R * 1.9 + ring * 2, (X, Y) => bayer(X, Y) < pulse - ring * 0.1), PX.enrage);
     }
@@ -402,8 +448,8 @@ function drawEnemySnake(ctx: CanvasRenderingContext2D, e: Enemy, time: number): 
     blit(ctx, segmentFill(radii[i], style), segs[i].x / P, segs[i].y / P);
   }
   const sway = clamp(Math.round(Math.sin(time * 3.2 + e.wobble) * 1.3), -1, 1);
-  if (e.state === 'windup' && Math.floor(time * 12) % 2 === 0) {
-    pixels(ctx, circlePixels(x, y, R + 3, (X, Y) => bayer(X, Y) < 0.5), PX.hostile2);
+  if (e.state === 'windup' && (quiet || Math.floor(time * 12) % 2 === 0)) {
+    pixels(ctx, circlePixels(x, y, R + 3, (X, Y) => bayer(X, Y) < (quiet ? 0.35 : 0.5)), PX.hostile2);
   }
   blit(ctx, wizardHead(boss ? 'boss' : 'rival', directionIndex(e.heading), sway, flash ? 'flash' : 'normal'), x, y);
   if (!flash) {
@@ -411,25 +457,34 @@ function drawEnemySnake(ctx: CanvasRenderingContext2D, e: Enemy, time: number): 
   }
 }
 
-export function drawEnemies(ctx: CanvasRenderingContext2D, world: World): void {
+export function drawEnemies(ctx: CanvasRenderingContext2D, world: World, view: ViewOptions): void {
+  const quiet = view.reduceFlashing;
   for (const e of world.enemies) {
     switch (e.kind) {
       case 'chaser':
-        drawChaser(ctx, e, world.time);
+        drawChaser(ctx, e, world.time, quiet);
         break;
       case 'caster':
-        drawCaster(ctx, e);
+        drawCaster(ctx, e, quiet);
         break;
       case 'brute':
-        drawBrute(ctx, e, world.time);
+        drawBrute(ctx, e, world.time, quiet, view.safeWarnings);
         break;
       case 'rival':
       case 'boss':
-        drawEnemySnake(ctx, e, world.time);
+        drawEnemySnake(ctx, e, world.time, quiet);
         break;
     }
     drawEnemyStatus(ctx, e, world.time);
     if (e.kind !== 'chaser' && e.kind !== 'boss' && e.hp < e.maxHp) hpBar(ctx, e, e.x / P, (e.y - e.r) / P - 6);
+  }
+}
+
+/** Colorblind-safe warnings: a yellow "!" over every foe winding up an attack. */
+export function drawWarningMarks(ctx: CanvasRenderingContext2D, world: World): void {
+  for (const e of world.enemies) {
+    if (e.dead || e.state !== 'windup') continue;
+    blit(ctx, exclaim(true), e.x / P, (e.y - e.r) / P - 8);
   }
 }
 
@@ -553,16 +608,20 @@ export function drawFrostFields(ctx: CanvasRenderingContext2D, world: World, t: 
 }
 
 /** Arcane Ward: a dithered ring, a turning triangle, and one glint per remaining charge. */
-export function drawWard(ctx: CanvasRenderingContext2D, world: World, t: number): void {
+export function drawWard(ctx: CanvasRenderingContext2D, world: World, t: number, quiet = false): void {
   const w = world.ward;
   if (!w) return;
   const s = world.snake;
-  if (w.duration - w.t < 1.5 && Math.floor(t * 10) % 2 === 0) return;
+  // Ending: blinks, or with reduced flashing thins out steadily instead.
+  const left = w.duration - w.t;
+  if (!quiet && left < 1.5 && Math.floor(t * 10) % 2 === 0) return;
+  const thin = quiet && left < 1.5 ? 0.3 + 0.7 * (left / 1.5) : 1;
+  const flash = quiet ? w.flash * 0.3 : w.flash;
   const x = s.x / P;
   const y = s.y / P;
   const R = (SNAKE.headRadius * 2.3) / P;
-  pixels(ctx, circlePixels(x, y, R, (X, Y) => bayer(X, Y) < 0.55 + 0.45 * w.flash), PX.ward1);
-  if (w.flash > 0.2) pixels(ctx, circlePixels(x, y, R + 2, (X, Y) => bayer(X, Y) < w.flash * 0.6), PX.ward2);
+  pixels(ctx, circlePixels(x, y, R, (X, Y) => bayer(X, Y) < (0.55 + 0.45 * flash) * thin), PX.ward1);
+  if (flash > 0.2) pixels(ctx, circlePixels(x, y, R + 2, (X, Y) => bayer(X, Y) < flash * 0.6), PX.ward2);
   const rot = t * 1.6;
   const tri: number[] = [];
   for (let i = 0; i < 3; i++) {
@@ -604,11 +663,22 @@ export function drawBeams(ctx: CanvasRenderingContext2D, world: World): void {
 
 // ---------------------------------------------------------------- the player's serpent
 
-export function drawSerpent(ctx: CanvasRenderingContext2D, world: World, gesture: GestureView, t: number): void {
-  const s = world.snake;
+export function drawSerpent(ctx: CanvasRenderingContext2D, world: World, gesture: GestureView, t: number, quiet = false): void {
+  const invulnerable = world.invuln > 0 && world.time > 1.6;
+  if (quiet && invulnerable) {
+    // Reduced flashing: see-through for the whole invulnerability window instead of flickering.
+    ctx.globalAlpha = 0.55;
+    drawSerpentBody(ctx, world, gesture, t, false);
+    ctx.globalAlpha = 1;
+    return;
+  }
   // Classic pixel-game invulnerability: the sprite flickers instead of fading.
-  if (world.invuln > 0 && world.time > 1.6 && Math.floor(world.invuln * 14) % 2 === 0) return;
-  const hurt = world.hurtFlash > 0.6;
+  if (invulnerable && Math.floor(world.invuln * 14) % 2 === 0) return;
+  drawSerpentBody(ctx, world, gesture, t, !quiet && world.hurtFlash > 0.6);
+}
+
+function drawSerpentBody(ctx: CanvasRenderingContext2D, world: World, gesture: GestureView, t: number, hurt: boolean): void {
+  const s = world.snake;
   const segs = s.segments;
   const radii = segs.map((_, i) => Math.max(2, Math.round(s.segmentRadius(i) / P)));
 
@@ -685,10 +755,11 @@ export function drawBolts(ctx: CanvasRenderingContext2D, world: World): void {
   }
 }
 
-export function drawArcs(ctx: CanvasRenderingContext2D, world: World, t: number): void {
+export function drawArcs(ctx: CanvasRenderingContext2D, world: World, t: number, quiet = false): void {
   for (const arc of world.arcs) {
     const k = arc.life / arc.maxLife;
-    const rng = mulberry32(Math.floor(arc.seed + t * 30));
+    // Lightning re-jitters 30 times a second; with reduced flashing it holds one shape.
+    const rng = mulberry32(Math.floor(arc.seed + (quiet ? 0 : t * 30)));
     const pts: Vec[] = [];
     for (let i = 0; i < arc.points.length - 1; i++) {
       const a = { x: arc.points[i].x / P, y: arc.points[i].y / P };
@@ -707,7 +778,7 @@ export function drawArcs(ctx: CanvasRenderingContext2D, world: World, t: number)
     pts.push({ x: end.x / P, y: end.y / P });
     const core: number[] = [];
     for (let i = 1; i < pts.length; i++) core.push(...linePixels(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y));
-    if (k > 0.4 && !arc.fizzle) {
+    if (k > 0.4 && !arc.fizzle && !quiet) {
       const halo: number[] = [];
       for (let i = 0; i < core.length; i += 2) halo.push(core[i] + 1, core[i + 1], core[i] - 1, core[i + 1], core[i], core[i + 1] + 1, core[i], core[i + 1] - 1);
       pixels(ctx, halo, PX.green1);
@@ -868,14 +939,14 @@ function loopPath(ctx: CanvasRenderingContext2D, pts: readonly Vec[]): void {
  * Constrict visuals. Under the bodies (`hint` false): the dithered flash of a loop that just
  * crushed foes. Over the serpent (`hint` true): the gap still to close around enclosed foes.
  */
-export function drawCoilPixel(ctx: CanvasRenderingContext2D, world: World, t: number, hint: boolean): void {
+export function drawCoilPixel(ctx: CanvasRenderingContext2D, world: World, t: number, hint: boolean, quiet = false): void {
   const ramp = WIZARDS[world.wizard].look.px.body;
   if (!hint) {
     for (const c of world.constricts) {
       const k = c.life / c.maxLife;
       withArenaClip(ctx, () => {
         loopPath(ctx, c.points);
-        ctx.fillStyle = ditherPattern(ctx, ramp[0], k > 0.5 ? 0.5 : 0.25);
+        ctx.fillStyle = ditherPattern(ctx, ramp[0], quiet ? 0.25 : k > 0.5 ? 0.5 : 0.25);
         ctx.fill();
       });
       const edge: number[] = [];
@@ -884,7 +955,7 @@ export function drawCoilPixel(ctx: CanvasRenderingContext2D, world: World, t: nu
         const b = c.points[(i + 1) % c.points.length];
         edge.push(...linePixels(a.x / P, a.y / P, b.x / P, b.y / P, (_, X, Y) => inArena(X, Y) && bayer(X, Y) < k + 0.2));
       }
-      pixels(ctx, edge, PX.white);
+      pixels(ctx, edge, quiet ? ramp[1] : PX.white);
     }
     return;
   }
@@ -900,5 +971,5 @@ export function drawCoilPixel(ctx: CanvasRenderingContext2D, world: World, t: nu
     ctx.fill();
   });
   const off = Math.floor(t * 20);
-  pixels(ctx, linePixels(s.x / P, s.y / P, seg.x / P, seg.y / P, (i) => (i + off) % 4 < 2), Math.floor(t * 10) % 2 === 0 ? PX.white : ramp[1]);
+  pixels(ctx, linePixels(s.x / P, s.y / P, seg.x / P, seg.y / P, (i) => (i + off) % 4 < 2), quiet || Math.floor(t * 10) % 2 === 0 ? PX.white : ramp[1]);
 }

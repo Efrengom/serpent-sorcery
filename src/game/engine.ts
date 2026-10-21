@@ -7,6 +7,7 @@ import { updateDirector, updateEnemies, updatePortals } from './enemies';
 import { burst, floater, updateEffects } from './effects';
 import { recognize, type Pt } from './gesture';
 import { InputManager } from './input';
+import { defaultOptions, type GameOptions } from './options';
 import { clamp, type Vec } from './math';
 import { arenaPressure, IntensityTracker } from './music/mood';
 import type { MusicScene } from './music/score';
@@ -94,6 +95,7 @@ export class Game {
   private readonly gesture: GestureView = { active: false, points: [], target: null, fade: null, reading: null };
   /** Seconds until the stroke being drawn is read again (live trail tint). */
   private readTimer = 0;
+  private options: GameOptions = defaultOptions();
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -101,11 +103,12 @@ export class Game {
     private readonly events: GameEvents,
     pixelArt = false,
     private setup: RunSetup = DEFAULT_SETUP,
+    options?: GameOptions,
   ) {
     this.world = this.makeWorld();
     this.renderer = new Renderer(canvas, pixelArt);
     this.input = new InputManager(canvas, {
-      onEscape: () => this.togglePause(),
+      onPause: () => this.togglePause(),
       onToggleMute: () => this.events.onToggleMute(),
       onToggleArt: () => this.events.onToggleArt(),
       onGestureStart: (p) => this.beginGesture(p),
@@ -115,6 +118,14 @@ export class Game {
       onResize: () => this.renderer.resize(),
       onUserGesture: () => audio.unlock(),
     });
+    if (options) this.setOptions(options);
+  }
+
+  /** Applies the player's options (shake, flashing, warnings, speed, keys); safe mid-run. */
+  setOptions(options: GameOptions): void {
+    if (options.bindings !== this.options.bindings) this.input.setBindings(options.bindings);
+    this.options = options;
+    this.renderer.view = options;
   }
 
   private makeWorld(): World {
@@ -348,7 +359,8 @@ export class Game {
 
     if (this.phase === 'playing' || this.phase === 'dying') {
       const w = this.world;
-      let scale = this.phase === 'dying' ? SIM.dyingTimeScale : 1;
+      // The game-speed option slows the whole simulation; drawing stays in real time.
+      let scale = (this.phase === 'dying' ? SIM.dyingTimeScale : 1) * this.options.gameSpeed;
       // Hit-stop and slow motion run on real time, so they last the same at any frame rate.
       w.hitStopGap = Math.max(0, w.hitStopGap - dt);
       if (w.hitStop > 0) {
@@ -511,6 +523,7 @@ export class Game {
       recap: w.recap,
       wizard: w.wizard,
       curses: [...w.curses],
+      gameSpeed: this.options.gameSpeed < 1 ? this.options.gameSpeed : undefined,
     };
     this.setPhase('gameover');
     this.events.onGameOver(result);

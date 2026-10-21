@@ -3,6 +3,7 @@ import { shakeOffset } from './effects';
 import type { Pt } from './gesture';
 import { clamp, dist, mulberry32, TAU, type Vec } from './math';
 import { COLORS } from './palette';
+import { DEFAULT_VIEW, type ViewOptions } from './options';
 import { createCanvas } from './pixel/bake';
 import {
   buildVignette,
@@ -24,6 +25,7 @@ import {
   drawTrail,
   drawTrailTip,
   drawWard,
+  drawWarningMarks,
 } from './pixel/draw';
 import { buildPixelFloor, type PixelFloor } from './pixel/floor';
 import { SPELL_COLORS, spellName } from './spells';
@@ -116,6 +118,9 @@ export class Renderer {
   private uiX = 0;
   private uiY = 0;
   private vignettes: (HTMLCanvasElement | undefined)[] = [];
+  /** Shake, flashing and warning-style options. */
+  view: ViewOptions = DEFAULT_VIEW;
+  private hazard: CanvasPattern | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -511,7 +516,7 @@ export class Renderer {
     ctx.fillStyle = '#0a0614';
     ctx.fillRect(0, 0, this.cssW, this.cssH);
 
-    const shake = shakeOffset(world, realTime);
+    const shake = shakeOffset(world, realTime, this.view.shake);
     ctx.save();
     ctx.translate(this.ox + shake.x, this.oy + shake.y);
     ctx.scale(this.scale, this.scale);
@@ -527,6 +532,7 @@ export class Renderer {
       this.drawEnemy(e, world);
       this.drawEnemyStatus(e, world);
     }
+    if (this.view.safeWarnings) this.drawWarningMarks(world);
     if (showSnake) {
       this.drawSnake(world, gesture);
       this.drawWard(world, realTime);
@@ -567,25 +573,27 @@ export class Renderer {
     drawFrostFields(low, world, realTime);
     drawPortals(low, world, realTime);
     drawCrystals(low, world);
-    drawTelegraphs(low, world);
-    drawCoilPixel(low, world, realTime, false);
-    drawEnemies(low, world);
+    const quiet = this.view.reduceFlashing;
+    drawTelegraphs(low, world, this.view.safeWarnings);
+    drawCoilPixel(low, world, realTime, false, quiet);
+    drawEnemies(low, world, this.view);
+    if (this.view.safeWarnings) drawWarningMarks(low, world);
     if (showSnake) {
-      drawSerpent(low, world, gesture, realTime);
-      drawWard(low, world, realTime);
-      drawCoilPixel(low, world, realTime, true);
+      drawSerpent(low, world, gesture, realTime, quiet);
+      drawWard(low, world, realTime, quiet);
+      drawCoilPixel(low, world, realTime, true, quiet);
     }
     drawNovas(low, world);
     drawBolts(low, world);
     drawBeams(low, world);
-    drawArcs(low, world, realTime);
+    drawArcs(low, world, realTime, quiet);
     drawShots(low, world);
     drawParticles(low, world);
     if (gesture.active && gesture.target && showSnake) drawAim(low, world, gesture.target, realTime);
 
     // Upscale with crisp pixels; shake moves in whole art pixels.
     const f = this.pixelFactor;
-    const shake = shakeOffset(world, realTime);
+    const shake = shakeOffset(world, realTime, this.view.shake);
     const sx = Math.round((shake.x * this.dpr) / f) * f;
     const sy = Math.round((shake.y * this.dpr) / f) * f;
     main.setTransform(1, 0, 0, 1, 0, 0);
@@ -614,8 +622,7 @@ export class Renderer {
     ui.setTransform(1, 0, 0, 1, 0, 0);
     ui.clearRect(0, 0, this.ui!.width, this.ui!.height);
     // Hurt flash / low-health warning as a dithered red border.
-    const low = world.hp / world.stats.maxHp < 0.3 && world.hp > 0 ? 0.25 + Math.sin(t * 5) * 0.1 : 0;
-    const a = Math.max(world.hurtFlash * 0.5, low);
+    const a = this.dangerTint(world, t);
     if (a > 0.02) {
       const level = Math.min(VIGNETTE_LEVELS, Math.max(1, Math.round(a * 2 * VIGNETTE_LEVELS)));
       let v = this.vignettes[level];
@@ -729,11 +736,122 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** Yellow-and-black diagonal stripes for colorblind-safe charge lanes. */
+  private hazardPattern(): CanvasPattern | string {
+    if (!this.hazard) {
+      const tile = createCanvas(24, 24);
+      const g = tile.getContext('2d')!;
+      g.fillStyle = COLORS.warnDark;
+      g.fillRect(0, 0, 24, 24);
+      g.fillStyle = COLORS.warn;
+      for (let x = -24; x < 24; x += 12) {
+        g.beginPath();
+        g.moveTo(x, 0);
+        g.lineTo(x + 6, 0);
+        g.lineTo(x + 30, 24);
+        g.lineTo(x + 24, 24);
+        g.closePath();
+        g.fill();
+      }
+      this.hazard = this.mainCtx.createPattern(tile, 'repeat');
+    }
+    return this.hazard ?? COLORS.warn;
+  }
+
+  /** A line drawn twice: a dark casing, then a bright core, so it reads on any floor. */
+  private casedStroke(path: () => void, width: number, color: string): void {
+    const ctx = this.ctx;
+    ctx.strokeStyle = COLORS.warnDark;
+    ctx.lineWidth = width * 2;
+    path();
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    path();
+    ctx.stroke();
+  }
+
+  /**
+   * Colorblind-safe attack previews: hazard stripes, dark casings and a bright yellow, so they
+   * stand apart from the floor and from friendly magic by brightness and pattern, not hue.
+   */
+  private drawSafeTelegraph(e: Enemy): void {
+    const ctx = this.ctx;
+    if (e.kind === 'caster') {
+      const k = clamp(e.stateTime / ENEMIES.caster.telegraph, 0, 1);
+      const L = 260;
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      ctx.rotate(e.aim);
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.55 + 0.45 * k;
+      this.casedStroke(() => {
+        ctx.beginPath();
+        ctx.moveTo(e.r + 4, 0);
+        ctx.lineTo(L - 14, 0);
+        ctx.moveTo(L - 26, -11);
+        ctx.lineTo(L - 10, 0);
+        ctx.lineTo(L - 26, 11);
+      }, 3.5, k > 0.6 ? COLORS.warnLight : COLORS.warn);
+      ctx.restore();
+    } else if (e.kind === 'brute' || e.kind === 'rival' || (e.kind === 'boss' && e.bossMove === 'charge')) {
+      const L =
+        (e.kind === 'brute'
+          ? ENEMIES.brute.chargeSpeed * ENEMIES.brute.chargeTime
+          : e.kind === 'rival'
+            ? ENEMIES.rival.lungeSpeed * ENEMIES.rival.lungeTime
+            : ENEMIES.boss.chargeSpeed * ENEMIES.boss.chargeTime) + e.r;
+      const tele = e.kind === 'brute' ? ENEMIES.brute.telegraph : e.kind === 'rival' ? ENEMIES.rival.telegraph : ENEMIES.boss.chargeTelegraph;
+      const k = clamp(e.stateTime / tele, 0, 1);
+      const w = e.r * 2.2;
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      ctx.rotate(e.aim);
+      ctx.fillStyle = 'rgba(18,12,0,0.4)';
+      ctx.fillRect(0, -w / 2, L, w);
+      if (k > 0) {
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = this.hazardPattern();
+        ctx.fillRect(0, -w / 2, L * k, w);
+        ctx.globalAlpha = 1;
+      }
+      this.casedStroke(() => {
+        ctx.beginPath();
+        ctx.rect(0, -w / 2, L, w);
+      }, 3, k > 0.5 ? COLORS.warnLight : COLORS.warn);
+      ctx.lineJoin = 'round';
+      for (let d = 40; d < L - 30; d += 60) {
+        this.casedStroke(() => {
+          ctx.beginPath();
+          ctx.moveTo(d, -w * 0.25);
+          ctx.lineTo(d + 14, 0);
+          ctx.lineTo(d, w * 0.25);
+        }, 3, d <= L * k ? COLORS.warnLight : COLORS.warn);
+      }
+      ctx.restore();
+    } else if (e.kind === 'boss' && e.bossMove === 'volley') {
+      const k = clamp(e.stateTime / ENEMIES.boss.volleyTelegraph, 0, 1);
+      this.casedStroke(() => {
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r + 20 + 40 * (1 - k), 0, TAU);
+      }, 3.5, k > 0.5 ? COLORS.warnLight : COLORS.warn);
+    }
+  }
+
+  /** Colorblind-safe warnings: a yellow "!" over every foe winding up an attack, drawn above bodies. */
+  private drawWarningMarks(world: World): void {
+    for (const e of world.enemies) {
+      if (!e.dead && e.state === 'windup') this.drawExclaim(e.x, e.y - e.r - 18);
+    }
+  }
+
   private drawTelegraphShapes(world: World): void {
     const ctx = this.ctx;
     for (const e of world.enemies) {
       if (e.dead || e.state !== 'windup') continue;
-      if (e.kind === 'caster') {
+      if (this.view.safeWarnings && !(e.kind === 'boss' && e.bossMove === 'summon')) {
+        this.drawSafeTelegraph(e);
+      } else if (e.kind === 'caster') {
         const k = clamp(e.stateTime / ENEMIES.caster.telegraph, 0, 1);
         ctx.strokeStyle = `rgba(${COLORS.telegraph},${0.25 + 0.45 * k})`;
         ctx.lineWidth = 2;
@@ -797,7 +915,7 @@ export class Renderer {
 
   private drawEnemy(e: Enemy, world: World): void {
     const ctx = this.ctx;
-    const flash = e.flash > 0;
+    const flash = e.flash > 0 && !this.view.reduceFlashing;
     switch (e.kind) {
       case 'chaser': {
         const spin = world.time * 3 + e.wobble;
@@ -869,7 +987,7 @@ export class Renderer {
         ctx.stroke();
         ctx.restore();
         this.drawEyes(e.x + shakeX, e.y, e.heading, e.r * 0.5, 3.2, '#ffcf6b');
-        if (e.state === 'windup') this.drawExclaim(e.x, e.y - e.r - 18);
+        if (e.state === 'windup' && !this.view.safeWarnings) this.drawExclaim(e.x, e.y - e.r - 18);
         if (e.state === 'recover') this.drawDizzy(e.x, e.y - e.r - 6, world.time);
         break;
       }
@@ -891,11 +1009,12 @@ export class Renderer {
   private drawEnemySnake(e: Enemy, world: World): void {
     const ctx = this.ctx;
     const boss = e.kind === 'boss';
-    const flash = e.flash > 0;
+    const quiet = this.view.reduceFlashing;
+    const flash = e.flash > 0 && !quiet;
     const segs = e.segments;
     if (boss && e.enraged) {
       ctx.globalCompositeOperation = 'lighter';
-      this.drawGlow('#ff2a50', e.x, e.y, e.r * 3.2, 0.35 + Math.sin(world.time * 8) * 0.12);
+      this.drawGlow('#ff2a50', e.x, e.y, e.r * 3.2, quiet ? 0.35 : 0.35 + Math.sin(world.time * 8) * 0.12);
       ctx.globalCompositeOperation = 'source-over';
     }
     ctx.fillStyle = COLORS.outline;
@@ -935,7 +1054,7 @@ export class Renderer {
     this.drawEyes(e.x, e.y, e.heading, e.r * 0.55, boss ? 4.5 : 2.6, boss ? '#ffd45e' : '#ffb347');
     if (e.state === 'windup') {
       ctx.globalCompositeOperation = 'lighter';
-      this.drawGlow(COLORS.hostile, e.x, e.y, e.r * 2.4, 0.3 + 0.3 * Math.sin(world.time * 20));
+      this.drawGlow(COLORS.hostile, e.x, e.y, e.r * 2.4, quiet ? 0.4 : 0.3 + 0.3 * Math.sin(world.time * 20));
       ctx.globalCompositeOperation = 'source-over';
     }
   }
@@ -955,13 +1074,14 @@ export class Renderer {
 
   private drawExclaim(x: number, y: number): void {
     const ctx = this.ctx;
-    ctx.font = `900 20px ${UI_FONT}`;
+    const safe = this.view.safeWarnings;
+    ctx.font = `900 ${safe ? 24 : 20}px ${UI_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = '#2a0508';
+    ctx.lineWidth = safe ? 6 : 4;
+    ctx.strokeStyle = safe ? COLORS.warnDark : '#2a0508';
     ctx.strokeText('!', x, y);
-    ctx.fillStyle = '#ff6a4a';
+    ctx.fillStyle = safe ? COLORS.warn : '#ff6a4a';
     ctx.fillText('!', x, y);
   }
 
@@ -1050,8 +1170,11 @@ export class Renderer {
     const s = world.snake;
     const segs = s.segments;
     const look = WIZARDS[world.wizard].look;
-    const blinking = world.invuln > 0 && Math.floor(world.invuln * 14) % 2 === 0 && world.time > 1.6;
-    ctx.globalAlpha = blinking ? 0.4 : 1;
+    const quiet = this.view.reduceFlashing;
+    // Invulnerable: blinks, or with reduced flashing stays see-through the whole time.
+    const invulnerable = world.invuln > 0 && world.time > 1.6;
+    ctx.globalAlpha = invulnerable && quiet ? 0.6 : invulnerable && Math.floor(world.invuln * 14) % 2 === 0 ? 0.4 : 1;
+    const hurt = world.hurtFlash > 0.6 && !quiet;
 
     // Magical aura grows with power: more potency and level = brighter shimmer.
     const power = clamp((world.upgrades.potency + world.level * 0.3) / 8, 0, 1);
@@ -1083,7 +1206,7 @@ export class Renderer {
       ctx.arc(segs[i].x - r * 0.25, segs[i].y - r * 0.3, r * 0.4, 0, TAU);
       ctx.fill();
     }
-    if (world.hurtFlash > 0.6) {
+    if (hurt) {
       ctx.fillStyle = 'rgba(255,60,90,0.5)';
       for (const seg of segs) {
         ctx.beginPath();
@@ -1096,7 +1219,7 @@ export class Renderer {
     ctx.save();
     ctx.translate(s.x, s.y);
     ctx.rotate(s.heading);
-    ctx.fillStyle = world.hurtFlash > 0.6 ? '#ff9aa8' : look.body;
+    ctx.fillStyle = hurt ? '#ff9aa8' : look.body;
     ctx.beginPath();
     ctx.ellipse(0, 0, SNAKE.headRadius * 1.2, SNAKE.headRadius, 0, 0, TAU);
     ctx.fill();
@@ -1202,7 +1325,9 @@ export class Renderer {
     ctx.lineCap = 'round';
     for (const arc of world.arcs) {
       const k = arc.life / arc.maxLife;
-      const rng = mulberry32(Math.floor(arc.seed + t * 30));
+      // Lightning re-jitters 30 times a second; with reduced flashing it holds one shape, dimmer.
+      const quiet = this.view.reduceFlashing;
+      const rng = mulberry32(Math.floor(arc.seed + (quiet ? 0 : t * 30)));
       const path: Vec[] = [];
       for (let i = 0; i < arc.points.length - 1; i++) {
         const a = arc.points[i];
@@ -1223,7 +1348,7 @@ export class Renderer {
         [5, COLORS.lightning, 0.7],
         [2, COLORS.lightningCore, 1],
       ] as const) {
-        ctx.strokeStyle = hexAlpha(color, alpha * k);
+        ctx.strokeStyle = hexAlpha(color, alpha * k * (quiet ? 0.6 : 1));
         ctx.lineWidth = width * (arc.fizzle ? 0.6 : 1);
         ctx.beginPath();
         ctx.moveTo(path[0].x, path[0].y);
@@ -1231,7 +1356,7 @@ export class Renderer {
         ctx.stroke();
       }
       for (let i = 1; i < arc.points.length; i++) {
-        this.drawGlow(COLORS.lightning, arc.points[i].x, arc.points[i].y, 26, k);
+        this.drawGlow(COLORS.lightning, arc.points[i].x, arc.points[i].y, 26, quiet ? k * 0.4 : k);
       }
     }
     ctx.globalCompositeOperation = 'source-over';
@@ -1364,10 +1489,12 @@ export class Renderer {
     const ctx = this.ctx;
     const s = world.snake;
     const R = SNAKE.headRadius * 2.3;
-    const ending = w.duration - w.t < 1.5;
-    const vis = ending && Math.floor(t * 10) % 2 === 0 ? 0.35 : 1;
+    const left = w.duration - w.t;
+    const quiet = this.view.reduceFlashing;
+    // Ending: blinks, or with reduced flashing fades steadily instead.
+    const vis = left >= 1.5 ? 1 : quiet ? 0.35 + 0.65 * (left / 1.5) : Math.floor(t * 10) % 2 === 0 ? 0.35 : 1;
     ctx.globalCompositeOperation = 'lighter';
-    this.drawGlow(COLORS.ward, s.x, s.y, R * 1.7, (0.2 + 0.45 * w.flash) * vis);
+    this.drawGlow(COLORS.ward, s.x, s.y, R * 1.7, (0.2 + (quiet ? 0.15 : 0.45) * w.flash) * vis);
     ctx.globalCompositeOperation = 'source-over';
     ctx.strokeStyle = hexAlpha(COLORS.ward, 0.55 * vis);
     ctx.lineWidth = 2;
@@ -1532,10 +1659,16 @@ export class Renderer {
     ctx.fill();
   }
 
+  /** Strength of the red edge: a flash when hurt and a pulse at low health, both steady with reduced flashing. */
+  private dangerTint(world: World, t: number): number {
+    const lowHp = world.hp / world.stats.maxHp < 0.3 && world.hp > 0;
+    if (this.view.reduceFlashing) return Math.max(world.hurtFlash * 0.22, lowHp ? 0.22 : 0);
+    return Math.max(world.hurtFlash * 0.5, lowHp ? 0.25 + Math.sin(t * 5) * 0.1 : 0);
+  }
+
   private drawVignettes(world: World, t: number): void {
     const ctx = this.ctx;
-    const low = world.hp / world.stats.maxHp < 0.3 && world.hp > 0 ? 0.25 + Math.sin(t * 5) * 0.1 : 0;
-    const a = Math.max(world.hurtFlash * 0.5, low);
+    const a = this.dangerTint(world, t);
     if (a <= 0.01) return;
     const g = ctx.createRadialGradient(
       this.cssW / 2,
@@ -1622,9 +1755,10 @@ export class Renderer {
       ctx.moveTo(c.points[0].x, c.points[0].y);
       for (const p of c.points) ctx.lineTo(p.x, p.y);
       ctx.closePath();
-      ctx.fillStyle = hexAlpha(color, 0.32 * k);
+      const quiet = this.view.reduceFlashing;
+      ctx.fillStyle = hexAlpha(color, (quiet ? 0.16 : 0.32) * k);
       ctx.fill();
-      ctx.strokeStyle = hexAlpha('#ffffff', 0.7 * k);
+      ctx.strokeStyle = hexAlpha('#ffffff', (quiet ? 0.35 : 0.7) * k);
       ctx.lineWidth = 3;
       ctx.stroke();
     }
@@ -1639,7 +1773,7 @@ export class Renderer {
     if (!seg) return;
     const ctx = this.ctx;
     const color = WIZARDS[world.wizard].look.body;
-    const pulse = 0.55 + 0.35 * Math.sin(t * 10);
+    const pulse = this.view.reduceFlashing ? 0.8 : 0.55 + 0.35 * Math.sin(t * 10);
     ctx.beginPath();
     ctx.moveTo(s.x, s.y);
     for (let i = 0; i <= coil.index; i++) ctx.lineTo(s.segments[i].x, s.segments[i].y);

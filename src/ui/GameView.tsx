@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'r
 import { audio } from '../game/audio';
 import { Game, type HudSnapshot, type Phase } from '../game/engine';
 import type { CommitOutcome, RunResult } from '../game/persistence';
+import type { GameOptions } from '../game/options';
 import type { MetaLevels, UpgradeChoice } from '../game/progression';
 import type { RunSetup } from '../game/world';
 import { Hud } from './Hud';
@@ -14,6 +15,8 @@ interface Props {
   setup: RunSetup;
   muted: boolean;
   pixelArt: boolean;
+  options: GameOptions;
+  onOptions(patch: Partial<GameOptions>): void;
   volume: ComponentProps<typeof VolumeControls>;
   totalCurrency: number;
   onCommitRun(result: RunResult): CommitOutcome;
@@ -31,6 +34,8 @@ export function GameView({
   setup,
   muted,
   pixelArt,
+  options,
+  onOptions,
   volume,
   totalCurrency,
   onCommitRun,
@@ -46,8 +51,8 @@ export function GameView({
   const [over, setOver] = useState<{ result: RunResult; outcome: CommitOutcome } | null>(null);
 
   // Keep latest callbacks/props reachable from the long-lived Game without re-creating it.
-  const latest = useRef({ meta, setup, pixelArt, onCommitRun, onToggleMute, onToggleArt });
-  latest.current = { meta, setup, pixelArt, onCommitRun, onToggleMute, onToggleArt };
+  const latest = useRef({ meta, setup, pixelArt, options, onCommitRun, onToggleMute, onToggleArt });
+  latest.current = { meta, setup, pixelArt, options, onCommitRun, onToggleMute, onToggleArt };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -68,6 +73,7 @@ export function GameView({
       },
       latest.current.pixelArt,
       latest.current.setup,
+      latest.current.options,
     );
     gameRef.current = game;
     game.start();
@@ -84,6 +90,10 @@ export function GameView({
   useEffect(() => {
     gameRef.current?.setPixelArt(pixelArt);
   }, [pixelArt]);
+
+  useEffect(() => {
+    gameRef.current?.setOptions(options);
+  }, [options]);
 
   // Music drops to a quieter level while paused.
   useEffect(() => {
@@ -117,6 +127,8 @@ export function GameView({
           onResume={() => gameRef.current?.resume()}
           onEndRun={() => gameRef.current?.endRun()}
           onToggleArt={onToggleArt}
+          options={options}
+          onOptions={onOptions}
           volume={volume}
         />
       )}
