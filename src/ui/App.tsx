@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { audio } from '../game/audio';
-import { buyMeta, commitRunResult, loadSave, writeSave, type RunResult, type SaveData } from '../game/persistence';
+import { buyMeta, commitRunResult, loadSave, optionsOf, writeSave, type RunResult, type SaveData } from '../game/persistence';
 import type { CurseId } from '../game/curses';
+import { bindingMap } from '../game/keys';
+import type { GameOptions } from '../game/options';
 import type { MetaId } from '../game/progression';
 import { playableWizard, type WizardId } from '../game/wizards';
 import type { RunSetup } from '../game/world';
 import { PixelArtContext, pixelFloorUrl } from './art';
 import { GameView } from './GameView';
 import { HowToPlay, SetupScreen, ShopScreen, TitleScreen } from './Menus';
+import { BindingsContext, OptionsScreen } from './Options';
+import { PracticeScreen } from './Practice';
 
-type Screen = 'title' | 'howto' | 'shop' | 'setup' | 'game';
+type Screen = 'title' | 'howto' | 'shop' | 'setup' | 'options' | 'practice' | 'game';
 
 export function App() {
   const [save, setSave] = useState<SaveData>(() => loadSave());
@@ -77,17 +81,25 @@ export function App() {
     onUnmute: toggleMute,
   };
 
-  // M and P work on menu screens too (the game handles them while playing).
+  const options = useMemo(() => optionsOf(save.settings), [save.settings]);
+  const setOptions = useCallback((patch: Partial<GameOptions>) => {
+    setSave((s) => ({ ...s, settings: { ...s.settings, ...patch } }));
+  }, []);
+
+  // The mute and art keys work on menu screens too (the game handles them while playing).
+  const bindings = save.settings.bindings;
   useEffect(() => {
     if (screen === 'game') return;
+    const keys = bindingMap(bindings);
     const onKey = (e: KeyboardEvent) => {
       if (e.repeat) return;
-      if (e.code === 'KeyM') toggleMute();
-      if (e.code === 'KeyP') toggleArt();
+      const action = keys.get(e.code);
+      if (action === 'mute') toggleMute();
+      if (action === 'art') toggleArt();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [screen, toggleMute, toggleArt]);
+  }, [screen, bindings, toggleMute, toggleArt]);
 
   /** Called once per finished run by the engine; idempotent per run id. */
   const commitRun = useCallback((result: RunResult) => {
@@ -133,10 +145,13 @@ export function App() {
     setScreen('game');
   }, []);
 
+  const toTitle = useCallback(() => setScreen('title'), []);
+
   return (
     <PixelArtContext.Provider value={pixel}>
+    <BindingsContext.Provider value={bindings}>
     <div
-      className={`app${pixel ? ' pixel' : ''}`}
+      className={`app${pixel ? ' pixel' : ''}${options.reduceFlashing ? ' reduce-flash' : ''}`}
       style={pixel ? ({ '--pixel-floor': `url(${pixelFloorUrl()})` } as CSSProperties) : undefined}
     >
       {screen === 'title' && (
@@ -146,12 +161,16 @@ export function App() {
           onSetup={() => setScreen('setup')}
           onHowTo={() => setScreen('howto')}
           onShop={() => setScreen('shop')}
+          onOptions={() => setScreen('options')}
+          onPractice={() => setScreen('practice')}
           onToggleMute={toggleMute}
           onToggleArt={toggleArt}
           volume={volume}
         />
       )}
-      {screen === 'howto' && <HowToPlay onBack={() => setScreen('title')} onPlay={play} />}
+      {screen === 'howto' && <HowToPlay onBack={toTitle} onPlay={play} onPractice={() => setScreen('practice')} safeWarnings={options.safeWarnings} />}
+      {screen === 'options' && <OptionsScreen options={options} onChange={setOptions} onBack={toTitle} />}
+      {screen === 'practice' && <PracticeScreen onBack={toTitle} onPlay={play} />}
       {screen === 'shop' && <ShopScreen save={save} onBuy={buy} onBack={() => setScreen('title')} onPlay={play} />}
       {screen === 'setup' && (
         <SetupScreen
@@ -169,6 +188,8 @@ export function App() {
           setup={setup}
           muted={save.settings.muted}
           pixelArt={save.settings.pixelArt}
+          options={options}
+          onOptions={setOptions}
           volume={volume}
           totalCurrency={save.currency}
           onCommitRun={commitRun}
@@ -178,6 +199,7 @@ export function App() {
         />
       )}
     </div>
+    </BindingsContext.Provider>
     </PixelArtContext.Provider>
   );
 }

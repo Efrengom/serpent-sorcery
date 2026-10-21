@@ -14,6 +14,8 @@ import {
   type RunSummary,
 } from './progression';
 import { CURSE_IDS, type CurseId } from './curses';
+import { sanitizeBindings, type KeyBindings } from './keys';
+import { clampSpeed, defaultOptions, type GameOptions } from './options';
 import type { RunRecap } from './recap';
 import { WIZARD_IDS, type WizardId } from './wizards';
 
@@ -42,6 +44,14 @@ export interface SaveData {
     /** Run setup, kept between runs. A locked wizard falls back to the Arcanist at run start. */
     wizard: WizardId;
     curses: CurseId[];
+    /** Screen-shake strength, 0 (off) to 1 (full). */
+    shake: number;
+    reduceFlashing: boolean;
+    /** Charge warnings as yellow-and-black hazard stripes instead of red. */
+    safeWarnings: boolean;
+    /** Simulation speed, 0.5 to 1. */
+    gameSpeed: number;
+    bindings: KeyBindings;
   };
   /** Id of the last run whose reward was banked; guarantees one award per run. */
   lastRunId: string;
@@ -53,7 +63,7 @@ export function defaultSave(): SaveData {
     currency: 0,
     meta: emptyMetaLevels(),
     records: { bestTime: 0, bestKills: 0, bestLevel: 0, totalRuns: 0, bossKills: 0 },
-    settings: { muted: false, volume: 0.7, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [] },
+    settings: { muted: false, volume: 0.7, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [], ...defaultOptions() },
     lastRunId: '',
   };
 }
@@ -97,9 +107,20 @@ export function sanitizeSave(input: unknown): SaveData {
       curses: Array.isArray(settings.curses)
         ? CURSE_IDS.filter((id) => (settings.curses as unknown[]).includes(id))
         : d.settings.curses,
+      shake: num(settings.shake, d.settings.shake, 0, 1),
+      reduceFlashing: typeof settings.reduceFlashing === 'boolean' ? settings.reduceFlashing : d.settings.reduceFlashing,
+      safeWarnings: typeof settings.safeWarnings === 'boolean' ? settings.safeWarnings : d.settings.safeWarnings,
+      gameSpeed: clampSpeed(num(settings.gameSpeed, d.settings.gameSpeed, 0, 1)),
+      bindings: sanitizeBindings(settings.bindings),
     },
     lastRunId: typeof o.lastRunId === 'string' ? o.lastRunId.slice(0, 64) : '',
   };
+}
+
+/** The options a run and its renderer use, taken from the settings. */
+export function optionsOf(settings: SaveData['settings']): GameOptions {
+  const { shake, reduceFlashing, safeWarnings, gameSpeed, bindings } = settings;
+  return { shake, reduceFlashing, safeWarnings, gameSpeed, bindings };
 }
 
 export function parseSave(raw: string | null | undefined): SaveData {
@@ -148,6 +169,8 @@ export interface RunResult extends RunSummary {
   recap?: RunRecap;
   wizard?: WizardId;
   curses?: CurseId[];
+  /** Game speed the run was played at, when slowed. */
+  gameSpeed?: number;
 }
 
 export interface CommitOutcome {

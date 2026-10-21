@@ -21,6 +21,10 @@ export const COLORS = {
   hostileCore: '#ffe3c4',
   hostileDark: '#4a0c12',
   telegraph: '255, 72, 48',
+  /** Colorblind-safe warnings: yellow and near-black hazard stripes, told apart by brightness. */
+  warn: '#ffd400',
+  warnDark: '#120c00',
+  warnLight: '#fff6c2',
   portal: '#c2306a',
   snakeBody: '#2fd3b5',
   snakeBodyDark: '#127a6c',

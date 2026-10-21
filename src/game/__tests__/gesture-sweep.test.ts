@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { recognize, type Pt, type SigilKind } from '../gesture';
+import { analyzeStroke, recognize, SIGIL_KINDS, type Pt, type SigilKind } from '../gesture';
+import { reportAttempt, shapeOverlay } from '../practice';
 import { mulberry32 } from '../math';
 
 /** Randomized hand-drawn-ish strokes: wobble, jitter, uneven speed, varied size and rotation. */
@@ -207,5 +208,76 @@ describe('recognizer robustness sweep (300 random hand-drawn strokes each)', () 
       if (recognize(pts).kind !== null) accepted++;
     }
     expect(accepted / 300).toBeLessThan(0.1);
+  });
+});
+
+describe('practice room explanations', () => {
+  const GENS = { line: randomLine, vee: randomVee, circle: randomCircle, triangle: randomTriangle, zigzag: randomZigzag };
+
+  it('explain every stroke: a passing sigil has a score and no complaint, a failing one says why', () => {
+    const rng = mulberry32(707);
+    for (const kind of Object.keys(GENS) as SigilKind[]) {
+      for (let i = 0; i < 120; i++) {
+        const g = GENS[kind](rng);
+        const pts = handDrawn(rng, g.path, g.size);
+        const a = analyzeStroke(pts);
+        // Same verdict as the game's recognizer.
+        expect(a.recognition).toEqual(recognize(pts));
+        for (const k of SIGIL_KINDS) {
+          const c = a.checks[k];
+          if (c.score > 0) expect(c.miss).toBeNull();
+          else expect(c.miss).toMatch(/\w{3}/);
+        }
+        // The analyzed points sit where the stroke was drawn.
+        const first = a.points[0];
+        expect(Math.hypot(first.x - pts[0].x, first.y - pts[0].y)).toBeLessThan(g.size * 0.05);
+      }
+    }
+  });
+
+  it('report a hit with its grade, the wrong sigil, and an unclear stroke', () => {
+    const rng = mulberry32(808);
+    let tri = randomTriangle(rng);
+    let a = analyzeStroke(handDrawn(rng, tri.path, tri.size));
+    while (a.recognition.kind !== 'triangle') {
+      tri = randomTriangle(rng);
+      a = analyzeStroke(handDrawn(rng, tri.path, tri.size));
+    }
+    const hit = reportAttempt(a, 'triangle');
+    expect(hit.outcome).toBe('hit');
+    expect(hit.headline).toBe('Triangle: Arcane Ward');
+    expect(hit.detail).toMatch(/^(Perfect|Clean|Rough)/);
+    const wrong = reportAttempt(a, 'circle');
+    expect(wrong.outcome).toBe('wrong');
+    expect(wrong.headline).toBe('Read as Triangle, not Circle');
+    expect(wrong.focus).toBe('circle');
+    expect(wrong.detail).toBe(a.checks.circle.miss);
+
+    const square: Pt[] = [];
+    for (const [x, y] of [[0, 0], [200, 0], [200, 200], [0, 200], [0, 0]]) square.push({ x: x + 100, y: y + 100 });
+    const sq = analyzeStroke(handDrawn(mulberry32(1), polyPath(square), 200));
+    const unclear = reportAttempt(sq, 'triangle');
+    expect(unclear.outcome).toBe('miss');
+    expect(unclear.detail).toMatch(/4 corners; a triangle has 3/);
+    expect(reportAttempt(analyzeStroke([{ x: 0, y: 0 }, { x: 5, y: 4 }]), null).outcome).toBe('tiny');
+  });
+
+  it("fit the shape it found: a triangle's three corners and a circle's centre and radius", () => {
+    const rng = mulberry32(909);
+    let tri = analyzeStroke(handDrawn(rng, randomTriangle(rng).path, 200));
+    while (tri.recognition.kind !== 'triangle') tri = analyzeStroke(handDrawn(rng, randomTriangle(rng).path, 200));
+    const fit = shapeOverlay(tri, 'triangle');
+    expect(fit?.type === 'path' && fit.closed && fit.points.length).toBe(3);
+
+    const ring: Pt[] = [];
+    for (let i = 0; i <= 80; i++) ring.push({ x: 300 + Math.cos((i / 80) * Math.PI * 2) * 90, y: 200 + Math.sin((i / 80) * Math.PI * 2) * 90 });
+    const circle = shapeOverlay(analyzeStroke(ring), 'circle');
+    expect(circle?.type).toBe('circle');
+    if (circle?.type === 'circle') {
+      expect(circle.center.x).toBeCloseTo(300, -1);
+      expect(circle.center.y).toBeCloseTo(200, -1);
+      expect(circle.radius).toBeGreaterThan(80);
+      expect(circle.radius).toBeLessThan(95);
+    }
   });
 });

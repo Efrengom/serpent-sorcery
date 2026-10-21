@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PROGRESSION, SPELLS } from '../config';
 import { mulberry32 } from '../math';
+import { defaultOptions } from '../options';
 import {
   UPGRADES,
   UPGRADE_IDS,
@@ -144,7 +145,7 @@ describe('rewards and persistence', () => {
     expect(weird.meta).toEqual({ health: 5, damage: 0, pickup: 1, wisdom: 0 });
     expect(weird.records.bestTime).toBe(0);
     expect(weird.records.totalRuns).toBe(3);
-    expect(weird.settings).toEqual({ muted: false, volume: 1, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [] });
+    expect(weird.settings).toEqual({ muted: false, volume: 1, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [], ...defaultOptions() });
     // Unknown wizards and curses are dropped; duplicates collapse.
     const odd = parseSave(JSON.stringify({ settings: { wizard: 'lich', curses: ['glass', 'nope', 'glass', 3] }, records: { bossKills: -2 } }));
     expect(odd.settings.wizard).toBe('arcanist');

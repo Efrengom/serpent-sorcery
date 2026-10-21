@@ -12,6 +12,9 @@
  *      the turning happens at them).
  *   5. Each sigil has gates (hard requirements) and a confidence score. The best passing
  *      sigil wins unless another passing sigil scores too close to it (ambiguous).
+ *
+ * `analyzeStroke` runs the same pipeline and also reports, for every sigil, the first gate the
+ * stroke missed and the points its shape was built from; the practice room draws both.
  */
 
 import { GESTURE } from './config';
@@ -51,6 +54,29 @@ export interface Recognition {
   scores: Record<SigilKind, number>;
   features?: GestureFeatures;
 }
+
+/** One sigil's verdict on a stroke. */
+export interface ShapeCheck {
+  score: number;
+  /** The first requirement the stroke missed, in words; null when it passed. */
+  miss: string | null;
+  /**
+   * Indices into the analyzed points that the shape was built from: the V's point, the
+   * triangle's corners, the zigzag's corners. Empty for lines and circles.
+   */
+  marks: number[];
+}
+
+function miss(text: string): ShapeCheck {
+  return { score: 0, miss: text, marks: [] };
+}
+
+function pass(score: number, marks: number[] = []): ShapeCheck {
+  return { score, miss: null, marks };
+}
+
+const deg = (rad: number) => Math.round((rad * 180) / Math.PI);
+const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 const THRESH = {
   line: { minStraightness: 0.86, maxElongation: 0.22, maxChordDev: 0.13 },
@@ -391,92 +417,94 @@ function margin(value: number, limit: number, span: number): number {
   return Math.max(0, Math.min(1, (value - limit) / span));
 }
 
-function scoreLine(pts: Pt[], f: GestureFeatures): number {
+function scoreLine(f: GestureFeatures): ShapeCheck {
   const t = THRESH.line;
-  if (f.straightness < t.minStraightness) return 0;
-  if (f.elongation > t.maxElongation) return 0;
-  if (f.maxChordDeviation > t.maxChordDev) return 0;
-  void pts;
+  if (f.straightness < t.minStraightness) return miss(`Curves too much: ${pct(f.straightness)} straight, a line needs ${pct(t.minStraightness)}`);
+  if (f.elongation > t.maxElongation) return miss('Too wide for a line');
+  if (f.maxChordDeviation > t.maxChordDev) return miss('Bows away from straight in the middle');
   const a = margin(f.straightness, t.minStraightness, 1 - t.minStraightness);
   const b = margin(t.maxElongation - f.elongation, 0, t.maxElongation);
-  return 0.5 + 0.5 * (0.6 * a + 0.4 * b);
+  return pass(0.5 + 0.5 * (0.6 * a + 0.4 * b));
 }
 
-function scoreCircle(f: GestureFeatures): number {
+function scoreCircle(f: GestureFeatures): ShapeCheck {
   const t = THRESH.circle;
   const turn = Math.abs(f.signedTurning);
-  if (f.corners.filter((c) => Math.abs(c.angle) >= THRESH.circleSharpCorner).length > THRESH.circleMaxCorners) return 0;
-  if (f.closureGap > t.maxGap) return 0;
-  if (turn < t.minTurn || turn > t.maxTurn) return 0;
-  if (f.absTurning === 0 || turn / f.absTurning < t.minConsistency) return 0;
-  if (f.elongation < t.minElongation) return 0;
-  if (f.radialCv > t.maxRadialCv) return 0;
+  const sharp = f.corners.filter((c) => Math.abs(c.angle) >= THRESH.circleSharpCorner).length;
+  if (sharp > THRESH.circleMaxCorners) return miss(`${sharp} sharp corners: a circle is one smooth curve`);
+  if (f.closureGap > t.maxGap) return miss('The ends are too far apart to close the loop');
+  if (turn < t.minTurn) return miss(`Goes only ${deg(turn)}° around; a circle needs ${deg(t.minTurn)}°`);
+  if (turn > t.maxTurn) return miss(`Goes round ${(turn / (2 * Math.PI)).toFixed(1)} times; stop after one loop`);
+  if (f.absTurning === 0 || turn / f.absTurning < t.minConsistency) return miss('Bends both ways; keep turning the same way');
+  if (f.elongation < t.minElongation) return miss('Too flat; make it rounder');
+  if (f.radialCv > t.maxRadialCv) return miss('Lopsided; keep an even distance from the middle');
   const gap = margin(t.maxGap - f.closureGap, 0, t.maxGap);
   const round = margin(f.elongation, t.minElongation, 1 - t.minElongation);
   const even = margin(t.maxRadialCv - f.radialCv, 0, t.maxRadialCv);
   const full = margin(turn, t.minTurn, 2 * Math.PI - t.minTurn);
-  return 0.5 + 0.5 * (0.3 * gap + 0.25 * round + 0.25 * even + 0.2 * full);
+  return pass(0.5 + 0.5 * (0.3 * gap + 0.25 * round + 0.25 * even + 0.2 * full));
 }
 
-function scoreVee(pts: Pt[], f: GestureFeatures): number {
+function scoreVee(pts: Pt[], f: GestureFeatures): ShapeCheck {
   const t = THRESH.vee;
   const n = pts.length;
-  if (f.straightness > t.maxStraightness) return 0;
+  if (f.straightness > t.maxStraightness) return miss('Too straight; bend it into a point');
   const first = pts[0];
   const last = pts[n - 1];
   // The vertex is the point farthest from the start-end chord.
   const { index: k } = maxDeviation(pts, 0, n - 1);
-  if (k < 3 || k > n - 4) return 0;
+  if (k < 3 || k > n - 4) return miss('The point is at one end; draw two legs');
   const leg1 = sub(pts, 0, k);
   const leg2 = sub(pts, k, n - 1);
   const len1 = pathLength(leg1);
   const len2 = pathLength(leg2);
   const legRatio = Math.min(len1, len2) / Math.max(len1, len2);
-  if (legRatio < t.minLegRatio) return 0;
+  if (legRatio < t.minLegRatio) return miss(`One leg is only ${pct(legRatio)} as long as the other`);
   const v = pts[k];
   const c1 = Math.hypot(first.x - v.x, first.y - v.y);
   const c2 = Math.hypot(last.x - v.x, last.y - v.y);
   const s1 = c1 / len1;
   const s2 = c2 / len2;
-  if (s1 < t.minLegStraightness || s2 < t.minLegStraightness) return 0;
+  if (s1 < t.minLegStraightness || s2 < t.minLegStraightness) return miss('A leg curves; keep both legs straight');
   const d1 = maxDeviation(leg1, 0, leg1.length - 1).dev / c1;
   const d2 = maxDeviation(leg2, 0, leg2.length - 1).dev / c2;
-  if (d1 > t.maxLegDeviation || d2 > t.maxLegDeviation) return 0;
+  if (d1 > t.maxLegDeviation || d2 > t.maxLegDeviation) return miss('A leg bows out; keep both legs straight');
   const u1 = { x: (first.x - v.x) / c1, y: (first.y - v.y) / c1 };
   const u2 = { x: (last.x - v.x) / c2, y: (last.y - v.y) / c2 };
   const angle = Math.acos(Math.max(-1, Math.min(1, u1.x * u2.x + u1.y * u2.y)));
-  if (angle < t.minAngle || angle > t.maxAngle) return 0;
+  if (angle < t.minAngle) return miss(`The point is too narrow (${deg(angle)}°, at least ${deg(t.minAngle)}°)`);
+  if (angle > t.maxAngle) return miss(`Opens too wide (${deg(angle)}°, at most ${deg(t.maxAngle)}°)`);
   // The opening (bisector from the vertex) should point roughly up the screen.
   const bx = u1.x + u2.x;
   const by = u1.y + u2.y;
   const bl = Math.hypot(bx, by);
-  if (bl === 0) return 0;
+  if (bl === 0) return miss('The legs point straight away from each other');
   const tilt = Math.acos(Math.max(-1, Math.min(1, -by / bl)));
-  if (tilt > t.maxTilt) return 0;
+  if (tilt > t.maxTilt) return miss(`Opens ${deg(tilt)}° away from up; a V opens upward (within ${deg(t.maxTilt)}°)`);
   const straight = margin(Math.min(s1, s2), t.minLegStraightness, 1 - t.minLegStraightness);
   const balance = margin(legRatio, t.minLegRatio, 1 - t.minLegRatio);
   const upright = margin(t.maxTilt - tilt, 0, t.maxTilt);
   const mid = (t.minAngle + t.maxAngle) / 2;
   const angleFit = 1 - Math.abs(angle - mid) / ((t.maxAngle - t.minAngle) / 2);
-  return 0.5 + 0.5 * (0.35 * straight + 0.2 * balance + 0.25 * upright + 0.2 * angleFit);
+  return pass(0.5 + 0.5 * (0.35 * straight + 0.2 * balance + 0.25 * upright + 0.2 * angleFit), [k]);
 }
 
 /**
  * Triangle: a closed stroke that simplifies to a three-cornered polygon with sides of
  * comparable length, whose turning happens mostly at those corners (not a rounded blob).
  */
-function scoreTriangle(pts: Pt[], f: GestureFeatures): number {
+function scoreTriangle(pts: Pt[], f: GestureFeatures): ShapeCheck {
   const t = THRESH.triangle;
-  if (loopGap(pts) > t.maxGap) return 0;
-  if (f.cornerShare < t.minShare) return 0;
+  if (loopGap(pts) > t.maxGap) return miss("The ends don't meet; close the triangle");
+  if (f.cornerShare < t.minShare) return miss('The corners are too rounded');
   const poly = closedPolygon(pts, t.fitTolerance);
-  if (poly.length !== 3) return 0;
+  if (poly.length !== 3) return miss(`Simplifies to ${poly.length} corners; a triangle has 3`);
   const sides = poly.map((v, i) => {
     const w = poly[(i + 1) % 3];
     return Math.hypot(w.x - v.x, w.y - v.y);
   });
   const sideRatio = Math.min(...sides) / Math.max(...sides);
-  if (sideRatio < t.minSideRatio) return 0;
+  if (sideRatio < t.minSideRatio) return miss(`One side is only ${pct(sideRatio)} as long as the longest`);
   // Each corner must actually turn: no interior angle wider than maxInterior.
   const interior = poly.map((v, i) => {
     const p = poly[(i + 2) % 3];
@@ -484,27 +512,30 @@ function scoreTriangle(pts: Pt[], f: GestureFeatures): number {
     return Math.abs(signedAngle(p.x - v.x, p.y - v.y, q.x - v.x, q.y - v.y));
   });
   const widest = Math.max(...interior);
-  if (widest > t.maxInterior) return 0;
+  if (widest > t.maxInterior) return miss(`A corner is too flat (${deg(widest)}°, at most ${deg(t.maxInterior)}°)`);
   const closed = margin(t.maxGap - loopGap(pts), 0, t.maxGap);
   const balance = margin(sideRatio, t.minSideRatio, 1 - t.minSideRatio);
   const crisp = margin(f.cornerShare, t.minShare, 1 - t.minShare);
   const pointy = margin(t.maxInterior - widest, 0, t.maxInterior - Math.PI / 3);
-  return 0.5 + 0.5 * (0.25 * closed + 0.3 * balance + 0.25 * crisp + 0.2 * pointy);
+  return pass(0.5 + 0.5 * (0.25 * closed + 0.3 * balance + 0.25 * crisp + 0.2 * pointy), poly.map((v) => pts.indexOf(v)));
 }
 
 /**
  * Zigzag: an open stroke of 3 to 5 straight legs joined by sharp corners that turn alternately
  * left and right (Z, N, W, M and longer saw-tooth lines).
  */
-function scoreZigzag(pts: Pt[], f: GestureFeatures): number {
+function scoreZigzag(pts: Pt[], f: GestureFeatures): ShapeCheck {
   const t = THRESH.zigzag;
   const c = dropHooks(pts, f.corners, t.hookRatio);
-  if (c.length < 2 || c.length > 4) return 0;
-  if (f.closureGap < t.minGap) return 0;
-  for (let i = 1; i < c.length; i++) if (Math.sign(c[i].angle) === Math.sign(c[i - 1].angle)) return 0;
+  if (c.length < 2) return miss(`${c.length === 0 ? 'No sharp corners' : 'Only 1 sharp corner'}; a zigzag needs 2 to 4`);
+  if (c.length > 4) return miss(`${c.length} sharp corners; a zigzag has 2 to 4`);
+  if (f.closureGap < t.minGap) return miss('The ends come back together; a zigzag stays open');
+  for (let i = 1; i < c.length; i++) {
+    if (Math.sign(c[i].angle) === Math.sign(c[i - 1].angle)) return miss('Two corners turn the same way; turn left and right in turn');
+  }
   const sharpest = Math.min(...c.map((k) => Math.abs(k.angle)));
-  if (sharpest < t.minCorner) return 0;
-  if (f.cornerShare < t.minShare) return 0;
+  if (sharpest < t.minCorner) return miss('A corner is too soft; make each turn sharp');
+  if (f.cornerShare < t.minShare) return miss('Too curvy between the corners');
   const cuts = [0, ...c.map((k) => k.index), pts.length - 1];
   const lens: number[] = [];
   let worstDev = 0;
@@ -512,17 +543,17 @@ function scoreZigzag(pts: Pt[], f: GestureFeatures): number {
     const a = pts[cuts[i - 1]];
     const b = pts[cuts[i]];
     const chord = Math.hypot(b.x - a.x, b.y - a.y);
-    if (chord === 0 || cuts[i] - cuts[i - 1] < 2) return 0;
+    if (chord === 0 || cuts[i] - cuts[i - 1] < 2) return miss('A leg is too short');
     lens.push(chord);
     worstDev = Math.max(worstDev, maxDeviation(pts, cuts[i - 1], cuts[i]).dev / chord);
   }
-  if (worstDev > t.maxLegDeviation) return 0;
+  if (worstDev > t.maxLegDeviation) return miss('A leg bows; keep each one straight');
   const legRatio = Math.min(...lens) / Math.max(...lens);
-  if (legRatio < t.minLegRatio) return 0;
+  if (legRatio < t.minLegRatio) return miss(`The shortest leg is only ${pct(legRatio)} of the longest`);
   const sharp = margin(sharpest, t.minCorner, Math.PI * 0.75 - t.minCorner);
   const straight = margin(t.maxLegDeviation - worstDev, 0, t.maxLegDeviation);
   const balance = margin(legRatio, t.minLegRatio, 1 - t.minLegRatio);
-  return 0.5 + 0.5 * (0.35 * sharp + 0.35 * straight + 0.3 * balance);
+  return pass(0.5 + 0.5 * (0.35 * sharp + 0.35 * straight + 0.3 * balance), c.map((k) => k.index));
 }
 
 /** Drops a corner at either end whose leg to the end of the stroke is too short to be a leg. */
@@ -590,22 +621,55 @@ export function extractFeatures(norm: readonly Pt[]): GestureFeatures {
 }
 
 export function recognize(raw: readonly Pt[]): Recognition {
+  return analyzeStroke(raw).recognition;
+}
+
+/** Everything the recognizer worked out about a stroke, for the practice room. */
+export interface StrokeAnalysis {
+  recognition: Recognition;
+  /** The stroke as the recognizer saw it: resampled and smoothed, in the input's coordinates. */
+  points: Pt[];
+  /** Each sigil's verdict; all misses when the stroke was too small to read. */
+  checks: Record<SigilKind, ShapeCheck>;
+  /** The stroke's centre and size; normalized coordinates × size + centre give input ones. */
+  center: Pt;
+  size: number;
+}
+
+export function analyzeStroke(raw: readonly Pt[]): StrokeAnalysis {
   const empty: Record<SigilKind, number> = { line: 0, vee: 0, circle: 0, triangle: 0, zigzag: 0 };
   const pts = dedupe(raw);
-  if (pts.length < 2) return { kind: null, reason: 'tiny', score: 0, scores: empty };
+  const tiny = (): StrokeAnalysis => {
+    const small = miss('Too small to read; draw it bigger');
+    return {
+      recognition: { kind: null, reason: 'tiny', score: 0, scores: empty },
+      points: pts,
+      checks: { line: small, vee: small, circle: small, triangle: small, zigzag: small },
+      center: pts[0] ?? { x: 0, y: 0 },
+      size: 1,
+    };
+  };
+  if (pts.length < 2) return tiny();
   const b = bounds(pts);
-  if (Math.max(b.w, b.h) < GESTURE.minSize || pathLength(pts) < GESTURE.minPathLength) {
-    return { kind: null, reason: 'tiny', score: 0, scores: empty };
-  }
-  const norm = normalize(smooth(resample(pts, GESTURE.resampleCount), 2));
+  if (Math.max(b.w, b.h) < GESTURE.minSize || pathLength(pts) < GESTURE.minPathLength) return tiny();
+  const seen = smooth(resample(pts, GESTURE.resampleCount), 2);
+  const norm = normalize(seen);
+  const nb = bounds(seen);
+  const size = Math.max(nb.w, nb.h) || 1;
+  const center = { x: seen[0].x - norm[0].x * size, y: seen[0].y - norm[0].y * size };
   const features = extractFeatures(norm);
-  const scores: Record<SigilKind, number> = {
-    line: scoreLine(norm, features),
+  const checks: Record<SigilKind, ShapeCheck> = {
+    line: scoreLine(features),
     vee: scoreVee(norm, features),
     circle: scoreCircle(features),
     triangle: scoreTriangle(norm, features),
     zigzag: scoreZigzag(norm, features),
   };
+  const scores = Object.fromEntries(SIGIL_KINDS.map((k) => [k, checks[k].score])) as Record<SigilKind, number>;
+  return { recognition: decide(scores, features), points: seen, checks, center, size };
+}
+
+function decide(scores: Record<SigilKind, number>, features: GestureFeatures): Recognition {
   const ranked = (Object.keys(scores) as SigilKind[]).sort((a, z) => scores[z] - scores[a]);
   const best = ranked[0];
   const second = ranked[1];

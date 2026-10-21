@@ -118,8 +118,9 @@ export function updateEffects(world: World, dt: number): void {
   }
 }
 
-export function shakeOffset(world: World, time: number): { x: number; y: number } {
-  const s = world.shake * world.shake * VIEW.maxShake;
+/** Camera offset from screen shake; `strength` is the player's shake setting (0 turns it off). */
+export function shakeOffset(world: World, time: number, strength = 1): { x: number; y: number } {
+  const s = world.shake * world.shake * VIEW.maxShake * strength;
   if (s < 0.05) return { x: 0, y: 0 };
   return { x: Math.sin(time * 91.3) * s, y: Math.cos(time * 77.7) * s };
 }

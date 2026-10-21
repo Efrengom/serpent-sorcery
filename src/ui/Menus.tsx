@@ -1,11 +1,13 @@
-import { useEffect, type ComponentProps } from 'react';
+import { useContext, useEffect, type ComponentProps } from 'react';
 import { SPELL_IDS, SPELLS } from '../game/config';
 import { CURSE_IDS, CURSES, shardMultiplier, type CurseId } from '../game/curses';
+import { MOVE_ACTIONS, primaryKeyLabel } from '../game/keys';
 import { formatTime } from '../game/math';
 import type { SaveData } from '../game/persistence';
 import { META_IDS, META_UPGRADES, metaMaxLevel, metaNextCost, type MetaId } from '../game/progression';
 import { isWizardUnlocked, playableWizard, WIZARD_IDS, WIZARDS, type WizardId } from '../game/wizards';
 import { PixelIcon, PixelTitleSerpent, Shard, UpgradeGlyph, usePixelArt, WizardPortrait } from './art';
+import { BindingsContext, KeyHint, useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 import { VolumeControls } from './VolumeControls';
 
@@ -61,6 +63,8 @@ export function TitleScreen({
   onSetup,
   onHowTo,
   onShop,
+  onOptions,
+  onPractice,
   onToggleMute,
   onToggleArt,
   volume,
@@ -70,6 +74,8 @@ export function TitleScreen({
   onSetup(): void;
   onHowTo(): void;
   onShop(): void;
+  onOptions(): void;
+  onPractice(): void;
   onToggleMute(): void;
   onToggleArt(): void;
   volume: ComponentProps<typeof VolumeControls>;
@@ -79,6 +85,7 @@ export function TitleScreen({
   const firstTime = save.records.totalRuns === 0;
   const wizard = playableWizard(save.settings.wizard, save.records);
   const curses = save.settings.curses;
+  const muteKey = useKeyLabel('mute');
   return (
     <div className="screen title-screen">
       <div className="runes-bg" aria-hidden="true" />
@@ -106,8 +113,16 @@ export function TitleScreen({
             <button className={`btn${firstTime ? ' pulse' : ''}`} onClick={onHowTo}>
               How to Play
             </button>
+            <button className="btn" onClick={onPractice}>
+              Practice Sigils
+            </button>
+          </div>
+          <div className="menu-pair">
+            <button className="btn" onClick={onOptions}>
+              Options
+            </button>
             <button className="btn" onClick={onToggleArt}>
-              Art: {save.settings.pixelArt ? 'Pixel' : 'Classic'} <kbd>P</kbd>
+              Art: {save.settings.pixelArt ? 'Pixel' : 'Classic'} <KeyHint action="art" />
             </button>
           </div>
         </div>
@@ -131,16 +146,29 @@ export function TitleScreen({
           </div>
         </div>
       </div>
-      <button className="icon-btn corner" onClick={onToggleMute} title="Mute (M)" aria-label="Toggle sound">
+      <button className="icon-btn corner" onClick={onToggleMute} title={`Mute (${muteKey})`} aria-label="Toggle sound">
         {pixel ? <PixelIcon name={save.settings.muted ? 'soundOff' : 'soundOn'} scale={2} /> : save.settings.muted ? '🔇' : '🔊'}
       </button>
     </div>
   );
 }
 
-export function HowToPlay({ onBack, onPlay }: { onBack(): void; onPlay(): void }) {
+export function HowToPlay({
+  onBack,
+  onPlay,
+  onPractice,
+  safeWarnings,
+}: {
+  onBack(): void;
+  onPlay(): void;
+  onPractice(): void;
+  safeWarnings: boolean;
+}) {
   useKey(BACK, onBack);
   useKey(ENTER, onPlay);
+  const bindings = useContext(BindingsContext);
+  const [up, left, down, right] = (['up', 'left', 'down', 'right'] as const).map((a) => primaryKeyLabel(bindings, a));
+  const steer = MOVE_ACTIONS.map((a) => primaryKeyLabel(bindings, a)).join('');
   return (
     <div className="screen howto">
       <h2 className="screen-title">How to Play</h2>
@@ -148,13 +176,14 @@ export function HowToPlay({ onBack, onPlay }: { onBack(): void; onPlay(): void }
         <section className="howto-card">
           <h3>1 · Steer</h3>
           <div className="keys">
-            <kbd className="k-w">W</kbd>
-            <kbd className="k-a">A</kbd>
-            <kbd className="k-s">S</kbd>
-            <kbd className="k-d">D</kbd>
+            <kbd className="k-w">{up}</kbd>
+            <kbd className="k-a">{left}</kbd>
+            <kbd className="k-s">{down}</kbd>
+            <kbd className="k-d">{right}</kbd>
           </div>
           <p>
-            Your serpent <b>never stops moving</b>. WASD points it up, left, down or right; hold two keys for diagonals.
+            Your serpent <b>never stops moving</b>. {steer === 'WSAD' ? 'WASD' : `${up} ${left} ${down} ${right}`} points it up, left,
+            down or right; hold two keys for diagonals.
             Let go and it keeps its heading. Turns curve — reversing makes a U-turn.
           </p>
           <p>Walls sting and bounce you back inward. Only enemy <b>heads</b> bite, and your own tail is safe.</p>
@@ -204,7 +233,16 @@ export function HowToPlay({ onBack, onPlay }: { onBack(): void; onPlay(): void }
       </div>
       <ul className="tips">
         <li>
-          <span className="dot red" /> Red-orange means danger: shots, charge lanes, portals.
+          {safeWarnings ? (
+            <>
+              <span className="dot warn" /> Yellow-and-black stripes and a “!” mark a coming attack; red-orange shots and portals
+              are dangerous too.
+            </>
+          ) : (
+            <>
+              <span className="dot red" /> Red-orange means danger: shots, charge lanes, portals.
+            </>
+          )}
         </li>
         <li>
           <span className="dot violet" /> Defeated foes drop crystals. Survive and level up to grow longer and stronger.
@@ -214,12 +252,15 @@ export function HowToPlay({ onBack, onPlay }: { onBack(): void; onPlay(): void }
           roam.
         </li>
         <li>
-          <kbd>Esc</kbd> pause · <kbd>M</kbd> mute
+          <KeyHint action="pause" /> pause · <KeyHint action="mute" /> mute · keys and comfort settings are in Options
         </li>
       </ul>
       <div className="menu-buttons row">
         <button className="btn" onClick={onBack}>
           Back <kbd>Esc</kbd>
+        </button>
+        <button className="btn" onClick={onPractice}>
+          Practice Sigils
         </button>
         <button className="btn primary" onClick={onPlay}>
           Play <kbd>Enter</kbd>

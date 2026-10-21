@@ -1,6 +1,7 @@
 import type { HudSnapshot } from '../game/engine';
 import { formatTime } from '../game/math';
 import { PixelIcon, usePixelArt } from './art';
+import { useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 
 interface Props {
@@ -12,6 +13,8 @@ interface Props {
 
 export function Hud({ hud, muted, onPause, onToggleMute }: Props) {
   const pixel = usePixelArt();
+  const muteKey = useKeyLabel('mute');
+  const pauseKey = useKeyLabel('pause');
   if (!hud) return null;
   const hpPct = Math.max(0, Math.min(1, hud.hp / hud.maxHp));
   const xpPct = Math.max(0, Math.min(1, hud.xp / hud.xpNext));
@@ -79,7 +82,7 @@ export function Hud({ hud, muted, onPause, onToggleMute }: Props) {
               tabIndex={-1}
               onMouseDown={(e) => e.preventDefault()}
               onClick={onToggleMute}
-              title="Mute (M)"
+              title={`Mute (${muteKey})`}
               aria-label={muted ? 'Unmute' : 'Mute'}
             >
               {pixel ? <PixelIcon name={muted ? 'soundOff' : 'soundOn'} scale={2} /> : muted ? '🔇' : '🔊'}
@@ -89,7 +92,7 @@ export function Hud({ hud, muted, onPause, onToggleMute }: Props) {
               tabIndex={-1}
               onMouseDown={(e) => e.preventDefault()}
               onClick={onPause}
-              title="Pause (Esc)"
+              title={`Pause (${pauseKey})`}
               aria-label="Pause"
             >
               {pixel ? <PixelIcon name="pause" scale={3} /> : '❚❚'}

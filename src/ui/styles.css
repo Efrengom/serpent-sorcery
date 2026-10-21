@@ -2122,8 +2122,15 @@ kbd {
 }
 
 @media (max-height: 820px) {
+  .title-screen {
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+  .title-screen .tagline {
+    margin-bottom: 1.2em;
+  }
   .title-serpent {
-    width: min(360px, 70vw);
+    width: min(320px, 70vw);
   }
   .game-title {
     font-size: clamp(2.4rem, 6vw, 4.2rem);
@@ -2161,4 +2168,646 @@ kbd {
   white-space: nowrap;
   padding-left: 12px;
   padding-right: 12px;
+}
+
+/* ---------------------------------------------------------------- options */
+
+.options-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 26px;
+  width: 100%;
+  max-width: 980px;
+  margin-bottom: 22px;
+  text-align: left;
+}
+
+@media (max-width: 860px) {
+  .options-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.options-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--panel-edge);
+  background: rgba(26, 14, 46, 0.85);
+}
+
+.opt-range {
+  grid-template-columns: 110px 1fr 46px;
+}
+
+.opt-toggle {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(16, 8, 30, 0.7);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.opt-toggle:hover,
+.opt-toggle:focus-visible {
+  border-color: var(--cyan);
+  outline: none;
+}
+
+.opt-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+.opt-switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  transition: left 0.12s ease;
+}
+
+.opt-toggle.on .opt-switch {
+  background: rgba(255, 212, 94, 0.3);
+  border-color: var(--gold);
+}
+
+.opt-toggle.on .opt-switch i {
+  left: 22px;
+  background: var(--gold);
+}
+
+.opt-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.opt-text span,
+.opt-note {
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+
+.opt-note {
+  margin: 0;
+}
+
+.warn-preview {
+  width: 96px;
+  height: 34px;
+  border-radius: 6px;
+}
+
+.key-table {
+  display: grid;
+  gap: 6px;
+}
+
+.key-row {
+  display: grid;
+  grid-template-columns: 1fr 96px 96px;
+  gap: 8px;
+  align-items: center;
+}
+
+.key-action {
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--ink-dim);
+}
+
+.key-btn {
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-bottom-width: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink);
+  font: 800 0.85rem var(--ui-font);
+  cursor: pointer;
+}
+
+.key-btn:hover,
+.key-btn:focus-visible {
+  border-color: var(--cyan);
+  outline: none;
+}
+
+.key-btn.empty {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.key-btn.listening {
+  border-color: var(--gold);
+  background: rgba(255, 212, 94, 0.18);
+  color: var(--gold);
+  font-size: 0.75rem;
+}
+
+.key-btn.locked {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.key-note {
+  min-height: 2.6em;
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-dim);
+}
+
+.key-warn {
+  color: #ff9aaa;
+  font-weight: 700;
+}
+
+.keys {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.keys > .btn {
+  align-self: flex-start;
+}
+
+.options-overlay {
+  max-width: 1000px;
+}
+
+.dot.warn {
+  border-radius: 0;
+  background: repeating-linear-gradient(45deg, #ffd400 0 3px, #120c00 3px 6px);
+  box-shadow: 0 0 0 1px #ffd400;
+}
+
+.app.pixel .options-section,
+.app.pixel .opt-toggle {
+  background: var(--px-panel);
+  border: 3px solid var(--px-ink);
+  box-shadow: inset 0 0 0 2px var(--px-hi);
+}
+
+.app.pixel .opt-toggle.on {
+  box-shadow: inset 0 0 0 2px #ffd45e;
+}
+
+.app.pixel .opt-switch i {
+  transition: none;
+}
+
+.app.pixel .key-btn {
+  border: 2px solid currentColor;
+  border-bottom-width: 4px;
+  font-family: var(--title-font);
+  font-size: 0.7rem;
+}
+
+/* ---------------------------------------------------------------- sigil practice */
+
+.practice-targets {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.practice-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-edge);
+  background: rgba(26, 14, 46, 0.85);
+  color: var(--ink);
+  font: 800 0.9rem var(--ui-font);
+  cursor: pointer;
+}
+
+.practice-target:hover,
+.practice-target:focus-visible {
+  border-color: var(--cyan);
+  outline: none;
+}
+
+.practice-target.on {
+  border-color: var(--spell, var(--gold));
+  background: color-mix(in srgb, var(--spell, var(--gold)) 22%, rgba(26, 14, 46, 0.9));
+}
+
+.practice-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr);
+  gap: 20px;
+  width: 100%;
+  max-width: 1180px;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 900px) {
+  .practice-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.practice-pad {
+  position: relative;
+  min-height: 380px;
+  height: min(62vh, 560px);
+  border-radius: 18px;
+  border: 1px solid var(--panel-edge);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(160, 130, 255, 0.1), transparent 55%),
+    repeating-linear-gradient(0deg, rgba(190, 160, 255, 0.05) 0 1px, transparent 1px 40px),
+    repeating-linear-gradient(90deg, rgba(190, 160, 255, 0.05) 0 1px, transparent 1px 40px),
+    #120a24;
+  overflow: hidden;
+}
+
+.practice-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.practice-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 44px;
+  text-align: center;
+  color: var(--ink-dim);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.practice-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-dim);
+  pointer-events: none;
+}
+
+.practice-legend span::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+
+.practice-legend .lg-start::before {
+  border: 2px solid #8cff6a;
+  border-radius: 50%;
+  width: 7px;
+  height: 7px;
+}
+
+.practice-legend .lg-end::before {
+  background: #fff;
+}
+
+.practice-legend .lg-corner::before {
+  background: #ff7ad9;
+  transform: rotate(45deg) scale(0.8);
+}
+
+.practice-legend .lg-fit::before {
+  width: 14px;
+  height: 0;
+  border-top: 2px dashed #ffd45e;
+  vertical-align: 3px;
+}
+
+.practice-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.practice-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--panel-edge);
+  background: rgba(26, 14, 46, 0.9);
+  min-height: 92px;
+}
+
+.practice-verdict.miss,
+.practice-verdict.wrong,
+.practice-verdict.tiny {
+  border-color: rgba(255, 138, 138, 0.6);
+}
+
+.practice-verdict.miss .verdict-head,
+.practice-verdict.wrong .verdict-head,
+.practice-verdict.tiny .verdict-head {
+  color: #ff9a9a;
+}
+
+.verdict-head {
+  font-family: var(--title-font);
+  font-size: 1.25rem;
+}
+
+.verdict-detail {
+  flex-basis: 100%;
+  font-size: 0.88rem;
+  color: var(--ink-dim);
+}
+
+.tier-chip {
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid currentColor;
+  color: var(--ink-dim);
+}
+
+.tier-chip.perfect {
+  color: var(--gold);
+  background: rgba(255, 212, 94, 0.12);
+}
+
+.tier-chip.clean {
+  color: #dfe8ff;
+}
+
+.practice-shapes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shape-row {
+  display: grid;
+  grid-template-columns: 30px 64px 1fr 40px;
+  grid-template-areas:
+    'icon name bar score'
+    'icon note note note';
+  align-items: center;
+  column-gap: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(16, 8, 30, 0.7);
+}
+
+.shape-row > :first-child {
+  grid-area: icon;
+}
+
+.shape-row.focus {
+  border-color: var(--spell);
+}
+
+.shape-row.missed {
+  opacity: 0.78;
+}
+
+.shape-name {
+  grid-area: name;
+  font-weight: 800;
+}
+
+.shape-bar {
+  grid-area: bar;
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.shape-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 5px;
+  background: var(--spell);
+}
+
+.shape-bar .tick {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.shape-bar .tick.perfect {
+  background: var(--gold);
+}
+
+.shape-score {
+  grid-area: score;
+  text-align: right;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.shape-row.missed .shape-score {
+  color: #ff9a9a;
+}
+
+.shape-note {
+  grid-area: note;
+  font-size: 0.78rem;
+  color: var(--ink-dim);
+  line-height: 1.3;
+}
+
+.shape-row.passed .shape-note {
+  text-transform: capitalize;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.practice-measure {
+  font-size: 0.85rem;
+  color: var(--ink-dim);
+}
+
+.practice-measure summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.practice-measure dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 16px;
+  margin: 8px 0 0;
+}
+
+.practice-measure dl div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.practice-measure dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.practice-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--ink-dim);
+}
+
+.history-chips {
+  display: flex;
+  gap: 4px;
+  min-height: 12px;
+}
+
+.history-chips i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: #8c8aa8;
+}
+
+.history-chips i.perfect {
+  background: var(--gold);
+}
+
+.history-chips i.clean {
+  background: #dfe8ff;
+}
+
+.history-chips i.missed {
+  background: transparent;
+  border: 2px solid #ff8a8a;
+}
+
+.app.pixel .practice-target,
+.app.pixel .practice-verdict,
+.app.pixel .shape-row {
+  background: var(--px-panel);
+  border: 3px solid var(--px-ink);
+  box-shadow: inset 0 0 0 2px var(--px-hi);
+}
+
+.app.pixel .practice-target.on,
+.app.pixel .shape-row.focus {
+  box-shadow: inset 0 0 0 2px var(--spell, #ffd45e);
+}
+
+.app.pixel .practice-pad {
+  border: 3px solid var(--px-ink);
+  box-shadow: inset 0 0 0 3px var(--px-hi);
+}
+
+.app.pixel .verdict-head,
+.app.pixel .shape-name {
+  font-family: var(--title-font);
+  font-size: 0.95rem;
+}
+
+/* ---------------------------------------------------------------- reduce flashing
+   Blinking interface cues hold still; the colours that carry their meaning stay. */
+
+.app.reduce-flash .btn.pulse,
+.app.reduce-flash .card-pips i.next,
+.app.reduce-flash .bar.hp.low,
+.app.reduce-flash .boss-bar.enraged .boss-track,
+.app.reduce-flash .spell-card.deny {
+  animation: none;
+}
+
+.app.reduce-flash .bar.hp.low,
+.app.reduce-flash .boss-bar.enraged .boss-track {
+  border-color: #ff4f7b;
+}
+
+.app.pixel .opt-text span {
+  font-family: var(--ui-font);
+}
+
+.app.pixel .opt-text b {
+  font-size: 0.85rem;
+}
+
+.app.pixel .opt-range {
+  grid-template-columns: 130px 1fr 46px;
+}
+
+@media (max-height: 820px) {
+  .practice {
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+  .practice .screen-title {
+    margin: 0;
+    font-size: 2rem;
+  }
+  .practice .screen-sub {
+    margin-bottom: 0.7em;
+  }
+  .practice-targets {
+    margin-bottom: 10px;
+  }
+  .practice-pad {
+    height: min(58vh, 520px);
+    min-height: 340px;
+  }
+  .practice-verdict {
+    min-height: 76px;
+    padding: 10px 14px;
+  }
+  .shape-row {
+    padding: 4px 10px;
+  }
+  .practice-grid {
+    margin-bottom: 12px;
+  }
+}
+
+.app.pixel .shape-row {
+  grid-template-columns: 30px 96px 1fr 40px;
 }
