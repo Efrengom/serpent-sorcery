@@ -4,7 +4,7 @@ import { addShake, burst, floater, hitStop } from './effects';
 import type { SigilKind } from './gesture';
 import { angleDiff, clamp, dist, dist2, TAU, type Vec } from './math';
 import { COLORS } from './palette';
-import { PLAY_AREA } from './snake';
+import { castRay, clearanceAt, pushOut } from './terrain';
 import type { Enemy, World } from './world';
 
 export const SIGIL_TO_SPELL: Record<SigilKind, SpellId> = {
@@ -125,14 +125,10 @@ function castLance(world: World, aim: number, power: number): void {
     const a = aim + (i - (n - 1) / 2) * SPELLS.bolt.spread;
     const x0 = s.x + Math.cos(a) * 22;
     const y0 = s.y + Math.sin(a) * 22;
-    // The beam stops at the arena wall.
-    let len: number = evo.beamLength;
     const c = Math.cos(a);
     const sn = Math.sin(a);
-    if (c > 0) len = Math.min(len, (PLAY_AREA.maxX - x0) / c);
-    if (c < 0) len = Math.min(len, (PLAY_AREA.minX - x0) / c);
-    if (sn > 0) len = Math.min(len, (PLAY_AREA.maxY - y0) / sn);
-    if (sn < 0) len = Math.min(len, (PLAY_AREA.minY - y0) / sn);
+    // The beam stops at the first wall or pillar in its way.
+    const len = castRay(world.map.index, x0, y0, x0 + c * evo.beamLength, y0 + sn * evo.beamLength, 4);
     const x1 = x0 + c * len;
     const y1 = y0 + sn * len;
     for (const e of world.enemies) {
@@ -192,8 +188,9 @@ function castLightning(world: World, aim: number, target: Vec | null, damageScal
   const points: Vec[] = [{ x: s.x, y: s.y }];
   if (!first) {
     const reach = target ? Math.min(cfg.range, dist(s.x, s.y, target.x, target.y)) : 260;
-    const ex = Math.max(PLAY_AREA.minX, Math.min(PLAY_AREA.maxX, s.x + Math.cos(aim) * Math.max(120, reach)));
-    const ey = Math.max(PLAY_AREA.minY, Math.min(PLAY_AREA.maxY, s.y + Math.sin(aim) * Math.max(120, reach)));
+    const b = world.map.bounds;
+    const ex = Math.max(b.minX, Math.min(b.maxX, s.x + Math.cos(aim) * Math.max(120, reach)));
+    const ey = Math.max(b.minY, Math.min(b.maxY, s.y + Math.sin(aim) * Math.max(120, reach)));
     points.push({ x: ex, y: ey });
     burst(world, ex, ey, COLORS.lightning, 10, 200, { size: 2.5, life: 0.3 });
     world.arcs.push({ points, life: 0.3, maxLife: 0.3, seed: world.rng() * 1000, fizzle: true });
@@ -336,12 +333,17 @@ function castFrost(world: World, target: Vec | null, power: number): void {
   const cfg = SPELLS.frost;
   const r = world.stats.frostRadius * (1 + (power - 1) * 0.5);
   const aimed = target && dist(s.x, s.y, target.x, target.y) >= SNAKE.aimMinDistance;
-  const x = aimed ? target.x : s.x + Math.cos(s.heading) * cfg.placeAhead;
-  const y = aimed ? target.y : s.y + Math.sin(s.heading) * cfg.placeAhead;
+  const b = world.map.bounds;
+  const at = {
+    x: clamp(aimed ? target.x : s.x + Math.cos(s.heading) * cfg.placeAhead, b.minX + r * 0.3, b.maxX - r * 0.3),
+    y: clamp(aimed ? target.y : s.y + Math.sin(s.heading) * cfg.placeAhead, b.minY + r * 0.3, b.maxY - r * 0.3),
+  };
+  // It may spread over a pillar, but its centre lands on open floor.
+  if (clearanceAt(world.map.index, at.x, at.y) < 0) pushOut(world.map.index, at, 1);
   const field = {
     id: ++world.frostCounter,
-    x: clamp(x, PLAY_AREA.minX + r * 0.3, PLAY_AREA.maxX - r * 0.3),
-    y: clamp(y, PLAY_AREA.minY + r * 0.3, PLAY_AREA.maxY - r * 0.3),
+    x: at.x,
+    y: at.y,
     radius: r,
     t: 0,
     duration: cfg.duration,
@@ -427,7 +429,7 @@ export function updateBolts(world: World, dt: number): void {
     b.y += b.vy * dt;
     b.life -= dt;
     let remove = b.life <= 0;
-    if (b.x < PLAY_AREA.minX || b.x > PLAY_AREA.maxX || b.y < PLAY_AREA.minY || b.y > PLAY_AREA.maxY) {
+    if (clearanceAt(world.map.index, b.x, b.y) < b.r * 0.5) {
       burst(world, b.x, b.y, COLORS.bolt, 6, 160, { size: 2.5, life: 0.25 });
       remove = true;
     }

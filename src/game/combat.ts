@@ -4,8 +4,8 @@ import { spawnEnemy } from './enemies';
 import { clamp, dist2, TAU } from './math';
 import { COLORS } from './palette';
 import { hurtKey, type DamageSource, type HurtSource } from './recap';
-import { PLAY_AREA } from './snake';
 import { frostAt } from './spells';
+import { clearanceAt, pushOut } from './terrain';
 import type { Crystal, Enemy, World } from './world';
 
 /** Circle test against an enemy's head and (for snakes) body segments. */
@@ -125,11 +125,12 @@ function descend(world: World): void {
 
 /** A splitting elite bursts into two smaller copies of itself. */
 function splitEnemy(world: World, e: Enemy): void {
+  const b = world.map.bounds;
   for (const side of [-1, 1]) {
     const a = e.heading + (side * Math.PI) / 2;
-    const x = clamp(e.x + Math.cos(a) * e.r, PLAY_AREA.minX + 20, PLAY_AREA.maxX - 20);
-    const y = clamp(e.y + Math.sin(a) * e.r, PLAY_AREA.minY + 20, PLAY_AREA.maxY - 20);
-    const f = spawnEnemy(world, e.kind, x, y);
+    const at = { x: clamp(e.x + Math.cos(a) * e.r, b.minX + 20, b.maxX - 20), y: clamp(e.y + Math.sin(a) * e.r, b.minY + 20, b.maxY - 20) };
+    pushOut(world.map.index, at, e.r * ELITE.fragmentScale);
+    const f = spawnEnemy(world, e.kind, at.x, at.y);
     f.fragment = true;
     f.r = e.r * ELITE.fragmentScale;
     f.maxHp = f.hp = (e.maxHp / ELITE.hpMult) * ELITE.fragmentHp;
@@ -214,6 +215,7 @@ export function updateCrystals(world: World, dt: number): void {
   const eat = SNAKE.headRadius + PROGRESSION.pickupRadiusOnHead;
   const eat2 = eat * eat;
   const list = world.crystals;
+  const b = world.map.bounds;
   world.pickupPitchTimer -= dt;
   if (world.pickupPitchTimer <= 0) world.pickupPitch = 0;
   for (let i = list.length - 1; i >= 0; i--) {
@@ -235,8 +237,13 @@ export function updateCrystals(world: World, dt: number): void {
     }
     c.x += c.vx * dt;
     c.y += c.vy * dt;
-    c.x = Math.max(PLAY_AREA.minX + 6, Math.min(PLAY_AREA.maxX - 6, c.x));
-    c.y = Math.max(PLAY_AREA.minY + 6, Math.min(PLAY_AREA.maxY - 6, c.y));
+    // Loose crystals never come to rest inside a solid; magnetized ones fly over everything.
+    if (!c.magnet && Math.abs(c.vx) + Math.abs(c.vy) > 1 && pushOut(world.map.index, c, 6)) {
+      c.vx *= 0.3;
+      c.vy *= 0.3;
+    }
+    c.x = Math.max(b.minX + 6, Math.min(b.maxX - 6, c.x));
+    c.y = Math.max(b.minY + 6, Math.min(b.maxY - 6, c.y));
     if (dist2(c.x, c.y, s.x, s.y) < eat2) {
       gainXp(world, c.value);
       burst(world, c.x, c.y, c.value >= 5 ? COLORS.xpBig : COLORS.xp, 3, 90, { kind: 'glow', size: 5, life: 0.25 });
@@ -261,7 +268,8 @@ export function updateShots(world: World, dt: number): void {
     p.life -= dt;
     p.spin += dt * 6;
     let remove = p.life <= 0;
-    if (p.x < PLAY_AREA.minX || p.x > PLAY_AREA.maxX || p.y < PLAY_AREA.minY || p.y > PLAY_AREA.maxY) {
+    // Walls, pillars and every other solid stop hostile shots: cover works.
+    if (clearanceAt(world.map.index, p.x, p.y) < p.r * 0.5) {
       burst(world, p.x, p.y, COLORS.hostile, 5, 120, { size: 2.5, life: 0.25 });
       remove = true;
     } else {

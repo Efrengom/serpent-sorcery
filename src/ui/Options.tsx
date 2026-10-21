@@ -248,6 +248,13 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
         >
           <WarningPreview safe={options.safeWarnings} />
         </Toggle>
+        <Toggle label="Minimap" hint="The map in the corner, with the boss marked." on={options.minimap} onChange={(minimap) => onChange({ minimap })} />
+        <Toggle
+          label="Steady camera"
+          hint="Keeps your serpent centred, with no look-ahead."
+          on={options.steadyCamera}
+          onChange={(steadyCamera) => onChange({ steadyCamera })}
+        />
         <RangeRow
           label="Game speed"
           value={Math.round(options.gameSpeed * 100)}

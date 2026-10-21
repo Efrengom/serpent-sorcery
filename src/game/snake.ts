@@ -1,5 +1,7 @@
 import { ARENA, SNAKE } from './config';
+import type { MapLayout, SolidName } from './maps/types';
 import { angleDiff, clamp, type Vec } from './math';
+import { bounceOffSolids, openSide } from './terrain';
 
 /**
  * Records the path a head actually travelled so body segments can follow it exactly
@@ -89,6 +91,7 @@ export interface PlayArea {
   maxY: number;
 }
 
+/** The old one-screen arena: where a serpent with no map (in unit tests) bounces. */
 export const PLAY_AREA: PlayArea = {
   minX: ARENA.wall,
   minY: ARENA.wall,
@@ -116,6 +119,16 @@ export function steer(
     diff = cross >= 0 ? Math.abs(diff) : -Math.abs(diff);
   }
   return heading + clamp(diff, -maxTurn, maxTurn);
+}
+
+/**
+ * steer() on a map: U-turns bend away from the nearest solid (or toward the middle of the map
+ * when nothing is close). Without a map they bend toward the old arena's centre.
+ */
+export function steerOnMap(map: MapLayout | null, heading: number, desired: number, maxTurn: number, x: number, y: number): number {
+  if (Math.abs(angleDiff(heading, desired)) <= Math.PI - 0.08) return steer(heading, desired, maxTurn, x, y, x, y);
+  const toward = map ? openSide(map.index, x, y, map.width / 2, map.height / 2) : { x: ARENA.width / 2, y: ARENA.height / 2 };
+  return steer(heading, desired, maxTurn, x, y, toward.x, toward.y);
 }
 
 export interface WallHit {
@@ -158,9 +171,9 @@ export function bounceOffWalls(
 }
 
 export class Snake {
-  x = ARENA.width / 2;
-  y = ARENA.height / 2 + 120;
-  heading = -Math.PI / 2;
+  x = 0;
+  y = 0;
+  heading = 0;
   steerLock = 0;
   /** Smoothly approaches `segmentTarget` so growth is visible rather than instant. */
   segmentCount: number = SNAKE.startSegments;
@@ -170,14 +183,15 @@ export class Snake {
   /** Time accumulator used for idle animation (tongue, hat sway). */
   anim = 0;
 
-  constructor() {
-    this.reset();
+  /** Starts at (x, y) facing `heading`; the defaults are just below the old arena's centre. */
+  constructor(x = ARENA.width / 2, y = ARENA.height / 2 + 120, heading = -Math.PI / 2) {
+    this.reset(x, y, heading);
   }
 
-  reset(): void {
-    this.x = ARENA.width / 2;
-    this.y = ARENA.height / 2 + 120;
-    this.heading = -Math.PI / 2;
+  reset(x: number, y: number, heading: number): void {
+    this.x = x;
+    this.y = y;
+    this.heading = heading;
     this.steerLock = 0;
     this.segmentCount = SNAKE.startSegments;
     this.segmentTarget = SNAKE.startSegments;
@@ -187,19 +201,19 @@ export class Snake {
 
   /**
    * Advances the head. `dirX/dirY` is the held WASD vector (0,0 keeps the current heading).
-   * Returns true if the head bounced off a wall this step.
+   * On a map the head bounces off its solids; without one, off the old arena's walls.
+   * Returns what the head bounced off this step, or null.
    */
-  update(dt: number, dirX: number, dirY: number): boolean {
+  update(dt: number, dirX: number, dirY: number, map: MapLayout | null = null): SolidName | null {
     this.anim += dt;
     if (this.steerLock > 0) {
       this.steerLock -= dt;
     } else if (dirX !== 0 || dirY !== 0) {
-      const desired = Math.atan2(dirY, dirX);
-      this.heading = steer(this.heading, desired, SNAKE.turnRate * dt, this.x, this.y, ARENA.width / 2, ARENA.height / 2);
+      this.heading = steerOnMap(map, this.heading, Math.atan2(dirY, dirX), SNAKE.turnRate * dt, this.x, this.y);
     }
     this.x += Math.cos(this.heading) * SNAKE.speed * dt;
     this.y += Math.sin(this.heading) * SNAKE.speed * dt;
-    const hit = bounceOffWalls(this, SNAKE.headRadius);
+    const hit = map ? (bounceOffSolids(map.index, this, SNAKE.headRadius)?.name ?? null) : bounceOffWalls(this, SNAKE.headRadius) ? 'wall' : null;
     if (hit) this.steerLock = ARENA.wallSteerLock;
     this.trail.record(this.x, this.y);
     if (this.segmentCount < this.segmentTarget) {

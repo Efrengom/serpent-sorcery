@@ -5,7 +5,8 @@
 // autopilot run, and checks the full loop: steering, drawing, aiming, cooldowns, pause/focus/
 // resize handling, music and sound, the boss theme and hit-stop, learning the triangle and zigzag
 // sigils, spell evolution, live sigil reading and clean casts, Constrict, descending after the
-// boss, level-ups, death and its recap, rewards, restart, the shop, the wizard and curse setup
+// boss, the big map (camera, pillars, spawning off-screen, the boss clearing, minimap, frame
+// times), level-ups, death and its recap, rewards, restart, the shop, the wizard and curse setup
 // screen, the options (comfort settings, key rebinding, game speed), the sigil practice room, and
 // save persistence.
 //
@@ -83,7 +84,7 @@ await page.goto(URL, { waitUntil: 'networkidle0' });
 // ---------------------------------------------------------------- helpers
 
 const state = () =>
-  page.evaluate(() => {
+  page.evaluate(async () => {
     const g = window.__serpent;
     const overlay = document.querySelector('.overlay-title')?.textContent ?? null;
     if (!g) return { phase: 'none', overlay };
@@ -91,7 +92,15 @@ const state = () =>
     const r = g.renderer;
     const s = w.snake;
     const scr = (p) => r.worldToScreen(p);
+    // The nearest stonework a little ahead of the head, for the autopilot to steer around.
+    const { nearestSolid } = await import('/src/game/terrain.ts');
+    const ahead = nearestSolid(w.map.index, s.x + Math.cos(s.heading) * 50, s.y + Math.sin(s.heading) * 50);
+    const cam = w.camera;
     return {
+      ahead: { d: ahead.d, nx: ahead.nx, ny: ahead.ny },
+      cam: { x: cam.x, y: cam.y, w: cam.viewW, h: cam.viewH },
+      start: w.map.start,
+      fresh: w.portals.filter((p) => p.kind !== 'boss' && p.t < 0.12).map((p) => ({ x: p.x, y: p.y, seen: Math.abs(p.x - cam.x) <= cam.viewW / 2 && Math.abs(p.y - cam.y) <= cam.viewH / 2 })),
       phase: g.getPhase(),
       t: w.time,
       hp: w.hp,
@@ -123,7 +132,6 @@ const audioState = () =>
     return { scene: a.musicScene, theme: a.musicTheme, playing: a.musicPlaying, time: +a.musicTime.toFixed(2) };
   });
 const readSave = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k) || 'null'), SAVE_KEY);
-const screenToWorld = (p) => page.evaluate((p) => window.__serpent.renderer.screenToWorld(p), p);
 const worldToScreen = (p) => page.evaluate((p) => window.__serpent.renderer.worldToScreen(p), p);
 const metaSum = (m) => Object.values(m).reduce((a, b) => a + b, 0);
 
@@ -381,12 +389,28 @@ try {
   {
     await sleep(500);
     const P = { x: 1080, y: 170 };
-    const T = await screenToWorld(P);
     await setKeys(new Set(['KeyS']));
     const atDown = await state();
-    await stroke(shapes.line(P.x, P.y, 2.6, 130), 650);
+    // The camera scrolls while the stroke is drawn, so the aim is whatever was recorded at the press.
+    let pressed = null;
+    const line = shapes.line(P.x, P.y, 2.6, 130);
+    await page.mouse.move(line[0].x, line[0].y);
+    await page.mouse.down();
+    pressed = await page.evaluate((p) => ({ target: window.__serpent.gesture.target, under: window.__serpent.renderer.screenToWorld(p) }), line[0]);
+    for (let i = 1; i < line.length; i++) {
+      await page.mouse.move(line[i].x, line[i].y);
+      await sleep(650 / (line.length - 1));
+    }
+    await page.mouse.up();
+    const T = pressed.target;
     const a = await state();
     await setKeys(new Set());
+    const drift = await worldToScreen(T);
+    check('the aim is the world point under the cursor at the press, and stays put while the view scrolls', Math.hypot(T.x - pressed.under.x, T.y - pressed.under.y) < 8 && Math.hypot(drift.x - line[0].x, drift.y - line[0].y) > 10, {
+      target: { x: Math.round(T.x), y: Math.round(T.y) },
+      under: { x: Math.round(pressed.under.x), y: Math.round(pressed.under.y) },
+      scrolledPx: Math.round(Math.hypot(drift.x - line[0].x, drift.y - line[0].y)),
+    });
     const b = a.bolts[a.bolts.length - 1];
     const boltAngle = b ? Math.atan2(b.vy, b.vx) : NaN;
     const towardTarget = b ? Math.atan2(T.y - b.y, T.x - b.x) : NaN;
@@ -399,8 +423,8 @@ try {
     check('aim uses the head position at release (snake moved during the stroke)', Math.hypot(a.x - atDown.x, a.y - atDown.y) > 80 && angDiff(boltAngle, fromOldHead) > 0.03, {
       headMoved: +Math.hypot(a.x - atDown.x, a.y - atDown.y).toFixed(0),
     });
-    const back = await worldToScreen(T);
-    check('mouse-to-arena mapping round-trips', Math.hypot(back.x - P.x, back.y - P.y) < 1, { P, back });
+    const back = await page.evaluate((p) => window.__serpent.renderer.worldToScreen(window.__serpent.renderer.screenToWorld(p)), P);
+    check('mouse-to-map mapping round-trips', Math.hypot(back.x - P.x, back.y - P.y) < 1, { P, back });
   }
 
   {
@@ -480,7 +504,7 @@ try {
     check('resize clears held keys', a.dir.x === 0 && a.dir.y === 0, { dir: a.dir });
     check('renderer follows the new size', a.cssW === 1100, { cssW: a.cssW });
     const P = { x: 300, y: 300 };
-    const back = await worldToScreen(await screenToWorld(P));
+    const back = await page.evaluate((p) => window.__serpent.renderer.worldToScreen(window.__serpent.renderer.screenToWorld(p)), P);
     check('mouse mapping correct after resize', Math.hypot(back.x - P.x, back.y - P.y) < 1, { P, back });
     await page.setViewport({ width: 1280, height: 720 });
     await sleep(150);
@@ -492,10 +516,12 @@ try {
     check('run music plays the main theme', a0.theme === 'main' && /^run/.test(a0.scene) && a0.playing, a0);
     // Make the snake untouchable (and unable to level up mid-test), then skip ahead to just
     // before the boss warning. Part B starts a fresh run afterwards.
+    // Back to the start in the Rune Plaza, so the boss arrives in that clearing, in view.
     await page.evaluate(() => {
       const w = window.__serpent.debug().world;
       w.invuln = 1e9;
       w.xp = -1e6;
+      w.snake.reset(w.map.start.x, w.map.start.y, -Math.PI / 2);
       w.time = w.nextBossTime - 4.6;
     });
     await sleep(900);
@@ -506,6 +532,15 @@ try {
       await sleep(250);
       bossUp = await page.evaluate(() => !!window.__serpent.debug().world.boss);
     }
+    // The boss came out in the clearing; bring the serpent in range of it (toward the plaza's middle).
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      const b = w.boss;
+      if (!b) return;
+      const plaza = w.map.landmarks.find((l) => l.kind === 'plaza');
+      const d = Math.hypot(plaza.x - b.x, plaza.y - b.y) || 1;
+      w.snake.reset(b.x + ((plaza.x - b.x) / d) * 450, b.y + ((plaza.y - b.y) / d) * 450, Math.atan2(b.y - plaza.y, b.x - plaza.x));
+    });
     await sleep(800);
     const fight = await audioState();
     check('boss theme crossfades in when the boss appears', bossUp && fight.theme === 'boss' && /^boss/.test(fight.scene), { bossUp, fight });
@@ -792,6 +827,197 @@ try {
     check('circling a brute with real keys closes a loop that Constricts it', crushed && crush.loops >= 1 && (crush.hpLost === 'killed' || crush.hpLost > 0) && (crush.stunned === null || crush.stunned > 0), crush);
   }
 
+  // ============================================================== Part M: the big map
+  {
+    await page.evaluate(() => window.__serpent.restart());
+    await sleep(200);
+    // Nothing to fight: just the serpent and the Sunken Ruins.
+    const calm = () =>
+      page.evaluate(() => {
+        const w = window.__serpent.debug().world;
+        w.spawnAcc = -1e9;
+        w.enemies.length = 0;
+        w.portals.length = 0;
+        w.shots.length = 0;
+        w.xp = -1e6;
+      });
+    const headInView = () =>
+      page.evaluate(() => {
+        const g = window.__serpent;
+        const r = g.renderer;
+        const head = r.worldToScreen(g.debug().world.snake);
+        const mid = { x: r.ox + (r.viewW * r.scale) / 2, y: r.oy + (r.viewH * r.scale) / 2 };
+        return { off: Math.hypot(head.x - mid.x, head.y - mid.y), scale: r.scale };
+      });
+    await calm();
+
+    const c0 = await state();
+    await setKeys(new Set(['KeyD']));
+    await sleep(1500);
+    await setKeys(new Set());
+    const c1 = await state();
+    const follow = await headInView();
+    check('the camera follows the serpent across the map, looking a little ahead of it', Math.hypot(c1.cam.x - c0.cam.x, c1.cam.y - c0.cam.y) > 200 && follow.off > 10 && follow.off < 150 * follow.scale, {
+      cameraMoved: Math.round(Math.hypot(c1.cam.x - c0.cam.x, c1.cam.y - c0.cam.y)),
+      headFromMiddlePx: Math.round(follow.off),
+    });
+
+    await page.evaluate(() => window.__serpent.setOptions({ ...window.__serpent.options, steadyCamera: true }));
+    await sleep(300);
+    const steady = await headInView();
+    await page.evaluate(() => window.__serpent.setOptions({ ...window.__serpent.options, steadyCamera: false }));
+    check('Steady camera keeps the serpent in the middle of the view', steady.off < 3.5, { headFromMiddlePx: +steady.off.toFixed(1) });
+
+    // Steer straight up into the colonnade's middle pillar with a real key.
+    const pillar = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      const p = w.map.solids.find((s) => s.name === 'pillar' && s.shape === 'circle' && Math.abs(s.x - 3200) < 40 && Math.abs(s.y - 780) < 40);
+      w.snake.reset(p.x, p.y + p.r + 15 + 150, -Math.PI / 2);
+      w.invuln = 0;
+      return { hp: w.hp };
+    });
+    await setKeys(new Set(['KeyW']));
+    await sleep(950);
+    await setKeys(new Set());
+    await sleep(100);
+    const bonk = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { hp: w.hp, taken: w.recap.taken['wall:pillar'] ?? 0, heading: +w.snake.heading.toFixed(2) };
+    });
+    check('steering into a pillar bounces the serpent back and costs 8 health, recorded as the pillar', pillar.hp - bonk.hp === 8 && bonk.taken === 8 && Math.sin(bonk.heading) > 0.5, { ...bonk, before: pillar.hp });
+
+    // Between the colonnade's rows, half a minute before the boss: its clearing is marked, off-screen.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.snake.reset(3000, 590, 0);
+      w.invuln = 1e9;
+      w.time = w.nextBossTime - 29;
+    });
+    await sleep(500);
+    const mark = await page.evaluate(() => {
+      const g = window.__serpent;
+      const w = g.debug().world;
+      const c = w.bossClearing >= 0 ? w.map.clearings[w.bossClearing] : null;
+      const arrows = g.renderer.arrows(w).map((a) => ({ label: a.p.label, x: Math.round(a.x), y: Math.round(a.y), a: +a.a.toFixed(2) }));
+      const r = g.renderer;
+      const mid = { x: r.camLeft + r.viewW / 2, y: r.camTop + r.viewH / 2 };
+      return {
+        clearing: c,
+        arrows,
+        toward: c ? +Math.atan2((c.y0 + c.y1) / 2 - mid.y, (c.x0 + c.x1) / 2 - mid.x).toFixed(2) : null,
+        inside: arrows.every((a) => a.x > r.camLeft && a.x < r.camLeft + r.viewW && a.y > r.camTop && a.y < r.camTop + r.viewH),
+        hud: document.querySelector('.boss-incoming')?.textContent ?? null,
+      };
+    });
+    await page.screenshot({ path: path.join(OUT, '20-boss-clearing-arrow.png') });
+    check(
+      'half a minute before the boss, its clearing is marked and an arrow at the edge of the view points to it',
+      !!mark.clearing && mark.arrows.length === 1 && mark.arrows[0].label === 'Boss clearing' && mark.inside && angDiff(mark.arrows[0].a, mark.toward) < 0.05 && /arrives in/.test(mark.hud ?? ''),
+      mark,
+    );
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.nextBossTime = w.time + 1e4;
+      w.bossClearing = -1;
+      w.bossWarned = false;
+    });
+
+    // The minimap, turned off and on again from the pause menu's options with real clicks.
+    const minimapPixels = () =>
+      page.evaluate(() => {
+        const r = window.__serpent.renderer;
+        const c = document.querySelector('.game-canvas');
+        const dpr = c.width / c.clientWidth;
+        const w = 220;
+        const h = Math.round((220 * 3600) / 6400);
+        const x = Math.round(r.ox + r.viewW * r.scale - w - 10);
+        const y = Math.round(r.oy + r.viewH * r.scale - h - 10);
+        const data = c.getContext('2d').getImageData(Math.round(x * dpr), Math.round(y * dpr), Math.round(w * dpr), Math.round(h * dpr)).data;
+        // The outline of the visible area is the only near-white there.
+        let n = 0;
+        for (let i = 0; i < data.length; i += 4) if (data[i] > 150 && data[i + 1] > 150 && data[i + 2] > 150) n++;
+        return n;
+      });
+    const toggleMinimap = async () => {
+      await page.keyboard.press('Escape');
+      await sleep(150);
+      await clickButton('Options');
+      await sleep(150);
+      await clickButton('Minimap');
+      await sleep(60);
+      await page.keyboard.press('Escape');
+      await sleep(150);
+      await page.keyboard.press('Escape');
+      await sleep(250);
+    };
+    const shown = await minimapPixels();
+    await toggleMinimap();
+    const hidden = await minimapPixels();
+    const savedOff = (await readSave()).settings.minimap;
+    await toggleMinimap();
+    const again = await minimapPixels();
+    check('the minimap draws the visible area, and the Minimap option hides it (saved)', shown > 60 && hidden < 10 && again > 60 && savedOff === false && (await readSave()).settings.minimap === true, {
+      shown,
+      hidden,
+      again,
+      savedOff,
+    });
+
+    // Each landmark, in both styles, and the slowest frames while the view races across the map.
+    const landmarks = [
+      ['plaza', 3200, 2100, -Math.PI / 2],
+      ['colonnade', 2600, 590, 0],
+      ['hall', 700, 1900, 0],
+      ['colossus', 5150, 2470, -0.4],
+      ['gate', 3200, 3350, -Math.PI / 2],
+    ];
+    const frameTimes = {};
+    for (let pass = 0; pass < 2; pass++) {
+      const pixel = await page.evaluate(() => document.querySelector('.app').classList.contains('pixel'));
+      const name = pixel ? 'pixel' : 'classic';
+      for (const [id, x, y, h] of landmarks) {
+        await page.evaluate(
+          ([x, y, h]) => {
+            const w = window.__serpent.debug().world;
+            w.snake.reset(x, y, h);
+            w.invuln = 0;
+            w.hp = w.stats.maxHp;
+          },
+          [x, y, h],
+        );
+        await sleep(450);
+        await page.screenshot({ path: path.join(OUT, `21-map-${id}-${name}.png`) });
+      }
+      frameTimes[name] = await page.evaluate(async () => {
+        const w = window.__serpent.debug().world;
+        w.invuln = 1e9;
+        w.snake.reset(200, 960, 0);
+        const times = [];
+        let last = performance.now();
+        await new Promise((done) => {
+          const tick = (t) => {
+            times.push(t - last);
+            last = t;
+            // About three times the serpent's own speed, along a lane that is open end to end.
+            w.snake.x += 7;
+            w.snake.y = 960;
+            w.snake.heading = 0;
+            if (w.snake.x < 6100 && times.length < 1200) requestAnimationFrame(tick);
+            else done();
+          };
+          requestAnimationFrame(tick);
+        });
+        times.shift();
+        times.sort((a, b) => a - b);
+        return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), max: +times[times.length - 1].toFixed(1) };
+      });
+      // Switch art style (the second switch puts it back).
+      await page.keyboard.press('KeyP');
+      await sleep(300);
+    }
+    check('frame times stay smooth while the view races across the whole map, in both styles', Object.values(frameTimes).every((f) => f.p95 < 34 && f.max < 120), frameTimes);
+  }
+
   // ============================================================== Part B: autopilot run
   await page.evaluate(() => window.__serpent.restart());
   await sleep(200);
@@ -808,7 +1034,21 @@ try {
       window.__lastCast = { text: added[0] ?? '(ignored)', boltsAdded: w.bolts.length - bolts, multibolt: w.upgrades.multibolt, lance: w.evolved.bolt };
     };
   });
-  const log = { casts: { line: 0, vee: 0, circle: 0 }, outcomes: {}, levelUps: [], misfires: 0, picks: [], pickFailures: [], boltCountChecks: 0, boltCountFailures: [], scenes: {} };
+  const log = {
+    casts: { line: 0, vee: 0, circle: 0 },
+    outcomes: {},
+    levelUps: [],
+    misfires: 0,
+    picks: [],
+    pickFailures: [],
+    boltCountChecks: 0,
+    boltCountFailures: [],
+    scenes: {},
+    spawns: 0,
+    spawnsInView: 0,
+    pressureSamples: 0,
+    nearShare: [],
+  };
   const UPGRADE_BY_NAME = {
     'Arcane Potency': 'potency',
     'Split Bolt': 'multibolt',
@@ -873,18 +1113,31 @@ try {
       await sleep(50);
       continue;
     }
-    // Steering: keep off walls, dodge threats, collect crystals, otherwise orbit.
+    // Steering: keep off stonework, dodge threats, collect crystals, otherwise orbit in the Rune Plaza.
+    for (const p of s.fresh) {
+      log.spawns++;
+      if (p.seen) log.spawnsInView++;
+    }
+    log.pressureSamples++;
+    const nearby = s.enemies.filter((e) => Math.hypot(e.x - s.x, e.y - s.y) < 1.5 * Math.hypot(s.cam.w, s.cam.h)).length;
+    if (s.enemies.length > 0) log.nearShare.push(nearby / s.enemies.length);
     let vx = 0;
     let vy = 0;
-    const cx = 700 - s.x;
-    const cy = 400 - s.y;
+    const home = { x: 3200, y: 1800 };
+    const cx = home.x - s.x;
+    const cy = home.y - s.y;
     const cd0 = Math.hypot(cx, cy) || 1;
     vx += (-cy / cd0) * 0.5;
     vy += (cx / cd0) * 0.5;
-    if (s.x < 170) vx += 2;
-    if (s.x > 1230) vx -= 2;
-    if (s.y < 160) vy += 2;
-    if (s.y > 640) vy -= 2;
+    if (s.x < home.x - 480) vx += 2;
+    if (s.x > home.x + 480) vx -= 2;
+    if (s.y < home.y - 330) vy += 2;
+    if (s.y > home.y + 330) vy -= 2;
+    if (s.ahead.d < 110) {
+      const k = (1 - Math.max(0, s.ahead.d) / 110) * 3;
+      vx += s.ahead.nx * k;
+      vy += s.ahead.ny * k;
+    }
     for (const e of s.enemies) {
       const d = Math.hypot(e.x - s.x, e.y - s.y);
       const danger = e.kind === 'chaser' ? 170 : 230;
@@ -979,6 +1232,9 @@ try {
   check('autopilot: music adds layers as the arena fills', log.scenes.run0 !== undefined && climbed !== undefined && climbed > log.scenes.run0, {
     scenes: log.scenes,
   });
+  check('autopilot: foes spawn just outside the view, never on screen', log.spawns > 20 && log.spawnsInView === 0, { spawns: log.spawns, inView: log.spawnsInView });
+  const nearShare = log.nearShare.reduce((a, b) => a + b, 0) / Math.max(1, log.nearShare.length);
+  check('autopilot: the fight stays around the serpent (foes within 1.5 views of it)', nearShare > 0.9, { share: +nearShare.toFixed(2), samples: log.nearShare.length });
 
   // ============================================================== Death, reward, restart, persistence
   // If the autopilot outlived its time, let the run end: keep taking level-up cards, and after

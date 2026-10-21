@@ -48,6 +48,7 @@ export function Hud({ hud, muted, onPause, onToggleMute }: Props) {
             {hud.kills} defeated
             {hud.depth > 1 && <span className="depth"> · Depth {hud.depth}</span>}
           </div>
+          <div className="map-name">{hud.mapName}</div>
         </div>
 
         <div className={`hud-right${hud.known.length > 3 ? ' many' : ''}`}>

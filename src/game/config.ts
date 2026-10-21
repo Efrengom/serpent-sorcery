@@ -1,19 +1,68 @@
 /**
  * Central balance and tuning values for Serpent Sorcery.
- * Distances are in arena units (the arena is ARENA.width x ARENA.height),
- * times are in seconds, speeds in units per second.
+ * Distances are in world units (the serpent moves 190 a second; a map is several thousand
+ * across), times are in seconds, speeds in units per second.
  */
 
 export const ARENA = {
+  /** The old one-screen arena: the default play area for a serpent with no map (unit tests). */
   width: 1400,
   height: 800,
-  /** Thickness of the decorative wall band; the playable area is inset by this much. */
+  /** Thickness of the wall band around every map; the playable area is inset by this much. */
   wall: 26,
+  /** Damage from running into a wall or any other solid. */
   wallDamage: 8,
-  /** Seconds steering input is ignored after bouncing off a wall. */
+  /** Seconds steering input is ignored after bouncing off a wall or solid. */
   wallSteerLock: 0.2,
-  /** Minimum inward component (0..1) of the heading after a wall bounce. */
+  /** Minimum outward component (0..1) of the heading after a bounce. */
   wallMinInward: 0.55,
+};
+
+/** The view follows the serpent around a map that is several screens across. */
+export const CAMERA = {
+  /** World units shown top to bottom (the old arena's height, so things look the same size). */
+  viewHeight: 800,
+  /** Wider windows see more to the sides, up to this; narrow ones at least `minViewWidth`. */
+  maxViewWidth: 1600,
+  minViewWidth: 1000,
+  maxViewHeight: 1100,
+  /** How far ahead of the head the camera looks, and its catch-up time constant in seconds. */
+  lookahead: 120,
+  ease: 0.25,
+  /** A jump bigger than this (a teleport) snaps the camera instead of easing. */
+  snapDistance: 600,
+};
+
+/** Solid lookup: cell size, and how far around a cell its solids are listed (the longest exact query). */
+export const TERRAIN = {
+  indexCell: 200,
+  indexMargin: 160,
+};
+
+/** How foes find their way around solids, where they spawn, and the off-screen rules. */
+export const NAV = {
+  /** Flow-field cell size; cells this far from every solid are walkable. */
+  cell: 40,
+  minClearance: 20,
+  /** Paths prefer open ground: cells closer than `hugClearance` to a solid cost extra. */
+  hugClearance: 60,
+  hugCost: 2,
+  /** Seconds between flow-field refreshes, and between each foe's line-of-sight checks. */
+  refresh: 0.25,
+  sightInterval: 0.2,
+  /** Spawns appear in a ring this far outside the view's edges. */
+  ringInner: 80,
+  ringOuter: 450,
+  /** Attacks only start while the foe is in view (plus this margin), so every telegraph is seen. */
+  attackMargin: 40,
+  /** Foes this many view-diagonals away for `farTime` seconds, or stuck for `stuckTime`, are moved to the spawn ring. */
+  farViews: 1.6,
+  farTime: 6,
+  stuckTime: 3,
+  /** The boss clearing is marked this many seconds before the boss arrives. */
+  clearingWarning: 30,
+  /** The boss's portal opens at least this far from the serpent. */
+  bossPortalDistance: 300,
 };
 
 export const VIEW = {
@@ -25,8 +74,10 @@ export const VIEW = {
 };
 
 export const PIXEL_ART = {
-  /** Arena units per low-res pixel: the 1400x800 arena becomes a 560x320 pixel canvas. */
+  /** World units per low-res pixel: an 800-unit-tall view is 320 art pixels. */
   worldPerPixel: 2.5,
+  /** The floor is painted in square chunks of this many art pixels. */
+  chunk: 256,
   /** Below this integer upscale factor the pixel view falls back to fractional scaling. */
   minIntegerScale: 2,
 };
@@ -292,6 +343,8 @@ export const ENEMIES = {
     chargeCooldown: 3.5,
     /** Extra damage taken while stunned after a charge. */
     stunnedVulnerability: 1.25,
+    /** A charge that ends in a wall or other solid staggers it this much longer. */
+    bonkStagger: 1.5,
   },
   rival: {
     radius: 13,

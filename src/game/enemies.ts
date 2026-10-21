@@ -1,9 +1,12 @@
-import { DEPTH, DIRECTOR, EFFECTS, ELITE, ENEMIES, type EnemyKind } from './config';
+import { inView, viewRect } from './camera';
+import { DEPTH, DIRECTOR, EFFECTS, ELITE, ENEMIES, NAV, type EnemyKind } from './config';
 import { burst } from './effects';
-import { angleDiff, clamp, dist, TAU } from './math';
+import { angleDiff, clamp, dist, TAU, type Vec } from './math';
+import { flowAngle, flowDistance, refreshFlowField } from './nav';
 import { COLORS } from './palette';
-import { bounceOffWalls, PathTrail, PLAY_AREA, steer } from './snake';
+import { PathTrail, steerOnMap } from './snake';
 import { enemyTimeScale } from './spells';
+import { bounceOffSolids, clearanceAt, clearPath, pushOut } from './terrain';
 import type { BossMove, EliteKind, Enemy, World } from './world';
 
 // ---------------------------------------------------------------- Scaling
@@ -113,6 +116,7 @@ export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number, 
     frozen: 0,
     frozenBy: -1,
     stunned: 0,
+    nav: { next: 0, direct: true, sight: true, angle: heading, far: 0, stuck: 0, lastX: x, lastY: y },
   };
   if (canBeElite && kind !== 'boss' && world.rng() < eliteChance(world.depth, world.effects.elitesFromStart)) makeElite(world, e);
   if (kind === 'rival' || kind === 'boss') {
@@ -135,24 +139,85 @@ function openPortal(world: World, kind: EnemyKind, x: number, y: number, duratio
   world.portals.push({ x, y, kind, t: 0, duration });
 }
 
-function pickSpawnPoint(world: World): { x: number; y: number } {
+/**
+ * A spawn point in the ring just outside the view: on open floor, reachable along the flow
+ * field and not too close to the serpent. The first tries also avoid the serpent's path, so
+ * foes don't appear straight ahead. Null if nothing suitable turns up this time.
+ */
+export function ringPoint(world: World, clearance = 40): Vec | null {
   const s = world.snake;
-  const pad = 50;
-  let best = { x: PLAY_AREA.minX + pad, y: PLAY_AREA.minY + pad };
-  let bestD = -1;
-  for (let i = 0; i < 14; i++) {
-    const x = PLAY_AREA.minX + pad + world.rng() * (PLAY_AREA.maxX - PLAY_AREA.minX - 2 * pad);
-    const y = PLAY_AREA.minY + pad + world.rng() * (PLAY_AREA.maxY - PLAY_AREA.minY - 2 * pad);
-    // Avoid spawning right where the snake is heading.
-    const ahead = { x: s.x + Math.cos(s.heading) * 160, y: s.y + Math.sin(s.heading) * 160 };
-    const d = Math.min(dist(x, y, s.x, s.y), dist(x, y, ahead.x, ahead.y) + 60);
-    if (d >= DIRECTOR.minSpawnDistance) return { x, y };
-    if (d > bestD) {
+  const b = world.map.bounds;
+  const inner = viewRect(world.camera, NAV.ringInner);
+  const outer = viewRect(world.camera, NAV.ringOuter);
+  const x0 = Math.max(b.minX + clearance, outer.x0);
+  const x1 = Math.min(b.maxX - clearance, outer.x1);
+  const y0 = Math.max(b.minY + clearance, outer.y0);
+  const y1 = Math.min(b.maxY - clearance, outer.y1);
+  const ahead = { x: s.x + Math.cos(s.heading) * 500, y: s.y + Math.sin(s.heading) * 500 };
+  for (let i = 0; i < 30; i++) {
+    const x = x0 + world.rng() * (x1 - x0);
+    const y = y0 + world.rng() * (y1 - y0);
+    if (x > inner.x0 && x < inner.x1 && y > inner.y0 && y < inner.y1) continue;
+    if (dist(x, y, s.x, s.y) < DIRECTOR.minSpawnDistance) continue;
+    if (i < 15 && dist(x, y, ahead.x, ahead.y) < 350) continue;
+    if (clearanceAt(world.map.index, x, y) < clearance || flowDistance(world.flow, x, y) === Infinity) continue;
+    return { x, y };
+  }
+  return null;
+}
+
+/** The clearing nearest the serpent by path, where the next boss will arrive. */
+function nearestClearing(world: World): number {
+  let best = 0;
+  let bestD = Infinity;
+  world.map.clearings.forEach((c, i) => {
+    const x = (c.x0 + c.x1) / 2;
+    const y = (c.y0 + c.y1) / 2;
+    const path = flowDistance(world.flow, x, y);
+    const d = path === Infinity ? dist(x, y, world.snake.x, world.snake.y) * 3 : path;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  });
+  return best;
+}
+
+/** Where in its clearing the boss's portal opens: open ground as far from the serpent as the clearing allows. */
+function bossPortalPoint(world: World, index: number): Vec {
+  const c = world.map.clearings[index];
+  const cx = (c.x0 + c.x1) / 2;
+  const cy = (c.y0 + c.y1) / 2;
+  const rx = (c.x1 - c.x0) / 2 - 150;
+  const ry = (c.y1 - c.y0) / 2 - 150;
+  const s = world.snake;
+  let best = { x: cx, y: cy };
+  let bestD = dist(cx, cy, s.x, s.y);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * TAU;
+    const x = cx + Math.cos(a) * rx;
+    const y = cy + Math.sin(a) * ry;
+    const d = dist(x, y, s.x, s.y);
+    if (d > bestD && clearanceAt(world.map.index, x, y) >= 60) {
       bestD = d;
       best = { x, y };
     }
   }
   return best;
+}
+
+/** Spots around (x, y) at `radius` with room to stand, for summoned foes. */
+function openSpotsAround(world: World, x: number, y: number, radius: number, count: number): Vec[] {
+  const out: Vec[] = [];
+  const b = world.map.bounds;
+  const off = world.rng() * TAU;
+  for (let i = 0; i < count * 2 && out.length < count; i++) {
+    const a = off + (i / count) * TAU;
+    const px = clamp(x + Math.cos(a) * radius, b.minX + 40, b.maxX - 40);
+    const py = clamp(y + Math.sin(a) * radius, b.minY + 40, b.maxY - 40);
+    if (clearanceAt(world.map.index, px, py) >= 30) out.push({ x: px, y: py });
+  }
+  return out;
 }
 
 function chooseKind(world: World): EnemyKind {
@@ -176,7 +241,10 @@ export function updateDirector(world: World, dt: number): void {
   const t = world.time;
   if (t < DIRECTOR.firstSpawn) return;
 
-  // Boss schedule: warning banner, then a large portal.
+  // Boss schedule: the clearing it will arrive in is marked, then a warning banner, then a large portal.
+  if (!world.boss && world.bossClearing < 0 && world.map.clearings.length > 0 && t >= world.nextBossTime - NAV.clearingWarning) {
+    world.bossClearing = nearestClearing(world);
+  }
   if (!world.bossWarned && t >= world.nextBossTime - DIRECTOR.bossWarning) {
     world.bossWarned = true;
     world.banner = {
@@ -193,10 +261,10 @@ export function updateDirector(world: World, dt: number): void {
     world.bossWarned = false;
     if (!world.boss) {
       world.bossIndex++;
-      const s = world.snake;
-      const x = s.x < 700 ? PLAY_AREA.maxX - 200 : PLAY_AREA.minX + 200;
-      openPortal(world, 'boss', x, 400, 2.0);
+      const p = bossPortalPoint(world, world.bossClearing >= 0 ? world.bossClearing : nearestClearing(world));
+      openPortal(world, 'boss', p.x, p.y, 2.0);
     }
+    world.bossClearing = -1;
   }
 
   const bossAlive = world.boss !== null || world.portals.some((p) => p.kind === 'boss');
@@ -210,8 +278,8 @@ export function updateDirector(world: World, dt: number): void {
       world.spawnAcc = Math.min(world.spawnAcc, 1);
       break;
     }
-    const p = pickSpawnPoint(world);
-    openPortal(world, chooseKind(world), p.x, p.y);
+    const p = ringPoint(world);
+    if (p) openPortal(world, chooseKind(world), p.x, p.y);
   }
 }
 
@@ -266,11 +334,71 @@ function moveToward(e: Enemy, angle: number, speed: number, dt: number): void {
   e.y += Math.sin(angle) * speed * dt;
 }
 
-function updateChaser(world: World, e: Enemy, dt: number): void {
+// ---------------------------------------------------------------- Navigation
+
+/**
+ * Refreshes a foe's view of the way to the serpent a few times a second: whether it can go
+ * straight there, whether a shot would get through, and otherwise which way the flow field
+ * points. Also notices a foe that has stopped making progress.
+ */
+function updateNav(world: World, e: Enemy): void {
+  const nav = e.nav;
+  if (world.time < nav.next) return;
+  const interval = NAV.sightInterval * (0.8 + (e.id % 5) * 0.1);
+  nav.next = world.time + interval;
   const s = world.snake;
-  const base = Math.atan2(s.y - e.y, s.x - e.x);
-  const wob = Math.sin(world.time * 2.2 + e.wobble) * 0.45;
-  moveToward(e, base + wob, e.speed, dt);
+  const index = world.map.index;
+  nav.direct = clearPath(index, e.x, e.y, s.x, s.y, e.r * 0.9);
+  nav.sight = nav.direct || clearPath(index, e.x, e.y, s.x, s.y, 6);
+  if (!nav.direct) nav.angle = flowAngle(world.flow, e.x, e.y) ?? Math.atan2(s.y - e.y, s.x - e.x);
+  const moved = dist(e.x, e.y, nav.lastX, nav.lastY);
+  const trying = e.state === 'move' && !nav.direct && e.stunned <= 0 && e.frozen <= 0;
+  nav.stuck = trying && moved < 4 ? nav.stuck + interval : 0;
+  nav.lastX = e.x;
+  nav.lastY = e.y;
+}
+
+/** Which way a foe heads to reach the serpent: straight at it when nothing is in the way, else along the flow field. */
+function chaseAngle(world: World, e: Enemy): number {
+  return e.nav.direct ? Math.atan2(world.snake.y - e.y, world.snake.x - e.x) : e.nav.angle;
+}
+
+/** Attacks only start on screen, so the player always sees the telegraph. */
+function canAttack(world: World, e: Enemy): boolean {
+  return inView(world.camera, e.x, e.y, NAV.attackMargin);
+}
+
+/**
+ * Brings back foes that fell far behind or got stuck out of sight: they reappear in the spawn
+ * ring, so the fight stays around the serpent. The boss is never moved.
+ */
+function relocateStragglers(world: World, e: Enemy): void {
+  if (e.kind === 'boss' || e.state === 'windup' || e.state === 'attack') return;
+  const nav = e.nav;
+  const stuck = nav.stuck >= NAV.stuckTime && !inView(world.camera, e.x, e.y, 60);
+  if (nav.far < NAV.farTime && !stuck) return;
+  const p = ringPoint(world, e.r + 20);
+  if (!p) return;
+  e.x = p.x;
+  e.y = p.y;
+  e.kx = e.ky = 0;
+  e.heading = Math.atan2(world.snake.y - p.y, world.snake.x - p.x);
+  nav.far = nav.stuck = 0;
+  nav.next = 0;
+  nav.lastX = p.x;
+  nav.lastY = p.y;
+  if (e.trail) {
+    e.trail.reset(p.x, p.y, e.heading, (e.segments.length + 2) * e.segSpacing);
+    e.trail.sample(p.x, p.y, e.segments.length, e.segSpacing, e.segments);
+  }
+}
+
+// ---------------------------------------------------------------- AI
+
+function updateChaser(world: World, e: Enemy, dt: number): void {
+  // Weaving looks alive in the open; around obstacles it would just bump into them.
+  const wob = Math.sin(world.time * 2.2 + e.wobble) * (e.nav.direct ? 0.45 : 0.15);
+  moveToward(e, chaseAngle(world, e) + wob, e.speed, dt);
 }
 
 function updateCaster(world: World, e: Enemy, dt: number): void {
@@ -278,21 +406,28 @@ function updateCaster(world: World, e: Enemy, dt: number): void {
   const s = world.snake;
   const d = dist(e.x, e.y, s.x, s.y);
   const toward = Math.atan2(s.y - e.y, s.x - e.x);
-  let radial = 0;
-  if (d > cfg.preferredRange + 50) radial = 1;
-  else if (d < cfg.preferredRange - 60) radial = -1;
-  const side = e.id % 2 === 0 ? 1 : -1;
-  const mx = Math.cos(toward) * radial + Math.cos(toward + (side * Math.PI) / 2) * 0.55;
-  const my = Math.sin(toward) * radial + Math.sin(toward + (side * Math.PI) / 2) * 0.55;
-  const ml = Math.hypot(mx, my) || 1;
   const slow = e.state === 'windup' ? 0.3 : 1;
-  e.x += (mx / ml) * e.speed * slow * dt;
-  e.y += (my / ml) * e.speed * slow * dt;
+  if (!e.nav.sight) {
+    // No clear shot: walk the path toward the serpent until one opens up.
+    const a = chaseAngle(world, e);
+    e.x += Math.cos(a) * e.speed * slow * dt;
+    e.y += Math.sin(a) * e.speed * slow * dt;
+  } else {
+    let radial = 0;
+    if (d > cfg.preferredRange + 50) radial = 1;
+    else if (d < cfg.preferredRange - 60) radial = -1;
+    const side = e.id % 2 === 0 ? 1 : -1;
+    const mx = Math.cos(toward) * radial + Math.cos(toward + (side * Math.PI) / 2) * 0.55;
+    const my = Math.sin(toward) * radial + Math.sin(toward + (side * Math.PI) / 2) * 0.55;
+    const ml = Math.hypot(mx, my) || 1;
+    e.x += (mx / ml) * e.speed * slow * dt;
+    e.y += (my / ml) * e.speed * slow * dt;
+  }
   e.heading = toward;
 
   if (e.state === 'move') {
     e.attackTimer -= dt;
-    if (e.attackTimer <= 0 && d < 680) {
+    if (e.attackTimer <= 0 && d < 680 && e.nav.sight && canAttack(world, e)) {
       setState(e, 'windup');
       world.sfx('telegraph');
     }
@@ -316,9 +451,9 @@ function updateBrute(world: World, e: Enemy, dt: number): void {
   const d = dist(e.x, e.y, s.x, s.y);
   switch (e.state) {
     case 'move': {
-      moveToward(e, Math.atan2(s.y - e.y, s.x - e.x), e.speed, dt);
+      moveToward(e, chaseAngle(world, e), e.speed, dt);
       e.attackTimer -= dt;
-      if (e.attackTimer <= 0 && d < cfg.chargeRange) {
+      if (e.attackTimer <= 0 && d < cfg.chargeRange && e.nav.direct && canAttack(world, e)) {
         const p = predictHead(world, 0.25);
         e.aim = Math.atan2(p.y - e.y, p.x - e.x);
         setState(e, 'windup');
@@ -334,10 +469,14 @@ function updateBrute(world: World, e: Enemy, dt: number): void {
       break;
     case 'attack': {
       moveToward(e, e.aim, cfg.chargeSpeed, dt);
-      const hitWall =
-        e.x - e.r <= PLAY_AREA.minX || e.x + e.r >= PLAY_AREA.maxX || e.y - e.r <= PLAY_AREA.minY || e.y + e.r >= PLAY_AREA.maxY;
-      if (hitWall) burst(world, e.x, e.y, '#c9b8a6', 10, 200, { size: 3, life: 0.4 });
-      if (e.stateTime >= cfg.chargeTime || hitWall) setState(e, 'recover');
+      if (pushOut(world.map.index, e, e.r)) {
+        // Charged into a wall or pillar: it staggers for longer, a chance to punish it.
+        burst(world, e.x, e.y, '#c9b8a6', 10, 200, { size: 3, life: 0.4 });
+        setState(e, 'recover');
+        e.stateTime = -cfg.recover * (cfg.bonkStagger - 1);
+      } else if (e.stateTime >= cfg.chargeTime) {
+        setState(e, 'recover');
+      }
       break;
     }
     case 'recover':
@@ -350,9 +489,8 @@ function updateBrute(world: World, e: Enemy, dt: number): void {
 }
 
 function slither(world: World, e: Enemy, dt: number, speed: number, turnRate: number): void {
-  const s = world.snake;
-  const target = Math.atan2(s.y - e.y, s.x - e.x) + Math.sin(world.time * 1.7 + e.wobble) * 0.55;
-  e.heading = steer(e.heading, target, turnRate * dt, e.x, e.y, 700, 400);
+  const weave = Math.sin(world.time * 1.7 + e.wobble) * (e.nav.direct ? 0.55 : 0.2);
+  e.heading = steerOnMap(world.map, e.heading, chaseAngle(world, e) + weave, turnRate * dt, e.x, e.y);
   e.x += Math.cos(e.heading) * speed * dt;
   e.y += Math.sin(e.heading) * speed * dt;
 }
@@ -373,7 +511,7 @@ function updateRival(world: World, e: Enemy, dt: number): void {
       slither(world, e, dt, e.speed, cfg.turnRate);
       e.attackTimer -= dt;
       const facing = Math.abs(angleDiff(e.heading, Math.atan2(s.y - e.y, s.x - e.x)));
-      if (e.attackTimer <= 0 && d < cfg.lungeRange && facing < 0.9) {
+      if (e.attackTimer <= 0 && d < cfg.lungeRange && facing < 0.9 && e.nav.direct && canAttack(world, e)) {
         e.aim = Math.atan2(s.y - e.y, s.x - e.x);
         setState(e, 'windup');
         world.sfx('telegraph');
@@ -382,7 +520,7 @@ function updateRival(world: World, e: Enemy, dt: number): void {
     }
     case 'windup': {
       // Coils up, slowly turning to face the locked lunge direction.
-      e.heading = steer(e.heading, e.aim, 5 * dt, e.x, e.y, 700, 400);
+      e.heading = steerOnMap(world.map, e.heading, e.aim, 5 * dt, e.x, e.y);
       e.x += Math.cos(e.heading) * e.speed * 0.25 * dt;
       e.y += Math.sin(e.heading) * e.speed * 0.25 * dt;
       if (e.stateTime >= cfg.telegraph) {
@@ -405,7 +543,7 @@ function updateRival(world: World, e: Enemy, dt: number): void {
       }
       break;
   }
-  if (bounceOffWalls(e, e.r, 0.4) && e.state === 'attack') setState(e, 'recover');
+  if (bounceOffSolids(world.map.index, e, e.r, 0.4) && e.state === 'attack') setState(e, 'recover');
   updateSnakeBody(e, cfg.segments);
 }
 
@@ -425,7 +563,7 @@ function updateBoss(world: World, e: Enemy, dt: number): void {
     case 'move': {
       slither(world, e, dt, e.speed, cfg.turnRate);
       e.attackTimer -= dt;
-      if (e.attackTimer <= 0) {
+      if (e.attackTimer <= 0 && canAttack(world, e)) {
         e.bossMove = BOSS_SEQUENCE[e.moveIndex++ % BOSS_SEQUENCE.length];
         e.aim = Math.atan2(s.y - e.y, s.x - e.x);
         setState(e, 'windup');
@@ -439,7 +577,7 @@ function updateBoss(world: World, e: Enemy, dt: number): void {
       if (e.bossMove === 'charge') {
         // Track the player for most of the telegraph, then lock in.
         if (e.stateTime < tele * 0.6) e.aim = Math.atan2(s.y - e.y, s.x - e.x);
-        e.heading = steer(e.heading, e.aim, 4 * dt, e.x, e.y, 700, 400);
+        e.heading = steerOnMap(world.map, e.heading, e.aim, 4 * dt, e.x, e.y);
       } else {
         slither(world, e, dt, e.speed * 0.35, cfg.turnRate);
       }
@@ -465,12 +603,7 @@ function updateBoss(world: World, e: Enemy, dt: number): void {
           world.sfx('charge');
         } else {
           const count = cfg.summonCount + (e.enraged ? 2 : 0);
-          for (let i = 0; i < count; i++) {
-            const a = (i / count) * TAU + world.rng();
-            const x = clamp(e.x + Math.cos(a) * 110, PLAY_AREA.minX + 40, PLAY_AREA.maxX - 40);
-            const y = clamp(e.y + Math.sin(a) * 110, PLAY_AREA.minY + 40, PLAY_AREA.maxY - 40);
-            openPortal(world, e.enraged && i % 2 === 0 ? 'caster' : 'chaser', x, y);
-          }
+          openSpotsAround(world, e.x, e.y, 110, count).forEach((p, i) => openPortal(world, e.enraged && i % 2 === 0 ? 'caster' : 'chaser', p.x, p.y));
           world.sfx('portal');
           setState(e, 'move');
           e.attackTimer = cfg.slitherTime * pace;
@@ -491,7 +624,7 @@ function updateBoss(world: World, e: Enemy, dt: number): void {
       }
       break;
   }
-  if (bounceOffWalls(e, e.r, 0.5) && e.state === 'attack') {
+  if (bounceOffSolids(world.map.index, e, e.r, 0.5) && e.state === 'attack') {
     burst(world, e.x, e.y, '#c9b8a6', 18, 260, { size: 3.5, life: 0.5 });
     setState(e, 'recover');
   }
@@ -500,8 +633,20 @@ function updateBoss(world: World, e: Enemy, dt: number): void {
 
 export function updateEnemies(world: World, dt: number): void {
   const list = world.enemies;
+  const s = world.snake;
+  const index = world.map.index;
+  const b = world.map.bounds;
+  world.flow.timer -= dt;
+  if (world.flow.timer <= 0) {
+    world.flow.timer = NAV.refresh;
+    refreshFlowField(world.flow, s.x, s.y);
+  }
+  const farAway = NAV.farViews * Math.hypot(world.camera.viewW, world.camera.viewH);
   for (const e of list) {
     if (e.dead) continue;
+    updateNav(world, e);
+    e.nav.far = dist(e.x, e.y, s.x, s.y) > farAway ? e.nav.far + dt : 0;
+    relocateStragglers(world, e);
     e.flash = Math.max(0, e.flash - dt);
     // Each enemy runs on its own clock: frost slows it, swift elites and curses speed it up.
     const edt = dt * enemyTimeScale(world, e, dt);
@@ -529,8 +674,13 @@ export function updateEnemies(world: World, dt: number): void {
     const k = Math.exp(-9 * dt);
     e.kx *= k;
     e.ky *= k;
-    e.x = clamp(e.x, PLAY_AREA.minX + e.r, PLAY_AREA.maxX - e.r);
-    e.y = clamp(e.y, PLAY_AREA.minY + e.r, PLAY_AREA.maxY - e.r);
+    // Nothing ends up inside a solid, however hard it was knocked.
+    if (pushOut(index, e, e.r)) {
+      e.kx *= 0.5;
+      e.ky *= 0.5;
+    }
+    e.x = clamp(e.x, b.minX + e.r, b.maxX - e.r);
+    e.y = clamp(e.y, b.minY + e.r, b.maxY - e.r);
   }
 
   // Soft separation so groups spread out and stay readable.

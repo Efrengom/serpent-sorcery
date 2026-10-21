@@ -1,7 +1,11 @@
-import { ARENA, ENEMIES, PIXEL_ART, SNAKE, VIEW } from './config';
+import type { Camera } from './camera';
+import { AREA_STYLE, ClassicFloor } from './classicFloor';
+import { CAMERA, ENEMIES, PIXEL_ART, SNAKE, VIEW } from './config';
 import { shakeOffset } from './effects';
 import type { Pt } from './gesture';
+import type { MapLayout } from './maps/types';
 import { clamp, dist, mulberry32, TAU, type Vec } from './math';
+import { Minimap } from './minimap';
 import { COLORS } from './palette';
 import { DEFAULT_VIEW, type ViewOptions } from './options';
 import { createCanvas } from './pixel/bake';
@@ -11,8 +15,10 @@ import {
   drawArcs,
   drawBeams,
   drawBolts,
+  drawClearingMark,
   drawCoilPixel,
   drawCrystals,
+  drawEdgeArrow,
   drawEnemies,
   drawFrostFields,
   drawNovas,
@@ -26,64 +32,29 @@ import {
   drawTrailTip,
   drawWard,
   drawWarningMarks,
+  setDrawBounds,
 } from './pixel/draw';
-import { buildPixelFloor, type PixelFloor } from './pixel/floor';
+import { PixelFloor } from './pixel/floor';
 import { SPELL_COLORS, spellName } from './spells';
 import { WIZARDS } from './wizards';
 import type { Enemy, GestureView, World } from './world';
 
-const W = ARENA.width;
-const H = ARENA.height;
 const TITLE_FONT = "'Cinzel', 'Palatino Linotype', Georgia, serif";
 const UI_FONT = "'Nunito', 'Segoe UI', system-ui, sans-serif";
 const PIXEL_FONT = "'Silkscreen', 'Courier New', monospace";
-/** Low-res canvas size for the pixel style. */
-const LW = Math.round(W / PIXEL_ART.worldPerPixel);
-const LH = Math.round(H / PIXEL_ART.worldPerPixel);
+const P = PIXEL_ART.worldPerPixel;
 const VIGNETTE_LEVELS = 6;
+/** Highest resolution (device px per world unit) the classic floor is painted at. */
+const FLOOR_RES_CAP = 1.75;
+/** Edge arrows sit this far (CSS px) inside the view's edge. */
+const ARROW_INSET = 34;
 
-/** Colours of the classic arena per area: the violet ruins, then the Ember Depths. */
-const AREA_STYLE = [
-  {
-    floor: ['#33204f', '#24153d', '#170d2a'],
-    tileLight: '190,160,255',
-    moss: '60,140,90',
-    glow: '120,255,230',
-    glowCore: '200,255,245',
-    circle: '160,130,255',
-    runes: '180,150,255',
-    rubble: [90, 70, 120],
-    wall: '#120a22',
-    brick: '120,95,170',
-    rim: '200,170,255',
-    pillar: ['#5d4b80', '#231638'],
-    torch: '255,190,110',
-    ambient: '#a58cff',
-    cracks: null as string | null,
-  },
-  {
-    floor: ['#40211a', '#2b130e', '#170806'],
-    tileLight: '255,170,120',
-    moss: '120,50,20',
-    glow: '255,150,60',
-    glowCore: '255,232,170',
-    circle: '255,130,80',
-    runes: '255,170,110',
-    rubble: [120, 70, 55],
-    wall: '#1c0a06',
-    brick: '170,90,60',
-    rim: '255,170,120',
-    pillar: ['#7a4630', '#2c120a'],
-    torch: '255,150,70',
-    ambient: '#ff8a4a',
-    cracks: '255,110,40',
-  },
-];
-
-interface Torch {
+/** Something off-screen worth pointing at: the boss, or the clearing it's coming to. */
+interface Pointer {
   x: number;
   y: number;
-  phase: number;
+  label: string;
+  color: string;
 }
 
 export class Renderer {
@@ -93,22 +64,33 @@ export class Renderer {
   private dpr = 1;
   cssW = 0;
   cssH = 0;
-  /** World -> CSS pixel transform: css = world * scale + offset. */
+  /**
+   * World -> CSS pixel transform: css = (world - camera corner) * scale + offset. The view shows
+   * `viewW` × `viewH` world units, its top-left corner at (`camLeft`, `camTop`) as last drawn.
+   */
   scale = 1;
   ox = 0;
   oy = 0;
-  private bg: HTMLCanvasElement | null = null;
-  /** Which area's arena art is built (see AREA_STYLE and buildPixelFloor). */
+  viewW: number = CAMERA.maxViewWidth;
+  viewH: number = CAMERA.viewHeight;
+  camLeft = 0;
+  camTop = 0;
+  /** The map and area (look) the floors were built for. */
+  private map: MapLayout | null = null;
   private area = 0;
-  private pixelFloors: (PixelFloor | undefined)[] = [];
+  private classicFloor: ClassicFloor | null = null;
+  private vignette: HTMLCanvasElement | null = null;
+  private minimap: Minimap | null = null;
   private glows = new Map<string, HTMLCanvasElement>();
-  private torches: Torch[] = [];
   // Pixel-art style
   private pixel: boolean;
   /** Device pixels per low-res pixel (an integer whenever the window allows it). */
   private pixelFactor = 1;
   private devX = 0;
   private devY = 0;
+  /** The low-res view canvas, in art pixels. */
+  private lowW = 0;
+  private lowH = 0;
   private low: HTMLCanvasElement | null = null;
   private lowCtx: CanvasRenderingContext2D | null = null;
   private pixelFloor: PixelFloor | null = null;
@@ -152,42 +134,50 @@ export class Renderer {
     this.cssH = cssH;
     this.canvas.width = Math.round(cssW * this.dpr);
     this.canvas.height = Math.round(cssH * this.dpr);
+    this.minimap = null;
     if (this.pixel) {
       this.layoutPixel();
       return;
     }
+    // The view is CAMERA.viewHeight tall (taller only in narrow windows) and as wide as the window allows.
     const availW = cssW - VIEW.sideInset * 2;
     const availH = cssH - VIEW.topInset - VIEW.bottomInset;
-    this.scale = Math.max(0.2, Math.min(availW / W, availH / H));
-    this.ox = (cssW - W * this.scale) / 2;
-    this.oy = VIEW.topInset + (availH - H * this.scale) / 2;
-    this.buildBackground();
+    this.scale = Math.max(0.2, Math.min(availH / CAMERA.viewHeight, availW / CAMERA.minViewWidth));
+    this.viewW = Math.min(CAMERA.maxViewWidth, availW / this.scale);
+    this.viewH = Math.min(CAMERA.maxViewHeight, availH / this.scale);
+    this.ox = (cssW - this.viewW * this.scale) / 2;
+    this.oy = VIEW.topInset + (availH - this.viewH * this.scale) / 2;
+    if (this.classicFloor && Math.abs(this.classicFloor.k - this.floorRes) > 0.01) this.classicFloor = null;
+    this.vignette = null;
   }
 
   /**
-   * Fits the low-res arena with a whole-number upscale so every art pixel is the same size.
-   * The arena may use the bottom margin to reach the next whole factor; very small windows
-   * fall back to fractional scaling.
+   * Fits the low-res view with a whole-number upscale so every art pixel is the same size. The
+   * view is 320 art pixels tall (or a little more, filling the window) and as wide as the window
+   * allows, within the camera's limits. Very small windows fall back to fractional scaling.
    */
   private layoutPixel(): void {
-    if (!this.low) {
-      this.low = createCanvas(LW, LH);
-      this.lowCtx = this.low.getContext('2d')!;
-      this.pixelFloor = this.floorFor(this.area);
-      void document.fonts?.load(`16px ${PIXEL_FONT}`).catch(() => undefined);
-    }
+    void document.fonts?.load(`16px ${PIXEL_FONT}`).catch(() => undefined);
     const dpr = this.dpr;
     const availW = (this.cssW - VIEW.sideInset * 2) * dpr;
     const availH = (this.cssH - VIEW.topInset) * dpr;
-    const fit = Math.min(availW / LW, availH / LH);
+    const fit = Math.min(availW / (CAMERA.minViewWidth / P), availH / (CAMERA.viewHeight / P));
     const whole = Math.floor(fit);
     const f = whole >= PIXEL_ART.minIntegerScale ? whole : Math.max(0.5, fit);
     this.pixelFactor = f;
-    const devW = LW * f;
-    const devH = LH * f;
+    this.lowW = Math.min(Math.floor(availW / f), Math.round(CAMERA.maxViewWidth / P));
+    this.lowH = Math.min(Math.floor(availH / f), Math.round(CAMERA.maxViewHeight / P));
+    if (!this.low || this.low.width !== this.lowW || this.low.height !== this.lowH) {
+      this.low = createCanvas(this.lowW, this.lowH);
+      this.lowCtx = this.low.getContext('2d')!;
+    }
+    this.viewW = this.lowW * P;
+    this.viewH = this.lowH * P;
+    const devW = this.lowW * f;
+    const devH = this.lowH * f;
     this.devX = Math.round((this.cssW * dpr - devW) / 2);
     this.devY = Math.round(VIEW.topInset * dpr + Math.max(0, (availH - VIEW.bottomInset * dpr - devH) / 2));
-    this.scale = f / PIXEL_ART.worldPerPixel / dpr;
+    this.scale = f / P / dpr;
     this.ox = this.devX / dpr;
     this.oy = this.devY / dpr;
     // Overlay grid starts at or before the screen origin and lines up with the arena's pixels.
@@ -202,21 +192,33 @@ export class Renderer {
     }
   }
 
-  private floorFor(area: number): PixelFloor {
-    let f = this.pixelFloors[area];
-    if (!f) {
-      f = buildPixelFloor(area);
-      this.pixelFloors[area] = f;
-    }
-    return f;
+  /**
+   * Device pixels per world unit for the classic floor's chunks: the screen's resolution, capped
+   * so the cached chunks stay under about 64 MB even on a 4K screen.
+   */
+  private get floorRes(): number {
+    return Math.min(FLOOR_RES_CAP, this.scale * this.dpr);
   }
 
-  /** Swaps the arena art when the run descends into a new area. */
-  private setArea(area: number): void {
-    if (area === this.area) return;
+  /** (Re)builds the floors when the run's map or its look (the area) changes. */
+  private useMap(map: MapLayout, area: number): void {
+    if (map === this.map && area === this.area) return;
+    this.map = map;
     this.area = area;
-    if (this.pixel) this.pixelFloor = this.floorFor(area);
-    else this.buildBackground();
+    this.classicFloor = null;
+    this.pixelFloor = null;
+    this.minimap = null;
+  }
+
+  /**
+   * Puts the view's top-left corner where the camera says. In the pixel style it snaps to whole
+   * art pixels, so the floor scrolls without shimmering.
+   */
+  follow(cam: Camera): void {
+    const left = cam.x - this.viewW / 2;
+    const top = cam.y - this.viewH / 2;
+    this.camLeft = this.pixel ? Math.round(left / P) * P : left;
+    this.camTop = this.pixel ? Math.round(top / P) * P : top;
   }
 
   private font(size: number, weight: number, title = false): string {
@@ -225,11 +227,11 @@ export class Renderer {
   }
 
   screenToWorld(p: Pt): Vec {
-    return { x: (p.x - this.ox) / this.scale, y: (p.y - this.oy) / this.scale };
+    return { x: (p.x - this.ox) / this.scale + this.camLeft, y: (p.y - this.oy) / this.scale + this.camTop };
   }
 
   worldToScreen(p: Vec): Vec {
-    return { x: p.x * this.scale + this.ox, y: p.y * this.scale + this.oy };
+    return { x: (p.x - this.camLeft) * this.scale + this.ox, y: (p.y - this.camTop) * this.scale + this.oy };
   }
 
   // ------------------------------------------------------------ sprites
@@ -257,256 +259,11 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 
-  // ------------------------------------------------------------ background
-
-  private buildBackground(): void {
-    const c = document.createElement('canvas');
-    const k = this.scale * this.dpr;
-    c.width = Math.max(1, Math.round(W * k));
-    c.height = Math.max(1, Math.round(H * k));
-    const g = c.getContext('2d')!;
-    g.scale(k, k);
-    const rng = mulberry32(1337);
-    const st = AREA_STYLE[this.area] ?? AREA_STYLE[0];
-
-    // Floor
-    const floor = g.createRadialGradient(W / 2, H / 2, 60, W / 2, H / 2, W * 0.62);
-    floor.addColorStop(0, st.floor[0]);
-    floor.addColorStop(0.6, st.floor[1]);
-    floor.addColorStop(1, st.floor[2]);
-    g.fillStyle = floor;
-    g.fillRect(0, 0, W, H);
-
-    // Worn flagstones
-    const tile = 76;
-    for (let row = 0; row * tile < H; row++) {
-      const off = (row % 2) * (tile / 2);
-      for (let x = -tile; x < W + tile; x += tile) {
-        const tx = x + off + (rng() - 0.5) * 6;
-        const ty = row * tile + (rng() - 0.5) * 6;
-        const shade = rng();
-        g.fillStyle = shade > 0.5 ? `rgba(${st.tileLight},${0.02 + shade * 0.035})` : `rgba(0,0,0,${0.05 + shade * 0.1})`;
-        roundRect(g, tx + 3, ty + 3, tile - 6, tile - 6, 6);
-        g.fill();
-        g.strokeStyle = 'rgba(8,3,18,0.45)';
-        g.lineWidth = 2;
-        g.stroke();
-        if (rng() < 0.18) {
-          g.strokeStyle = 'rgba(6,2,14,0.55)';
-          g.lineWidth = 1.2;
-          g.beginPath();
-          let cx = tx + rng() * tile;
-          let cy = ty + rng() * tile;
-          g.moveTo(cx, cy);
-          for (let i = 0; i < 4; i++) {
-            cx += (rng() - 0.5) * 30;
-            cy += (rng() - 0.5) * 30;
-            g.lineTo(cx, cy);
-          }
-          g.stroke();
-        }
-      }
-    }
-
-    // Moss and glowing mushrooms
-    for (let i = 0; i < 26; i++) {
-      const x = rng() * W;
-      const y = rng() * H;
-      const r = 20 + rng() * 50;
-      const m = g.createRadialGradient(x, y, 0, x, y, r);
-      m.addColorStop(0, `rgba(${st.moss},0.16)`);
-      m.addColorStop(1, `rgba(${st.moss},0)`);
-      g.fillStyle = m;
-      g.beginPath();
-      g.arc(x, y, r, 0, TAU);
-      g.fill();
-    }
-    for (let i = 0; i < 40; i++) {
-      const edge = rng() < 0.5;
-      const x = edge ? (rng() < 0.5 ? 40 + rng() * 60 : W - 40 - rng() * 60) : 40 + rng() * (W - 80);
-      const y = edge ? 40 + rng() * (H - 80) : rng() < 0.5 ? 40 + rng() * 50 : H - 40 - rng() * 50;
-      const r = 2 + rng() * 2.5;
-      const m = g.createRadialGradient(x, y, 0, x, y, r * 4);
-      m.addColorStop(0, `rgba(${st.glow},0.5)`);
-      m.addColorStop(1, `rgba(${st.glow},0)`);
-      g.fillStyle = m;
-      g.beginPath();
-      g.arc(x, y, r * 4, 0, TAU);
-      g.fill();
-      g.fillStyle = `rgba(${st.glowCore},0.8)`;
-      g.beginPath();
-      g.arc(x, y, r * 0.6, 0, TAU);
-      g.fill();
-    }
-
-    // Ancient summoning circle in the centre
-    g.save();
-    g.translate(W / 2, H / 2);
-    g.strokeStyle = `rgba(${st.circle},0.16)`;
-    g.lineWidth = 3;
-    for (const r of [210, 190, 120]) {
-      g.beginPath();
-      g.arc(0, 0, r, 0, TAU);
-      g.stroke();
-    }
-    g.lineWidth = 2;
-    g.beginPath();
-    for (let i = 0; i <= 6; i++) {
-      const a = (i / 6) * TAU - Math.PI / 2;
-      const b = ((i + 2) / 6) * TAU - Math.PI / 2;
-      g.moveTo(Math.cos(a) * 190, Math.sin(a) * 190);
-      g.lineTo(Math.cos(b) * 190, Math.sin(b) * 190);
-    }
-    g.stroke();
-    g.fillStyle = `rgba(${st.runes},0.2)`;
-    g.font = `20px ${TITLE_FONT}`;
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    const runes = 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ';
-    for (let i = 0; i < 24; i++) {
-      const a = (i / 24) * TAU;
-      g.save();
-      g.rotate(a);
-      g.fillText(runes[i % runes.length], 0, -200);
-      g.restore();
-    }
-    g.restore();
-
-    // Rubble
-    for (let i = 0; i < 70; i++) {
-      const nearWall = rng() < 0.8;
-      let x = rng() * W;
-      let y = rng() * H;
-      if (nearWall) {
-        if (rng() < 0.5) x = rng() < 0.5 ? ARENA.wall + rng() * 50 : W - ARENA.wall - rng() * 50;
-        else y = rng() < 0.5 ? ARENA.wall + rng() * 40 : H - ARENA.wall - rng() * 40;
-      }
-      const r = 2 + rng() * 6;
-      g.fillStyle = `rgba(${st.rubble[0] + rng() * 40},${st.rubble[1] + rng() * 30},${st.rubble[2] + rng() * 40},0.55)`;
-      g.beginPath();
-      g.ellipse(x, y, r, r * (0.6 + rng() * 0.4), rng() * TAU, 0, TAU);
-      g.fill();
-    }
-
-    // Walls
-    const wl = ARENA.wall;
-    g.fillStyle = st.wall;
-    g.fillRect(0, 0, W, wl);
-    g.fillRect(0, H - wl, W, wl);
-    g.fillRect(0, 0, wl, H);
-    g.fillRect(W - wl, 0, wl, H);
-    g.strokeStyle = `rgba(${st.brick},0.35)`;
-    g.lineWidth = 1.5;
-    const brick = 38;
-    for (let x = 0; x < W; x += brick) {
-      g.strokeRect(x, 2, brick, wl / 2 - 2);
-      g.strokeRect(x + brick / 2, wl / 2, brick, wl / 2 - 2);
-      g.strokeRect(x, H - wl + 2, brick, wl / 2 - 2);
-      g.strokeRect(x + brick / 2, H - wl / 2, brick, wl / 2 - 2);
-    }
-    for (let y = 0; y < H; y += brick) {
-      g.strokeRect(2, y, wl / 2 - 2, brick);
-      g.strokeRect(wl / 2, y + brick / 2, wl / 2 - 2, brick);
-      g.strokeRect(W - wl + 2, y, wl / 2 - 2, brick);
-      g.strokeRect(W - wl / 2, y + brick / 2, wl / 2 - 2, brick);
-    }
-    g.strokeStyle = `rgba(${st.rim},0.45)`;
-    g.lineWidth = 2.5;
-    g.strokeRect(wl, wl, W - wl * 2, H - wl * 2);
-    g.strokeStyle = 'rgba(0,0,0,0.5)';
-    g.lineWidth = 6;
-    g.strokeRect(wl + 4, wl + 4, W - wl * 2 - 8, H - wl * 2 - 8);
-
-    // Broken pillars embedded in the walls
-    const pillars: Vec[] = [
-      { x: wl, y: wl },
-      { x: W - wl, y: wl },
-      { x: wl, y: H - wl },
-      { x: W - wl, y: H - wl },
-      { x: W / 2, y: wl - 4 },
-      { x: W / 2, y: H - wl + 4 },
-      { x: wl - 4, y: H / 2 },
-      { x: W - wl + 4, y: H / 2 },
-    ];
-    for (const p of pillars) {
-      const pg = g.createRadialGradient(p.x - 8, p.y - 8, 2, p.x, p.y, 30);
-      pg.addColorStop(0, st.pillar[0]);
-      pg.addColorStop(1, st.pillar[1]);
-      g.fillStyle = pg;
-      g.beginPath();
-      g.arc(p.x, p.y, 28, 0, TAU);
-      g.fill();
-      g.strokeStyle = 'rgba(0,0,0,0.6)';
-      g.lineWidth = 3;
-      g.stroke();
-      g.strokeStyle = `rgba(${st.rim},0.25)`;
-      g.lineWidth = 1.5;
-      g.beginPath();
-      g.arc(p.x, p.y, 18, 0, TAU);
-      g.stroke();
-    }
-
-    // Torch glow pools (flames are animated per frame)
-    this.torches = [];
-    for (let i = 1; i < 6; i++) {
-      if (i === 3) continue;
-      this.torches.push({ x: (W / 6) * i, y: wl - 6, phase: rng() * 10 });
-      this.torches.push({ x: (W / 6) * i, y: H - wl + 6, phase: rng() * 10 });
-    }
-    for (const t of this.torches) {
-      const tg = g.createRadialGradient(t.x, t.y, 0, t.x, t.y, 120);
-      tg.addColorStop(0, `rgba(${st.torch},0.22)`);
-      tg.addColorStop(1, `rgba(${st.torch},0)`);
-      g.fillStyle = tg;
-      g.beginPath();
-      g.arc(t.x, t.y, 120, 0, TAU);
-      g.fill();
-    }
-
-    // Glowing lava cracks through the Ember Depths floor.
-    if (st.cracks) {
-      for (let i = 0; i < 26; i++) {
-        let x = ARENA.wall + 30 + rng() * (W - 2 * ARENA.wall - 60);
-        let y = ARENA.wall + 30 + rng() * (H - 2 * ARENA.wall - 60);
-        const pts: Vec[] = [{ x, y }];
-        let a = rng() * TAU;
-        const steps = 5 + Math.floor(rng() * 5);
-        for (let k = 0; k < steps; k++) {
-          a += (rng() - 0.5) * 1.4;
-          x += Math.cos(a) * (14 + rng() * 22);
-          y += Math.sin(a) * (14 + rng() * 22);
-          pts.push({ x, y });
-        }
-        for (const [width, alpha] of [
-          [9, 0.12],
-          [4, 0.35],
-          [1.6, 0.9],
-        ] as const) {
-          g.strokeStyle = width < 2 ? 'rgba(255,220,150,0.9)' : `rgba(${st.cracks},${alpha})`;
-          g.lineWidth = width;
-          g.lineJoin = 'round';
-          g.beginPath();
-          g.moveTo(pts[0].x, pts[0].y);
-          for (const p of pts) g.lineTo(p.x, p.y);
-          g.stroke();
-        }
-      }
-    }
-
-    // Vignette
-    const v = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.7);
-    v.addColorStop(0, 'rgba(0,0,0,0)');
-    v.addColorStop(1, 'rgba(0,0,0,0.5)');
-    g.fillStyle = v;
-    g.fillRect(0, 0, W, H);
-
-    this.bg = c;
-  }
-
   // ------------------------------------------------------------ frame
 
   render(world: World, gesture: GestureView, realTime: number, showSnake: boolean): void {
-    this.setArea(world.area);
+    this.useMap(world.map, world.area);
+    this.follow(world.camera);
     if (this.pixel) {
       this.renderPixel(world, gesture, realTime, showSnake);
       return;
@@ -517,18 +274,29 @@ export class Renderer {
     ctx.fillRect(0, 0, this.cssW, this.cssH);
 
     const shake = shakeOffset(world, realTime, this.view.shake);
+    const x0 = this.camLeft;
+    const y0 = this.camTop;
     ctx.save();
-    ctx.translate(this.ox + shake.x, this.oy + shake.y);
+    // Nothing spills past the view into the letterbox.
+    ctx.beginPath();
+    ctx.rect(this.ox, this.oy, this.viewW * this.scale, this.viewH * this.scale);
+    ctx.clip();
+    ctx.translate(this.ox + shake.x - x0 * this.scale, this.oy + shake.y - y0 * this.scale);
     ctx.scale(this.scale, this.scale);
 
-    if (this.bg) ctx.drawImage(this.bg, 0, 0, W, H);
+    this.classicFloor ??= new ClassicFloor(world.map, world.area, this.floorRes);
+    // A margin all round, so screen shake never uncovers unpainted floor.
+    this.classicFloor.draw(ctx, x0 - 20, y0 - 20, x0 + this.viewW + 20, y0 + this.viewH + 20);
+    this.drawViewShade();
     this.drawAmbient(world, realTime);
+    this.drawClearing(world, realTime);
     this.drawPortals(world, realTime);
     this.drawFrostFields(world, realTime);
     this.drawCrystals(world);
     this.drawTelegraphs(world);
     this.drawConstricts(world);
     for (const e of world.enemies) {
+      if (!this.near(e.x, e.y, e.segments.length > 0 ? 450 : 80)) continue;
       this.drawEnemy(e, world);
       this.drawEnemyStatus(e, world);
     }
@@ -546,30 +314,161 @@ export class Renderer {
     this.drawParticles(world);
     this.drawWorldFloaters(world);
     if (gesture.active && gesture.target && showSnake) this.drawAim(world, gesture.target, realTime);
+    const arrows = this.arrows(world);
+    for (const a of arrows) this.drawArrow(a.x, a.y, a.a, a.p.color);
     ctx.restore();
+    this.classicFloor.prefetch(x0, y0, x0 + this.viewW, y0 + this.viewH);
 
     this.drawVignettes(world, realTime);
+    this.drawArrowLabels(arrows);
+    this.drawMinimap(world);
     this.drawBanner(world);
     this.drawGesture(gesture);
     this.drawReading(gesture, world);
     this.drawScreenFloaters(world);
   }
 
+  /** True when (x, y) is within `margin` world units of the view. */
+  private near(x: number, y: number, margin: number): boolean {
+    return x > this.camLeft - margin && x < this.camLeft + this.viewW + margin && y > this.camTop - margin && y < this.camTop + this.viewH + margin;
+  }
+
   /**
-   * Pixel-art frame. The arena is drawn on a small canvas (1 pixel = PIXEL_ART.worldPerPixel
-   * units) entirely from baked sprites and per-pixel effects, then upscaled with nearest-neighbour
-   * sampling. A second screen-sized overlay on the same pixel grid carries the sigil trail and
-   * hurt flash. Only text is drawn at full resolution, in a pixel font.
+   * Darkens the floor toward the view's edges, as the old arena's baked vignette did. Drawn in
+   * screen space right after the floor, so foes and effects on top keep their full colour.
+   */
+  private drawViewShade(): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    const w = this.viewW * this.scale;
+    const h = this.viewH * this.scale;
+    if (!this.vignette) {
+      const c = createCanvas(Math.max(1, Math.round(w / 4)), Math.max(1, Math.round(h / 4)));
+      const g = c.getContext('2d')!;
+      const v = g.createRadialGradient(c.width / 2, c.height / 2, c.height * 0.35, c.width / 2, c.height / 2, c.width * 0.62);
+      v.addColorStop(0, 'rgba(0,0,0,0)');
+      v.addColorStop(1, 'rgba(0,0,0,0.45)');
+      g.fillStyle = v;
+      g.fillRect(0, 0, c.width, c.height);
+      this.vignette = c;
+    }
+    ctx.drawImage(this.vignette, this.ox, this.oy, w, h);
+    ctx.restore();
+  }
+
+  // ------------------------------------------------------------ pointers, clearing, minimap
+
+  /** What deserves an arrow when it's off-screen: the boss (or its portal), else the clearing it's coming to. */
+  private pointers(world: World): Pointer[] {
+    const boss = world.boss ?? world.portals.find((p) => p.kind === 'boss');
+    if (boss) return [{ x: boss.x, y: boss.y, label: 'Boss', color: '#ff6a8a' }];
+    if (world.bossClearing >= 0) {
+      const c = world.map.clearings[world.bossClearing];
+      return [{ x: (c.x0 + c.x1) / 2, y: (c.y0 + c.y1) / 2, label: 'Boss clearing', color: COLORS.nova }];
+    }
+    return [];
+  }
+
+  /**
+   * Arrows for off-screen pointers: on the line from the view's middle toward each one, just
+   * inside the view's edge, pointing at it (world units).
+   */
+  private arrows(world: World): { x: number; y: number; a: number; p: Pointer }[] {
+    const out: { x: number; y: number; a: number; p: Pointer }[] = [];
+    const inset = ARROW_INSET / this.scale;
+    const cx = this.camLeft + this.viewW / 2;
+    const cy = this.camTop + this.viewH / 2;
+    for (const p of this.pointers(world)) {
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      if (Math.abs(dx) <= this.viewW / 2 && Math.abs(dy) <= this.viewH / 2) continue;
+      const k = Math.min((this.viewW / 2 - inset) / Math.max(1e-6, Math.abs(dx)), (this.viewH / 2 - inset) / Math.max(1e-6, Math.abs(dy)));
+      out.push({ x: cx + dx * k, y: cy + dy * k, a: Math.atan2(dy, dx), p });
+    }
+    return out;
+  }
+
+  /** A pointing arrowhead with a dark outline, in world units. */
+  private drawArrow(x: number, y: number, a: number, color: string): void {
+    const ctx = this.ctx;
+    const s = 15 / this.scale;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(a);
+    ctx.beginPath();
+    ctx.moveTo(s, 0);
+    ctx.lineTo(-s * 0.7, -s * 0.75);
+    ctx.lineTo(-s * 0.35, 0);
+    ctx.lineTo(-s * 0.7, s * 0.75);
+    ctx.closePath();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 5 / this.scale;
+    ctx.strokeStyle = COLORS.outline;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /** Each arrow's label, on the side of it facing the middle of the view (screen space). */
+  private drawArrowLabels(arrows: { x: number; y: number; a: number; p: Pointer }[]): void {
+    const ctx = this.ctx;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const a of arrows) {
+      const s = this.worldToScreen(a);
+      this.drawFloater(a.p.label, s.x - Math.cos(a.a) * 46, s.y - Math.sin(a.a) * 26, 13, a.p.color, 1);
+    }
+  }
+
+  /** The clearing the boss is coming to: a dashed border on the ground. */
+  private drawClearing(world: World, t: number): void {
+    if (world.bossClearing < 0) return;
+    const c = world.map.clearings[world.bossClearing];
+    const ctx = this.ctx;
+    const pulse = this.view.reduceFlashing ? 0.55 : 0.4 + 0.2 * Math.sin(t * 3);
+    ctx.strokeStyle = hexAlpha(COLORS.nova, pulse);
+    ctx.lineWidth = 5;
+    ctx.setLineDash([28, 18]);
+    ctx.lineDashOffset = this.view.reduceFlashing ? 0 : -t * 20;
+    ctx.strokeRect(c.x0 + 20, c.y0 + 20, c.x1 - c.x0 - 40, c.y1 - c.y0 - 40);
+    ctx.setLineDash([]);
+  }
+
+  private drawMinimap(world: World): void {
+    if (!this.view.minimap) return;
+    this.minimap ??= new Minimap(world.map, world.area, this.pixel, this.dpr);
+    const m = this.minimap;
+    const x = Math.round(this.ox + this.viewW * this.scale - m.w - 10);
+    const y = Math.round(this.oy + this.viewH * this.scale - m.h - 10);
+    this.mainCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    m.draw(this.mainCtx, world, x, y, { x0: this.camLeft, y0: this.camTop, x1: this.camLeft + this.viewW, y1: this.camTop + this.viewH });
+  }
+
+  /**
+   * Pixel-art frame. The view is drawn on a small canvas (1 pixel = PIXEL_ART.worldPerPixel
+   * units, offset by the camera in whole pixels) entirely from baked sprites and per-pixel
+   * effects, then upscaled with nearest-neighbour sampling. A second screen-sized overlay on the
+   * same pixel grid carries the sigil trail and hurt flash. Only text is drawn at full
+   * resolution, in a pixel font.
    */
   private renderPixel(world: World, gesture: GestureView, realTime: number, showSnake: boolean): void {
     const low = this.lowCtx!;
     const main = this.mainCtx;
-    low.setTransform(1, 0, 0, 1, 0, 0);
+    this.pixelFloor ??= new PixelFloor(world.map, world.area);
+    setDrawBounds(world.map.bounds, this.camLeft / P, this.camTop / P, this.lowW, this.lowH);
+    const cx = Math.round(this.camLeft / P);
+    const cy = Math.round(this.camTop / P);
+    low.setTransform(1, 0, 0, 1, -cx, -cy);
     low.globalAlpha = 1;
     low.globalCompositeOperation = 'source-over';
     low.imageSmoothingEnabled = false;
-    low.drawImage(this.pixelFloor!.canvas, 0, 0);
-    drawTorches(low, this.pixelFloor!, realTime);
+    low.fillStyle = '#0a0614';
+    low.fillRect(cx, cy, this.lowW, this.lowH);
+    this.pixelFloor.draw(low, cx, cy, cx + this.lowW, cy + this.lowH);
+    drawTorches(low, this.pixelFloor.torches, realTime);
+    if (world.bossClearing >= 0) drawClearingMark(low, world.map.clearings[world.bossClearing], realTime, this.view.reduceFlashing);
     drawFrostFields(low, world, realTime);
     drawPortals(low, world, realTime);
     drawCrystals(low, world);
@@ -590,6 +489,8 @@ export class Renderer {
     drawShots(low, world);
     drawParticles(low, world);
     if (gesture.active && gesture.target && showSnake) drawAim(low, world, gesture.target, realTime);
+    const arrows = this.arrows(world);
+    for (const a of arrows) drawEdgeArrow(low, a.x / P, a.y / P, a.a, a.p.color);
 
     // Upscale with crisp pixels; shake moves in whole art pixels.
     const f = this.pixelFactor;
@@ -600,15 +501,20 @@ export class Renderer {
     main.fillStyle = '#0a0614';
     main.fillRect(0, 0, this.canvas.width, this.canvas.height);
     main.imageSmoothingEnabled = false;
-    main.drawImage(this.low!, Math.round(this.devX + sx), Math.round(this.devY + sy), Math.round(LW * f), Math.round(LH * f));
+    main.drawImage(this.low!, Math.round(this.devX + sx), Math.round(this.devY + sy), Math.round(this.lowW * f), Math.round(this.lowH * f));
+    // Paint ahead into the chunks around the view with what's left of a small budget.
+    this.pixelFloor.prefetch(cx, cy, cx + this.lowW, cy + this.lowH, 3);
 
     // Text in the pixel font, at full resolution.
     main.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.drawWorldFloaters(world);
+    this.drawArrowLabels(arrows);
     this.drawBanner(world);
 
     // Screen-space pixel overlay: hurt flash and the sigil trail, above every game effect.
     this.drawPixelOverlay(world, gesture, realTime);
+    main.imageSmoothingEnabled = false;
+    this.drawMinimap(world);
     main.imageSmoothingEnabled = true;
     main.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.drawReading(gesture, world);
@@ -650,19 +556,24 @@ export class Renderer {
   private drawAmbient(world: World, t: number): void {
     const ctx = this.ctx;
     ctx.globalCompositeOperation = 'lighter';
-    for (const torch of this.torches) {
-      const f = 0.75 + Math.sin(t * 9 + torch.phase) * 0.12 + Math.sin(t * 23 + torch.phase * 2) * 0.08;
+    world.map.torches.forEach((torch, i) => {
+      if (!this.near(torch.x, torch.y, 40)) return;
+      const phase = i * 1.7;
+      const f = 0.75 + Math.sin(t * 9 + phase) * 0.12 + Math.sin(t * 23 + phase * 2) * 0.08;
       this.drawGlow('#ffb35c', torch.x, torch.y, 26 * f, 0.9);
       this.drawGlow('#fff0c0', torch.x, torch.y - 2, 8 * f, 0.9);
-    }
-    // Central circle pulses faintly, brighter when the boss is out.
+    });
+    // The plaza's summoning circle pulses faintly, brighter when the boss is out.
     const pulse = 0.12 + Math.sin(t * 1.3) * 0.05 + (world.boss ? 0.15 : 0);
     ctx.globalAlpha = pulse;
     ctx.strokeStyle = world.boss ? '#ff6a8a' : (AREA_STYLE[this.area] ?? AREA_STYLE[0]).ambient;
     ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(W / 2, H / 2, 210, 0, TAU);
-    ctx.stroke();
+    for (const l of world.map.landmarks) {
+      if (l.kind !== 'plaza' || !this.near(l.x, l.y, 220)) continue;
+      ctx.beginPath();
+      ctx.arc(l.x, l.y, 210, 0, TAU);
+      ctx.stroke();
+    }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -694,6 +605,7 @@ export class Renderer {
   private drawCrystals(world: World): void {
     const ctx = this.ctx;
     for (const c of world.crystals) {
+      if (!this.near(c.x, c.y, 30)) continue;
       const size = c.value >= 10 ? 9 : c.value >= 5 ? 7 : 5;
       const color = c.value >= 5 ? COLORS.xpBig : COLORS.xp;
       const bob = Math.sin(c.t * 4) * 1.5;
@@ -730,7 +642,8 @@ export class Renderer {
     const ctx = this.ctx;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(ARENA.wall, ARENA.wall, W - ARENA.wall * 2, H - ARENA.wall * 2);
+    const b = world.map.bounds;
+    ctx.rect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
     ctx.clip();
     this.drawTelegraphShapes(world);
     ctx.restore();
@@ -1572,6 +1485,7 @@ export class Renderer {
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineCap = 'round';
     for (const p of world.particles) {
+      if (!this.near(p.x, p.y, 40)) continue;
       const k = p.life / p.max;
       if (p.kind === 'glow') {
         this.drawGlow(p.color, p.x, p.y, p.size * (0.5 + k), k);
@@ -1692,7 +1606,7 @@ export class Renderer {
     const outT = clamp((b.max - b.t) / 0.5, 0, 1);
     const a = Math.min(inT, outT);
     const cx = this.cssW / 2;
-    const cy = this.oy + H * this.scale * 0.22;
+    const cy = this.oy + this.viewH * this.scale * 0.22;
     const size = clamp(this.scale * 44, 22, 52);
     ctx.globalAlpha = a;
     ctx.textAlign = 'center';
