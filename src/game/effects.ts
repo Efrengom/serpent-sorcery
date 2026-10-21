@@ -1,4 +1,4 @@
-import { EFFECTS, VIEW } from './config';
+import { EFFECTS, HIT_STOP, VIEW } from './config';
 import { TAU } from './math';
 import type { Floater, Particle, World } from './world';
 
@@ -70,6 +70,16 @@ export function floater(
 
 export function addShake(world: World, amount: number): void {
   world.shake = Math.min(1, world.shake + amount);
+}
+
+/**
+ * Freezes the simulation for a moment so a big hit lands. Small freezes are rationed so a busy
+ * fight doesn't stutter; major ones (getting hurt, the boss dying) always happen.
+ */
+export function hitStop(world: World, seconds: number, major = false): void {
+  if (!major && world.hitStopGap > 0) return;
+  world.hitStop = Math.max(world.hitStop, seconds);
+  world.hitStopGap = HIT_STOP.minGap;
 }
 
 export function updateEffects(world: World, dt: number): void {

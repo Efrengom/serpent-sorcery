@@ -199,9 +199,18 @@ export function updatePortals(world: World, dt: number): void {
 
 // ---------------------------------------------------------------- AI
 
-function fireShot(world: World, x: number, y: number, angle: number, speed: number, damage: number, r: number): void {
+function fireShot(
+  world: World,
+  source: EnemyKind,
+  x: number,
+  y: number,
+  angle: number,
+  speed: number,
+  damage: number,
+  r: number,
+): void {
   if (world.shots.length >= EFFECTS.maxEnemyShots) return;
-  world.shots.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r, damage, life: 6, spin: 0 });
+  world.shots.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r, damage, life: 6, spin: 0, source });
 }
 
 /** Where the player's head will be after `lead` seconds if it keeps going straight. */
@@ -257,7 +266,7 @@ function updateCaster(world: World, e: Enemy, dt: number): void {
     if (e.stateTime >= cfg.telegraph) {
       const ox = e.x + Math.cos(e.aim) * (e.r + 6);
       const oy = e.y + Math.sin(e.aim) * (e.r + 6);
-      fireShot(world, ox, oy, e.aim, cfg.shotSpeed, cfg.shotDamage * e.damageMult, cfg.shotRadius);
+      fireShot(world, 'caster', ox, oy, e.aim, cfg.shotSpeed, cfg.shotDamage * e.damageMult, cfg.shotRadius);
       world.sfx('enemyShot');
       setState(e, 'move');
       e.attackTimer = Math.max(1.4, (cfg.fireInterval * (0.85 + world.rng() * 0.3)) / (1 + world.time / 600));
@@ -403,13 +412,13 @@ function updateBoss(world: World, e: Enemy, dt: number): void {
           const n = e.enraged ? cfg.volleyCountEnraged : cfg.volleyCount;
           const off = world.rng() * TAU;
           for (let i = 0; i < n; i++) {
-            fireShot(world, e.x, e.y, off + (i / n) * TAU, cfg.volleySpeed, cfg.volleyDamage * e.damageMult, 9);
+            fireShot(world, 'boss', e.x, e.y, off + (i / n) * TAU, cfg.volleySpeed, cfg.volleyDamage * e.damageMult, 9);
           }
           const aimAt = Math.atan2(s.y - e.y, s.x - e.x);
           const spreadCount = e.enraged ? 5 : 3;
           for (let i = 0; i < spreadCount; i++) {
             const a = aimAt + (i - (spreadCount - 1) / 2) * 0.18;
-            fireShot(world, e.x, e.y, a, cfg.volleySpeed * 1.35, cfg.volleyDamage * e.damageMult, 9);
+            fireShot(world, 'boss', e.x, e.y, a, cfg.volleySpeed * 1.35, cfg.volleyDamage * e.damageMult, 9);
           }
           world.sfx('enemyShot');
           setState(e, 'move');

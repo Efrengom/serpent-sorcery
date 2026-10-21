@@ -1,8 +1,11 @@
-import { useEffect, useState, type ComponentProps } from 'react';
+import { useEffect, useState, type ComponentProps, type CSSProperties } from 'react';
+import { SPELLS, type SpellId } from '../game/config';
 import { formatTime } from '../game/math';
 import type { CommitOutcome, RunResult } from '../game/persistence';
 import type { UpgradeChoice } from '../game/progression';
+import { describeHurt, worstHurt, type RunRecap } from '../game/recap';
 import { Shard, UpgradeGlyph } from './art';
+import { SigilIcon, SPELL_UI } from './SigilIcon';
 import { VolumeControls } from './VolumeControls';
 
 /** Prevents a click that was already in flight from instantly choosing a card. */
@@ -112,6 +115,58 @@ export function PauseMenu({
   );
 }
 
+const SPELL_ORDER: SpellId[] = ['bolt', 'lightning', 'nova'];
+
+/** What ended the run, and how much each spell contributed. */
+function RunRecapView({ recap }: { recap: RunRecap }) {
+  const total = SPELL_ORDER.reduce((sum, id) => sum + recap.spells[id].damage, 0);
+  const worst = worstHurt(recap);
+  return (
+    <div className="recap">
+      <p className="recap-cause">
+        {recap.killedBy ? (
+          <>
+            Slain by <b>{describeHurt(recap.killedBy)}</b>
+          </>
+        ) : (
+          'You ended the run'
+        )}
+      </p>
+      <div className="recap-spells">
+        {SPELL_ORDER.map((id) => {
+          const s = recap.spells[id];
+          const style = {
+            '--spell': SPELL_UI[id].color,
+            '--share': `${total > 0 ? (s.damage / total) * 100 : 0}%`,
+          } as CSSProperties;
+          return (
+            <div key={id} className="recap-row" style={style}>
+              <SigilIcon spell={id} size={26} />
+              <span className="recap-name">
+                {SPELLS[id].name}
+                <span className="recap-sub">
+                  {s.kills} {s.kills === 1 ? 'kill' : 'kills'} · {s.casts} {s.casts === 1 ? 'cast' : 'casts'}
+                </span>
+              </span>
+              <span className="recap-bar">
+                <i />
+              </span>
+              <span className="recap-num" title="Damage dealt">
+                {Math.round(s.damage).toLocaleString()}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {worst && (
+        <p className="recap-taken">
+          Hurt most by {describeHurt(worst.key)} · {worst.amount} damage
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function GameOverPanel({
   result,
   outcome,
@@ -166,6 +221,7 @@ export function GameOverPanel({
             </div>
           )}
         </div>
+        {result.recap && <RunRecapView recap={result.recap} />}
         <div className="reward">
           <span className="reward-gain">
             +{result.reward} <Shard scale={4} />

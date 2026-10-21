@@ -9,6 +9,7 @@ import {
   type PlayerStats,
   type UpgradeLevels,
 } from './progression';
+import { emptyRecap, type RunRecap } from './recap';
 import { PathTrail, Snake } from './snake';
 
 export type SfxName =
@@ -99,6 +100,8 @@ export interface EnemyShot {
   damage: number;
   life: number;
   spin: number;
+  /** Who fired it, for the death recap. */
+  source: EnemyKind;
 }
 
 export interface Crystal {
@@ -120,6 +123,8 @@ export interface Nova {
   damage: number;
   t: number;
   duration: number;
+  /** Enemies this Nova has hit so far. */
+  hits: number;
 }
 
 export interface Arc {
@@ -201,6 +206,11 @@ export interface World {
   castFlash: Record<SpellId, number>;
   denyFlash: Record<SpellId, number>;
   shake: number;
+  /** Real seconds left of a hit-stop freeze, the gap before the next small one, and slow motion. */
+  hitStop: number;
+  hitStopGap: number;
+  slowMo: number;
+  recap: RunRecap;
   spawnAcc: number;
   nextBossTime: number;
   bossIndex: number;
@@ -246,6 +256,10 @@ export function createWorld(meta: MetaLevels, sfx: (name: SfxName) => void, seed
     castFlash: { bolt: 0, lightning: 0, nova: 0 },
     denyFlash: { bolt: 0, lightning: 0, nova: 0 },
     shake: 0,
+    hitStop: 0,
+    hitStopGap: 0,
+    slowMo: 0,
+    recap: emptyRecap(),
     spawnAcc: 0,
     nextBossTime: DIRECTOR.bossTime,
     bossIndex: 0,

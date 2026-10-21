@@ -25,6 +25,11 @@ export function App() {
     audio.setMusicVolume(save.settings.musicVolume);
   }, [save.settings.muted, save.settings.volume, save.settings.musicVolume]);
 
+  // Menus get the calm arrangement; during a run the game picks the music.
+  useEffect(() => {
+    if (screen !== 'game') audio.setMusicScene('calm');
+  }, [screen]);
+
   // Browsers only allow audio after a user gesture.
   useEffect(() => {
     const unlock = () => audio.unlock();

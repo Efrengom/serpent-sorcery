@@ -13,6 +13,7 @@ import {
   type MetaLevels,
   type RunSummary,
 } from './progression';
+import type { RunRecap } from './recap';
 
 export const SAVE_KEY = 'serpent-sorcery-save-v1';
 export const SAVE_VERSION = 1;
@@ -131,6 +132,8 @@ export function writeSave(save: SaveData, store: StorageLike | null = storage())
 export interface RunResult extends RunSummary {
   runId: string;
   reward: number;
+  /** Spell and damage statistics for the game-over screen; not saved. */
+  recap?: RunRecap;
 }
 
 export interface CommitOutcome {

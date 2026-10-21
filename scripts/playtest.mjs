@@ -3,7 +3,8 @@
 // Starts its own Vite dev server, drives a headless Edge/Chrome through the Chrome DevTools
 // Protocol (keys are genuinely held while the mouse draws many-point strokes), plays an
 // autopilot run, and checks the full loop: steering, drawing, aiming, cooldowns, pause/focus/
-// resize handling, level-ups, death, rewards, restart, the shop and save persistence.
+// resize handling, music and sound, the boss theme and hit-stop, level-ups, death and its
+// recap, rewards, restart, the shop and save persistence.
 //
 //   npm run playtest                       # ~5 minutes
 //   AUTOPILOT_SECONDS=60 npm run playtest  # shorter autopilot run
@@ -66,9 +67,9 @@ const browser = await puppeteer.launch({
   args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling'],
 });
 const page = await browser.newPage();
-const musicResponses = [];
+const sampleResponses = [];
 page.on('response', (r) => {
-  if (r.url().includes('pixel-kingdom')) musicResponses.push(r.status());
+  if (r.url().includes('/sfx/') && r.url().includes('.ogg')) sampleResponses.push(r.status());
 });
 page.on('pageerror', (e) => check('no page errors', false, { error: String(e) }));
 page.on('console', (m) => {
@@ -110,7 +111,13 @@ const state = () =>
       upgrades: { ...w.upgrades },
       cssW: r.cssW,
       overlay,
+      scene: window.__serpentAudio.musicScene,
     };
+  });
+const audioState = () =>
+  page.evaluate(() => {
+    const a = window.__serpentAudio;
+    return { scene: a.musicScene, theme: a.musicTheme, playing: a.musicPlaying, time: +a.musicTime.toFixed(2) };
   });
 const readSave = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k) || 'null'), SAVE_KEY);
 const screenToWorld = (p) => page.evaluate((p) => window.__serpent.renderer.screenToWorld(p), p);
@@ -202,7 +209,7 @@ try {
     check('simulation runs in real time', Math.abs(ratio - 1) < 0.15, { ratio: +ratio.toFixed(2) });
   }
 
-  // Background music: starts after the first key press, respects mute, ducks on pause, can be turned off.
+  // Music: starts after the first key press, respects mute, ducks on pause, can be turned off.
   {
     const music = () =>
       page.evaluate(() => {
@@ -212,7 +219,12 @@ try {
     const m0 = await music();
     await sleep(800);
     const m1 = await music();
-    check('music track loads', musicResponses.some((s) => s === 200 || s === 206 || s === 304), { statuses: musicResponses });
+    const samples = await page.evaluate(() => [window.__serpentAudio.samplesLoaded, window.__serpentAudio.samplesFailed]);
+    check('every sound effect sample loads and decodes', samples[0] === 44 && samples[1] === 0 && sampleResponses.every((s) => s === 200 || s === 304), {
+      loaded: samples[0],
+      failed: samples[1],
+      responses: sampleResponses.length,
+    });
     check('music plays after the first key press and advances', m0.playing && m1.time > m0.time, { m0, m1 });
     await page.keyboard.press('KeyM');
     await sleep(150);
@@ -452,6 +464,88 @@ try {
     await sleep(150);
   }
 
+  // ============================================================== Part A2: boss music, hit-stop
+  {
+    const a0 = await audioState();
+    check('run music plays the main theme', a0.theme === 'main' && /^run/.test(a0.scene) && a0.playing, a0);
+    // Make the snake untouchable (and unable to level up mid-test), then skip ahead to just
+    // before the boss warning. Part B starts a fresh run afterwards.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.invuln = 1e9;
+      w.xp = -1e6;
+      w.time = w.nextBossTime - 4.6;
+    });
+    await sleep(900);
+    const warn = await audioState();
+    check('music hushes when the boss warning sounds', warn.scene === 'warning' && warn.theme === 'main', warn);
+    let bossUp = false;
+    for (let i = 0; i < 48 && !bossUp; i++) {
+      await sleep(250);
+      bossUp = await page.evaluate(() => !!window.__serpent.debug().world.boss);
+    }
+    await sleep(800);
+    const fight = await audioState();
+    check('boss theme crossfades in when the boss appears', bossUp && fight.theme === 'boss' && /^boss/.test(fight.scene), { bossUp, fight });
+    await page.screenshot({ path: path.join(OUT, '07-boss-fight.png') });
+
+    // Clear the field, leave the boss on 1 HP and record sim time against real time.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.enemies = w.enemies.filter((e) => e.kind === 'boss');
+      w.portals = [];
+      w.boss.hp = 1;
+      window.__timeline = [];
+      const rec = () => {
+        window.__timeline.push([performance.now(), w.time, window.__serpent.getPhase()]);
+        if (window.__timeline.length < 1500) requestAnimationFrame(rec);
+      };
+      requestAnimationFrame(rec);
+    });
+    // Finish it with real bolt strokes aimed at any visible part of the boss.
+    let killed = false;
+    for (let i = 0; i < 10 && !killed; i++) {
+      const aim = await page.evaluate(() => {
+        const g = window.__serpent;
+        const b = g.debug().world.boss;
+        if (!b) return null;
+        const pts = [{ x: b.x, y: b.y }, ...b.segments].map((p) => g.renderer.worldToScreen(p));
+        return pts.find((p) => p.y > 110 && p.y < 600 && p.x > 30 && p.x < 1150) ?? null;
+      });
+      if (aim) await stroke(shapes.line(aim.x, aim.y, -0.3, 110), 130);
+      await sleep(650);
+      killed = await page.evaluate(() => window.__serpent.debug().world.bossKills > 0);
+    }
+    await sleep(2600);
+    const tl = await page.evaluate(() => window.__timeline);
+    // The longest stretch of real time during which the simulation clock stood still while playing.
+    let freeze = 0;
+    let freezeEndAt = 0;
+    let start = null;
+    for (let i = 1; i < tl.length; i++) {
+      if (tl[i][2] === 'playing' && tl[i][1] === tl[i - 1][1]) {
+        start ??= tl[i - 1][0];
+        if (tl[i][0] - start > freeze) {
+          freeze = tl[i][0] - start;
+          freezeEndAt = tl[i][0];
+        }
+      } else start = null;
+    }
+    const rate = (fromMs, toMs) => {
+      const a = tl.find((r) => r[0] >= freezeEndAt + fromMs);
+      const b = [...tl].reverse().find((r) => r[0] <= freezeEndAt + toMs);
+      return a && b && b[0] > a[0] ? +((b[1] - a[1]) / ((b[0] - a[0]) / 1000)).toFixed(2) : null;
+    };
+    const slow = rate(50, 850);
+    const after = rate(1400, 2200);
+    check('killing the boss freezes the action for a moment', killed && freeze >= 350 && freeze <= 700, { killed, freezeMs: Math.round(freeze) });
+    check('then plays out in slow motion before returning to full speed', slow !== null && slow < 0.5 && after !== null && after > 0.85, { slow, after });
+    const back = await audioState();
+    check('main theme returns after the boss falls', back.theme === 'main' && /^run/.test(back.scene), back);
+    const rec = await page.evaluate(() => window.__serpent.debug().world.recap.spells.bolt);
+    check('the recap credits the boss kill to Arcane Bolt', rec.kills >= 1 && rec.casts >= 1, rec);
+  }
+
   // ============================================================== Part B: autopilot run
   await page.evaluate(() => window.__serpent.restart());
   await sleep(200);
@@ -468,7 +562,7 @@ try {
       window.__lastCast = { text: added[0] ?? '(ignored)', boltsAdded: w.bolts.length - bolts, multibolt: w.upgrades.multibolt };
     };
   });
-  const log = { casts: { line: 0, vee: 0, circle: 0 }, outcomes: {}, levelUps: [], misfires: 0, picks: [], pickFailures: [], boltCountChecks: 0, boltCountFailures: [] };
+  const log = { casts: { line: 0, vee: 0, circle: 0 }, outcomes: {}, levelUps: [], misfires: 0, picks: [], pickFailures: [], boltCountChecks: 0, boltCountFailures: [], scenes: {} };
   const UPGRADE_BY_NAME = {
     'Arcane Potency': 'potency',
     'Split Bolt': 'multibolt',
@@ -491,6 +585,7 @@ try {
   const shots = { levelup: false, busy: false };
   while ((Date.now() - t0) / 1000 < AUTOPILOT_SECONDS) {
     s = await state();
+    if (s.phase === 'playing' && !(s.scene in log.scenes)) log.scenes[s.scene] = +s.t.toFixed(1);
     if (s.phase === 'levelup') {
       await setKeys(new Set());
       if (!shots.levelup) {
@@ -626,6 +721,10 @@ try {
     checked: log.boltCountChecks,
     failures: log.boltCountFailures.slice(0, 3),
   });
+  const climbed = log.scenes.run1 ?? log.scenes.run2;
+  check('autopilot: music adds layers as the arena fills', log.scenes.run0 !== undefined && climbed !== undefined && climbed > log.scenes.run0, {
+    scenes: log.scenes,
+  });
 
   // ============================================================== Death, reward, restart, persistence
   for (let i = 0; i < 160 && (await state()).phase !== 'gameover'; i++) await sleep(500);
@@ -634,6 +733,22 @@ try {
   const sv1 = await readSave();
   await page.screenshot({ path: path.join(OUT, '05-gameover.png') });
   check('death leads to the game-over screen with stats', s.phase === 'gameover' && /Run Over/.test(overText ?? ''), { overText });
+  {
+    const recap = await page.evaluate(() => {
+      const r = window.__serpent.debug().world.recap;
+      return {
+        killedBy: r.killedBy,
+        cause: document.querySelector('.recap-cause')?.textContent ?? '',
+        shown: [...document.querySelectorAll('.recap-num')].map((n) => n.textContent),
+        expected: ['bolt', 'lightning', 'nova'].map((id) => Math.round(r.spells[id].damage).toLocaleString()),
+        casts: ['bolt', 'lightning', 'nova'].map((id) => r.spells[id].casts),
+      };
+    });
+    check('game-over recap names the killing blow and shows each spell’s damage', !!recap.killedBy && /^Slain by /.test(recap.cause) &&
+      recap.shown.length === 3 && recap.shown.join() === recap.expected.join() && recap.casts.every((c) => c > 0), recap);
+    const calm = await audioState();
+    check('music settles to the calm arrangement on the game-over screen', calm.scene === 'calm' && calm.theme === 'main', calm);
+  }
   check('reward banked exactly once', sv1?.records.totalRuns === 1 && Number(/\+(\d+)/.exec(overText ?? '')?.[1]) === sv1?.currency, {
     currency: sv1?.currency,
     runs: sv1?.records.totalRuns,

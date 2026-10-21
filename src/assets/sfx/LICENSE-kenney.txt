@@ -1,0 +1,14 @@
+Sound effects in this folder come from four packs by Kenney (www.kenney.nl):
+
+  Impact Sounds (1.0)     https://kenney.nl/assets/impact-sounds
+  Sci-Fi Sounds (1.0)     https://kenney.nl/assets/sci-fi-sounds
+  Interface Sounds (1.0)  https://kenney.nl/assets/interface-sounds
+  RPG Audio (1.0)         https://kenney.nl/assets/rpg-audio
+
+License: Creative Commons Zero, CC0
+http://creativecommons.org/publicdomain/zero/1.0/
+
+"This content is free to use in personal, educational and commercial projects.
+Support us by crediting Kenney or www.kenney.nl (this is not mandatory)"
+
+The files are unmodified; the game picks between variants and changes their playback rate.

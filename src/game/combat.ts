@@ -1,7 +1,8 @@
-import { ENEMIES, PROGRESSION, SNAKE } from './config';
-import { addShake, burst, floater } from './effects';
+import { ENEMIES, HIT_STOP, PROGRESSION, SNAKE, type SpellId } from './config';
+import { addShake, burst, floater, hitStop } from './effects';
 import { dist2, TAU } from './math';
 import { COLORS } from './palette';
+import { hurtKey, type HurtSource } from './recap';
 import { PLAY_AREA } from './snake';
 import type { Crystal, Enemy, World } from './world';
 
@@ -31,6 +32,7 @@ export function damageEnemy(
   world: World,
   e: Enemy,
   amount: number,
+  spell: SpellId,
   color: string,
   knockX = 0,
   knockY = 0,
@@ -39,6 +41,9 @@ export function damageEnemy(
 ): void {
   if (e.dead) return;
   if (e.kind === 'brute' && e.state === 'recover') amount *= ENEMIES.brute.stunnedVulnerability;
+  const stats = world.recap.spells[spell];
+  stats.damage += Math.min(amount, Math.max(0, e.hp));
+  if (e.hp > 0 && e.hp - amount <= 0) stats.kills++;
   e.hp -= amount;
   e.flash = 0.12;
   const knockScale = e.kind === 'boss' ? 0.05 : e.kind === 'brute' ? 0.4 : e.kind === 'rival' ? 0.3 : 1;
@@ -71,9 +76,13 @@ export function killEnemy(world: World, e: Enemy): void {
     world.boss = null;
     world.banner = { text: 'The Archmage falls!', sub: 'Its hoard of crystals is yours', t: 0, max: 3.2, color: COLORS.nova };
     addShake(world, 0.8);
+    hitStop(world, HIT_STOP.bossKill, true);
+    world.slowMo = HIT_STOP.bossSlowMo;
     world.sfx('bossDie');
   } else {
-    addShake(world, e.kind === 'brute' || e.kind === 'rival' ? 0.12 : 0.04);
+    const heavy = e.kind === 'brute' || e.kind === 'rival';
+    addShake(world, heavy ? 0.12 : 0.04);
+    if (heavy) hitStop(world, HIT_STOP.heavyKill);
     world.sfx('kill');
   }
 }
@@ -109,13 +118,17 @@ function spawnCrystal(world: World, c: Crystal): void {
   best.value += c.value;
 }
 
-export function hurtPlayer(world: World, amount: number): boolean {
+export function hurtPlayer(world: World, amount: number, source: HurtSource): boolean {
   if (world.invuln > 0 || world.hp <= 0) return false;
   const dmg = Math.max(1, Math.round(amount));
+  const key = hurtKey(source);
+  world.recap.taken[key] = (world.recap.taken[key] ?? 0) + Math.min(dmg, world.hp);
   world.hp = Math.max(0, world.hp - dmg);
+  if (world.hp <= 0) world.recap.killedBy = key;
   world.invuln = SNAKE.invulnTime;
   world.hurtFlash = 1;
   addShake(world, 0.45);
+  hitStop(world, HIT_STOP.hurt, true);
   const s = world.snake;
   burst(world, s.x, s.y, COLORS.hurt, 16, 260, { size: 3.5, life: 0.45 });
   floater(world, s.x, s.y - 26, `-${dmg}`, COLORS.hurt, { size: 20, life: 0.8 });
@@ -185,7 +198,8 @@ export function updateShots(world: World, dt: number): void {
     } else {
       const rr = SNAKE.hitRadius + p.r * 0.75;
       if (dist2(p.x, p.y, s.x, s.y) < rr * rr) {
-        if (hurtPlayer(world, p.damage) || world.invuln > 0) {
+        const source: HurtSource = { kind: p.source, attack: p.source === 'boss' ? 'volley' : 'shot' };
+        if (hurtPlayer(world, p.damage, source) || world.invuln > 0) {
           burst(world, p.x, p.y, COLORS.hostile, 8, 160, { size: 3, life: 0.3 });
           remove = true;
         }
@@ -207,6 +221,12 @@ export function contactDamage(e: Enemy): number {
   return e.contact;
 }
 
+function contactSource(e: Enemy): HurtSource {
+  if (e.state === 'attack' && (e.kind === 'brute' || e.kind === 'boss')) return { kind: e.kind, attack: 'charge' };
+  if (e.state === 'attack' && e.kind === 'rival') return { kind: e.kind, attack: 'lunge' };
+  return { kind: e.kind, attack: 'bite' };
+}
+
 /** Enemy heads biting the player's head. Body segments are harmless ("only heads bite"). */
 export function updateContacts(world: World): void {
   const s = world.snake;
@@ -214,7 +234,7 @@ export function updateContacts(world: World): void {
     if (e.dead) continue;
     const rr = SNAKE.hitRadius + e.r * 0.8;
     if (dist2(e.x, e.y, s.x, s.y) < rr * rr) {
-      if (hurtPlayer(world, contactDamage(e))) {
+      if (hurtPlayer(world, contactDamage(e), contactSource(e))) {
         const d = Math.sqrt(dist2(e.x, e.y, s.x, s.y)) || 1;
         const push = e.kind === 'boss' ? 0 : 260;
         e.kx += ((e.x - s.x) / d) * push;

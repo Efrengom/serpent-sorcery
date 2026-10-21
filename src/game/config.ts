@@ -41,6 +41,24 @@ export const SIM = {
   dyingDuration: 1.4,
 };
 
+/** Brief freezes (seconds of real time) that make big hits land. */
+export const HIT_STOP = {
+  /** Taking damage. */
+  hurt: 0.07,
+  /** Killing a brute or rival snake. */
+  heavyKill: 0.05,
+  /** Lightning striking `bigChain` foes, or a Nova hitting `bigNova`. */
+  bigSpell: 0.045,
+  bigChain: 4,
+  bigNova: 6,
+  /** The boss dies: a longer freeze, then slow motion. */
+  bossKill: 0.45,
+  bossSlowMo: 1.1,
+  slowMoScale: 0.3,
+  /** Small freezes are at least this far apart so busy fights don't stutter. */
+  minGap: 0.35,
+};
+
 export const SNAKE = {
   speed: 190,
   /** Radians per second. U-turn takes roughly PI / turnRate seconds. */

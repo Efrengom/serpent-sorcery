@@ -1,11 +1,13 @@
 import { audio } from './audio';
-import { ARENA, ENEMIES, GESTURE, SIM, SPELLS, type SpellId } from './config';
+import { ARENA, ENEMIES, GESTURE, HIT_STOP, SIM, SPELLS, type SpellId } from './config';
 import { gainXp, hurtPlayer, updateContacts, updateCrystals, updateShots } from './combat';
 import { updateDirector, updateEnemies, updatePortals } from './enemies';
 import { burst, floater, updateEffects } from './effects';
 import { recognize, type Pt } from './gesture';
 import { InputManager } from './input';
 import { clamp, type Vec } from './math';
+import { arenaPressure, IntensityTracker } from './music/mood';
+import type { MusicScene } from './music/score';
 import { COLORS } from './palette';
 import type { RunResult } from './persistence';
 import {
@@ -69,6 +71,7 @@ export class Game {
   private finished = false;
   private destroyed = false;
   private runId = newRunId();
+  private intensity = new IntensityTracker();
   private readonly gesture: GestureView = { active: false, points: [], target: null, fade: null };
 
   constructor(
@@ -154,6 +157,7 @@ export class Game {
     this.meta = meta;
     this.world = this.makeWorld();
     this.runId = newRunId();
+    this.intensity = new IntensityTracker();
     this.finished = false;
     this.pendingLevelUps = 0;
     this.dyingTime = 0;
@@ -272,7 +276,17 @@ export class Game {
     this.realTime += dt;
 
     if (this.phase === 'playing' || this.phase === 'dying') {
-      const scale = this.phase === 'dying' ? SIM.dyingTimeScale : 1;
+      const w = this.world;
+      let scale = this.phase === 'dying' ? SIM.dyingTimeScale : 1;
+      // Hit-stop and slow motion run on real time, so they last the same at any frame rate.
+      w.hitStopGap = Math.max(0, w.hitStopGap - dt);
+      if (w.hitStop > 0) {
+        w.hitStop = Math.max(0, w.hitStop - dt);
+        scale = 0;
+      } else if (w.slowMo > 0) {
+        w.slowMo = Math.max(0, w.slowMo - dt);
+        scale *= HIT_STOP.slowMoScale;
+      }
       this.acc += dt * scale;
       let steps = 0;
       while (this.acc >= SIM.step && steps < SIM.maxSubSteps) {
@@ -280,9 +294,15 @@ export class Game {
         this.acc -= SIM.step;
         steps++;
         if (this.phase !== 'playing' && this.phase !== 'dying') break;
+        if (w.hitStop > 0) {
+          // A big hit just landed: freeze from this exact step.
+          this.acc = 0;
+          break;
+        }
       }
       if (steps >= SIM.maxSubSteps) this.acc = 0;
     }
+    this.updateMusic(dt);
 
     if (this.phase === 'dying') {
       this.dyingTime += dt;
@@ -365,7 +385,20 @@ export class Game {
     const w = this.world;
     const s = w.snake;
     burst(w, s.x, s.y, '#c9b8ff', 10, 200, { size: 3, life: 0.35 });
-    if (!hurtPlayer(w, ARENA.wallDamage)) audio.play('wall');
+    if (!hurtPlayer(w, ARENA.wallDamage, { kind: 'wall', attack: 'wall' })) audio.play('wall');
+  }
+
+  /** Picks the soundtrack arrangement: layered by danger, a hush before the boss, its theme during the fight. */
+  private updateMusic(dt: number): void {
+    const w = this.world;
+    if (this.phase === 'playing') this.intensity.update(arenaPressure(w), dt);
+    let scene: MusicScene;
+    if (this.phase === 'dying') scene = 'silent';
+    else if (this.phase === 'gameover') scene = 'calm';
+    else if (w.boss) scene = w.boss.enraged ? 'boss2' : 'boss1';
+    else if (w.bossWarned || w.portals.some((p) => p.kind === 'boss')) scene = 'warning';
+    else scene = (['run0', 'run1', 'run2'] as const)[this.intensity.level];
+    audio.setMusicScene(scene);
   }
 
   private die(): void {
@@ -385,7 +418,7 @@ export class Game {
     this.finished = true;
     const w = this.world;
     const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills };
-    const result: RunResult = { ...summary, runId: this.runId, reward: computeReward(summary) };
+    const result: RunResult = { ...summary, runId: this.runId, reward: computeReward(summary), recap: w.recap };
     this.setPhase('gameover');
     this.events.onGameOver(result);
   }

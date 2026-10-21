@@ -9,7 +9,7 @@ Requires Node 18+.
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # unit tests (recognizer, progression, persistence, movement)
+npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap)
 npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 npm run playtest   # ~5 min end-to-end play-test in a headless Edge/Chrome
@@ -25,7 +25,9 @@ On Windows PowerShell with script execution disabled, `npm` itself is blocked (`
 - drawing V, circle and line sigils *while* steering
 - aiming from the current head, cooldown feedback, rejected scribbles and clicks
 - Escape, focus loss and resize handling
-- an autopilot run with level-ups through death, the reward banked once, and an instant restart
+- every sound sample loading, music start/mute/duck/slider behavior
+- the boss warning hushing the music, the boss theme crossfading in, the freeze and slow motion when the boss dies, and the main theme returning
+- an autopilot run with level-ups through death, music layers building as the arena fills, the death recap, the reward banked once, and an instant restart
 - shop purchases and reload persistence
 - a 400-action random keyboard/mouse fuzz asserting that permanent upgrades only change through a "Learn" click
 
@@ -74,13 +76,34 @@ The tests in `src/game/__tests__/gesture*.test.ts` include a sweep of 300 random
 
 ## Music
 
-"Pixel Kingdom" (`src/assets/music/pixel-kingdom.mp3`) loops in the background in both art styles.
+The soundtrack is an original chiptune score, synthesized live with WebAudio (pulse-wave lead and arpeggio, triangle bass, noise drums), so it adds nothing to the download and reacts to the game:
+
+| When | What plays |
+| --- | --- |
+| Title, shop, game over | **Calm** arrangement of the main theme ("Sigil of the Serpent", D minor, 132 BPM): bass, arpeggio and melody |
+| Early in a run | Driving bass, arpeggio, melody and hi-hats |
+| The arena fills up | Drums join, then a harmony line, busier hats and snare fills. Driven by enemy load (heavier enemies count more), a slow build over the first two minutes and low health, with hysteresis so layers don't flicker |
+| Boss warning | Melody and drums drop out |
+| Boss fight | The **"Ouroboros"** theme (150 BPM, galloping bass) crossfades in on the beat; it adds harmony when the boss is enraged |
+| Boss defeated | Back to the main theme |
+| Death | Silence |
+
+Layer changes land on the next bar line, so they sound like part of the song.
 
 - **Starting:** browsers only allow audio after a user gesture, so it starts on your first click or key press.
 - **Pausing:** it plays quieter while the game is paused and stops while the tab is hidden.
-- **Volume:** the title screen and pause menu have **Music** and **Effects** sliders (0–100%, saved). Music at 0% turns the track off. Dragging Effects plays a short blip so you can hear the level.
+- **Volume:** the title screen and pause menu have **Music** and **Effects** sliders (0–100%, saved). Music at 0% turns it off. Dragging Effects plays a short blip so you can hear the level.
 - **Quick mute:** **M** or the speaker button in the HUD mutes everything without moving the sliders.
-- **Tuning:** the music's loudness at 100% is `MUSIC_MAX` in `src/game/audio.ts`, and the paused level is `MUSIC_DUCKED`.
+- **Where it lives:** the notes, chords and patterns are data in `src/game/music/score.ts`; the instruments are in `synth.ts`; `player.ts` schedules them and holds the layer balance (`LAYER_LEVEL`). The overall loudness at 100% is `MUSIC_MAX` in `src/game/audio.ts` (the default 55% matches the old "Pixel Kingdom" track's loudness), and the paused level is `MUSIC_DUCKED`.
+
+## Sound effects
+
+Effects are samples from Kenney's free CC0 packs (Impact, Sci-Fi, Interface and RPG sounds), in `src/assets/sfx/` with the license note. Frequent sounds pick between several variants with slightly randomized pitch, and crystal pickups climb a pentatonic scale while you keep collecting. Each effect's level was matched to the loudness of the synthesized effect it replaced. The synthesized versions remain as a fallback for browsers that can't decode Ogg Vorbis, and for the moment before the samples load. Layers, files and gains are in `src/game/sfx.ts`.
+
+## Game feel
+
+- **Hit-stop:** the action freezes for a few hundredths of a second when you get hurt, kill a brute or rival snake, chain lightning through 4+ foes or hit 6+ with one Nova. Killing the boss freezes for 0.45 s and then plays out in slow motion. Small freezes are rationed so a busy fight doesn't stutter. Timings are `HIT_STOP` in `config.ts`.
+- **Death recap:** the game-over screen names the blow that ended the run, shows each spell's damage (overkill not counted), kills and casts, and what hurt you most.
 
 ## Art styles
 
@@ -101,6 +124,7 @@ The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite raster
 
 - `SNAKE`: speed, turn rate, segment spacing and growth, health, invulnerability, pickup radius, aim fallback distance
 - `SPELLS`: damage, cooldowns and their minimums, speeds, chain counts and range, Nova radius
+- `HIT_STOP`: freeze lengths, what counts as a big hit, boss-kill slow motion
 - `ENEMIES`: per-type health, speed, damage, XP, telegraph timings, boss attack patterns
 - `DIRECTOR`: spawn rate curve, alive cap, enemy-type unlock times, boss timing, difficulty scaling over time
 - `PROGRESSION`: XP curve, passive survival XP, crystal cap
@@ -122,9 +146,12 @@ src/game/            framework-free game code (no React)
   combat.ts          damage, deaths, crystals, contacts, enemy shots
   progression.ts     XP curve, run upgrades, rewards, permanent upgrades
   persistence.ts     validated localStorage save, award-once commit
+  recap.ts           per-run spell and damage statistics for the game-over screen
   render.ts          Canvas 2D renderer (cached background, glow sprites)
-  effects.ts         capped particles, floating text, screen shake
-  audio.ts           synthesized WebAudio sound effects
+  effects.ts         capped particles, floating text, screen shake, hit-stop
+  audio.ts           WebAudio context, volumes, sample loading, music scheduling
+  sfx.ts             sound-effect samples and the synthesized fallback
+  music/             score (themes as data), synth instruments, player, intensity
 src/ui/              React screens, HUD and overlays
 ```
 

@@ -1,6 +1,6 @@
-import { EFFECTS, SNAKE, SPELLS, type SpellId } from './config';
+import { EFFECTS, HIT_STOP, SNAKE, SPELLS, type SpellId } from './config';
 import { damageEnemy, enemyDistance, enemyHitTest } from './combat';
-import { addShake, burst } from './effects';
+import { addShake, burst, hitStop } from './effects';
 import type { SigilKind } from './gesture';
 import { angleDiff, dist, dist2, TAU, type Vec } from './math';
 import { COLORS } from './palette';
@@ -32,6 +32,7 @@ export function aimAngle(head: { x: number; y: number; heading: number }, target
 export function castSpell(world: World, id: SpellId, target: Vec | null): void {
   const s = world.snake;
   const aim = aimAngle(s, target);
+  world.recap.spells[id].casts++;
   if (id === 'bolt') castBolt(world, aim);
   else if (id === 'lightning') castLightning(world, aim, target);
   else castNova(world);
@@ -117,7 +118,7 @@ function castLightning(world: World, aim: number, target: Vec | null): void {
     const ky = current.y - points[points.length - 2].y;
     const kl = Math.hypot(kx, ky) || 1;
     burst(world, current.x, current.y, COLORS.lightningCore, 6, 200, { kind: 'glow', size: 6, life: 0.25 });
-    damageEnemy(world, current, damage, COLORS.lightning, (kx / kl) * 120, (ky / kl) * 120);
+    damageEnemy(world, current, damage, 'lightning', COLORS.lightning, (kx / kl) * 120, (ky / kl) * 120);
     if (jumps >= world.stats.chains) break;
     jumps++;
     damage *= cfg.falloff;
@@ -136,6 +137,7 @@ function castLightning(world: World, aim: number, target: Vec | null): void {
   }
   world.arcs.push({ points, life: 0.34, maxLife: 0.34, seed: world.rng() * 1000, fizzle: false });
   addShake(world, 0.12);
+  if (struck.size >= HIT_STOP.bigChain) hitStop(world, HIT_STOP.bigSpell);
   world.sfx('lightning');
 }
 
@@ -151,6 +153,7 @@ function castNova(world: World): void {
     damage: cfg.damage * world.stats.damageMult * world.stats.novaDamageMult,
     t: 0,
     duration: cfg.expandTime,
+    hits: 0,
   });
   for (let i = 0; i < 24; i++) {
     const a = (i / 24) * TAU;
@@ -185,7 +188,7 @@ export function updateBolts(world: World, dt: number): void {
         if (enemyHitTest(e, b.x, b.y, b.r + 5)) {
           b.hit.push(e.id);
           const sp = Math.hypot(b.vx, b.vy) || 1;
-          damageEnemy(world, e, b.damage, COLORS.bolt, (b.vx / sp) * 160, (b.vy / sp) * 160, b.x, b.y);
+          damageEnemy(world, e, b.damage, 'bolt', COLORS.bolt, (b.vx / sp) * 160, (b.vy / sp) * 160, b.x, b.y);
           b.pierce--;
           if (b.pierce < 0) {
             remove = true;
@@ -215,7 +218,8 @@ export function updateNovas(world: World, dt: number): void {
           e.lastNovaId = n.id;
           const d = dist(n.x, n.y, e.x, e.y) || 1;
           const kb = SPELLS.nova.knockback;
-          damageEnemy(world, e, n.damage, COLORS.nova, ((e.x - n.x) / d) * kb, ((e.y - n.y) / d) * kb);
+          damageEnemy(world, e, n.damage, 'nova', COLORS.nova, ((e.x - n.x) / d) * kb, ((e.y - n.y) / d) * kb);
+          if (++n.hits === HIT_STOP.bigNova) hitStop(world, HIT_STOP.bigSpell);
         }
       }
       // The shockwave also dispels hostile projectiles it touches.
