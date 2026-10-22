@@ -75,7 +75,7 @@ describe('breakables on the Sunken Ruins', () => {
     e.elite = null;
     e.shield = 0;
     const hp = e.hp;
-    w.bolts.push({ x: 3200, y: 1900, vx: 0, vy: -SPELLS.bolt.speed, r: SPELLS.bolt.radius, damage: 5, pierce: 0, life: 1, hit: [] });
+    w.bolts.push({ x: 3200, y: 1900, vx: 0, vy: -SPELLS.bolt.speed, r: SPELLS.bolt.radius, damage: 5, pierce: 0, life: 1, hit: [], seek: false, bounces: 0 });
     for (let i = 0; i < 30; i++) updateBolts(w, DT);
     expect(w.breakables).toHaveLength(0);
     expect(e.hp).toBeLessThan(hp);

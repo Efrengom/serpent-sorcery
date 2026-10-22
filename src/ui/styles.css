@@ -603,6 +603,58 @@ kbd {
   border-color: rgba(255, 212, 94, 0.5);
 }
 
+/* The shop's two tabs, and the Grimoire's groups of unlocks. */
+.shop-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.shop-tabs .btn.on,
+.atlas-card .btn.on {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.grimoire {
+  width: 100%;
+  max-width: 1150px;
+}
+
+.grimoire-group .setup-head {
+  justify-content: center;
+}
+
+.grimoire-card .card-desc {
+  flex: 1;
+}
+
+/* Heat on the setup screen. */
+.heat {
+  margin-top: 18px;
+}
+
+.heat-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.heat-level {
+  min-width: 2ch;
+  font-family: var(--title-font);
+  font-weight: 900;
+  font-size: 1.6rem;
+  text-align: center;
+  color: #ff8a3c;
+}
+
+.heat-desc {
+  font-size: 0.85rem;
+  color: var(--ink-dim);
+  margin: 8px 0 0;
+}
+
 .card-glyph {
   font-size: 2rem;
   line-height: 1;
@@ -934,6 +986,113 @@ kbd {
   }
 }
 
+/* The ultimate: bottom centre, filling with charge, glowing when ready. */
+.ult-card {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 190px;
+  height: 52px;
+  padding: 0 16px 0 12px;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(20, 10, 38, 0.92);
+  color: var(--ink);
+  font: inherit;
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.ult-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--charge);
+  background: color-mix(in srgb, var(--ult) 22%, transparent);
+  transition: width 0.2s linear;
+}
+
+.ult-star {
+  position: relative;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--ult);
+  opacity: 0.55;
+}
+
+.ult-text {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+}
+
+.ult-name {
+  font-family: var(--title-font);
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.ult-state {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink-dim);
+}
+
+.ult-card.ready {
+  border-color: var(--ult);
+  box-shadow:
+    0 0 18px color-mix(in srgb, var(--ult) 55%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--ult) 25%, transparent);
+  animation: ult-ready 1.4s ease-in-out infinite;
+}
+
+.ult-card.ready .ult-star,
+.ult-card.active .ult-star {
+  opacity: 1;
+}
+
+.ult-card.active {
+  border-color: var(--ult);
+  background: color-mix(in srgb, var(--ult) 30%, rgba(20, 10, 38, 0.92));
+}
+
+@keyframes ult-ready {
+  50% {
+    box-shadow:
+      0 0 28px color-mix(in srgb, var(--ult) 75%, transparent),
+      inset 0 0 14px color-mix(in srgb, var(--ult) 35%, transparent);
+  }
+}
+
+.app.reduce-flash .ult-card.ready {
+  animation: none;
+}
+
+.app.pixel .ult-card {
+  border-radius: 0;
+  border-width: 2px;
+  box-shadow: 0 0 0 2px var(--px-ink);
+}
+
+.wizard-ult {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--gold);
+}
+
+.recap-ult {
+  width: 26px;
+  text-align: center;
+  font-size: 22px;
+  color: var(--gold);
+}
+
 .boss-bar {
   position: absolute;
   top: 84px;
@@ -1121,7 +1280,7 @@ kbd {
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(200px, 270px));
+  grid-template-columns: repeat(var(--cols, 3), minmax(180px, 270px));
   gap: 16px;
 }
 
@@ -2013,6 +2172,145 @@ kbd {
   box-shadow:
     inset 0 0 0 3px #ffd45e,
     0 5px 0 var(--px-ink);
+}
+
+/* Aspects take the spell's colour; duos are gold and violet; overcharge is a quieter steel. */
+.upgrade-card.aspect {
+  border: 2px solid var(--spell);
+  background: linear-gradient(180deg, rgba(30, 48, 96, 0.95), rgba(20, 12, 44, 0.97));
+}
+
+.upgrade-card.aspect .card-level {
+  color: var(--spell);
+}
+
+.upgrade-card.duo {
+  border: 2px solid var(--gold);
+  background: linear-gradient(160deg, rgba(110, 72, 20, 0.95), rgba(70, 30, 120, 0.97));
+  box-shadow: 0 0 30px rgba(200, 140, 255, 0.4);
+}
+
+.upgrade-card.duo .card-name,
+.upgrade-card.duo .card-level {
+  color: var(--gold);
+}
+
+.upgrade-card.overcharge {
+  border-color: rgba(160, 200, 255, 0.45);
+  background: linear-gradient(180deg, rgba(36, 44, 70, 0.95), rgba(18, 14, 34, 0.97));
+}
+
+.card-pair {
+  display: flex;
+  gap: 6px;
+}
+
+.app.pixel .upgrade-card.aspect {
+  background: #1c2a52;
+  box-shadow:
+    inset 0 0 0 3px var(--spell),
+    0 5px 0 var(--px-ink);
+}
+
+.app.pixel .upgrade-card.duo {
+  background: #43265a;
+  box-shadow:
+    inset 0 0 0 3px #ffd45e,
+    0 5px 0 var(--px-ink);
+}
+
+.app.pixel .upgrade-card.overcharge {
+  background: #222a44;
+}
+
+/* Relics: offered as cards in their own colour, carried as a row of small icons under the HUD bars. */
+.upgrade-card.relic {
+  border: 2px solid var(--spell);
+  background: linear-gradient(180deg, rgba(48, 30, 70, 0.96), rgba(16, 10, 30, 0.98));
+}
+
+.upgrade-card.relic .card-level {
+  color: var(--spell);
+}
+
+.app.pixel .upgrade-card.relic {
+  background: #2a1a40;
+  box-shadow:
+    inset 0 0 0 3px var(--spell),
+    0 5px 0 var(--px-ink);
+}
+
+.relic-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.relic-chip {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  pointer-events: auto;
+}
+
+.app.pixel .relic-chip {
+  border-radius: 0;
+}
+
+.relic-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-width: 460px;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--ink-dim);
+}
+
+.relic-list li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.relic-list b {
+  color: var(--ink);
+}
+
+.recap-relics {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 0 0;
+}
+
+/* Reroll, banish and skip under the cards; in banish mode the cards that can go are marked red. */
+.level-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.level-tools .btn.on {
+  border-color: #ff6a86;
+  color: #ffb3c2;
+}
+
+.cards.banishing .upgrade-card:not(:disabled) {
+  border-color: #ff6a86;
+  box-shadow: 0 0 24px rgba(255, 90, 120, 0.35);
+}
+
+.cards.banishing .upgrade-card:disabled {
+  opacity: 0.35;
 }
 
 /* ---------------------------------------------------------------- run setup: wizards and curses */

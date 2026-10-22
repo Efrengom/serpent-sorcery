@@ -80,11 +80,13 @@ describe('run upgrades', () => {
     }
   });
 
-  it('falls back to a heal when everything is maxed', () => {
+  it('falls back to endless overcharge when everything is maxed', () => {
     const up = emptyUpgradeLevels();
     for (const id of UPGRADE_IDS) up[id] = UPGRADES[id].maxLevel;
-    const choices = rollUpgradeChoices(up, emptyMetaLevels(), mulberry32(1));
-    expect(choices.map((c) => c.id)).toContain('restore');
+    // Every spell evolved too, and no duos known, so nothing else is left to offer.
+    const evolved = { bolt: true, lightning: true, nova: true };
+    const choices = rollUpgradeChoices(up, emptyMetaLevels(), mulberry32(1), 3, { known: ['bolt', 'lightning', 'nova'], evolved, level: 1, duoPool: [] });
+    expect(choices.map((c) => c.kind)).toEqual(['overcharge', 'overcharge', 'overcharge']);
   });
 
   it('meta upgrades raise starting stats', () => {
@@ -169,7 +171,7 @@ describe('rewards and persistence', () => {
     expect(weird.meta).toEqual({ health: 5, damage: 0, pickup: 1, wisdom: 0 });
     expect(weird.records.bestTime).toBe(0);
     expect(weird.records.totalRuns).toBe(3);
-    expect(weird.settings).toEqual({ muted: false, volume: 1, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [], ...defaultOptions() });
+    expect(weird.settings).toEqual({ muted: false, volume: 1, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [], heat: 0, startMap: 'ruins', ...defaultOptions() });
     // Unknown wizards and curses are dropped; duplicates collapse.
     const odd = parseSave(JSON.stringify({ settings: { wizard: 'lich', curses: ['glass', 'nope', 'glass', 3] }, records: { bossKills: -2 } }));
     expect(odd.settings.wizard).toBe('arcanist');

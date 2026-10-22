@@ -52,8 +52,10 @@ Screenshots and `results.json` go to `playtest-output/`. Set `PLAYTEST_BROWSER` 
 | **Esc** | Pause / resume (focus loss also pauses) |
 | **M** | Mute everything (volume sliders are on the title screen and pause menu) |
 | **P** | Switch art style (Classic / Pixel), even mid-run |
+| **Space** (or **Q**) | Cast your wizard's ultimate once it's charged (or click its card at the bottom of the screen) |
 | **Options** | Rebind every key above except Esc; see [Options](#options) |
-| **1 / 2 / 3** | Pick a level-up card |
+| **1 / 2 / 3 / 4** | Pick a level-up card (or a relic on the way down) |
+| **R / B / X** | On a level-up: reroll, banish a card, or skip it and heal |
 | **Enter** (title) | Play with the saved wizard and curses; **Wizard & Curses** changes them |
 | **R / Enter** | Play again from the game-over screen |
 
@@ -164,16 +166,59 @@ When a spell's own upgrade is maxed and its partner upgrade has 2 ranks, the nex
 | Arcane Ward | Warding Runes max + Shed Skin 2 | **Aegis**: lasts 4 s longer, and every blocked hit fires 8 bolts outward |
 | Frost Field | Deep Frost max + Crystal Magnetism 2 | **Glacier**: foes entering the field freeze solid for 1.2 s and take 40% more damage while chilled |
 
+## Level-ups: rerolls, aspects, duos and overcharge
+
+A level-up offers three cards (four with the Grimoire's Fourth Rune). Under them:
+
+- **Reroll** (R) draws a fresh offer. A run starts with 2.
+- **Banish** (B, then a card) takes that card out of the run for good, and a new one takes its place. A run starts with 1.
+- **Skip** (X) takes nothing and heals 10% of max health.
+
+From level 5, **aspects** join the offer: two for each spell that change how it behaves. A spell takes one, and the other leaves the pool.
+
+| Spell | Aspect | Aspect |
+| --- | --- | --- |
+| Arcane Bolt | **Ricochet**: a spent bolt bounces on to the nearest foe within 260, at 70% damage | **Seeker**: bolts curve toward foes ahead and fly 40% farther |
+| Forked Lightning | **Conductor**: no damage lost along the chain, and 40% longer jumps | **Overload**: struck foes are shocked for 3 s and take 20% more from everything |
+| Arcane Nova | **Implosion**: pulls foes in instead of pushing them out, 25% harder | **Shockwave**: double knockback, and a 0.8 s stun |
+| Arcane Ward | **Mirror**: shots that reach you while it's up bounce back as bolts, using no charge | **Sanctuary**: casting it heals 8%, and you regenerate 2 health a second while it lasts |
+| Frost Field | **Shatter**: foes dying in a field burst for 40% of their max health against neighbours | **Permafrost**: fields last twice as long and are 25% wider |
+
+When both spells of a pair have **evolved**, a **duo** card can appear: Stormlance (Bolt + Lightning: hits arc lightning), Rimeshot (Bolt + Frost: hits chill), Shatterstorm (Lightning + Frost: double damage to chilled foes), Thunderclap (Nova + Lightning: the ring calls lightning on 4 foes), Bulwark (Ward + Nova: every blocked hit releases a Nova) and Blizzard (Nova + Frost: each Nova leaves a field). Stormlance, Thunderclap and Blizzard are known from the start; the Grimoire teaches the rest.
+
+Once nothing else is left to offer, endless **overcharge** cards fill the offer: +6% spell damage, +12 max health (and a heal), or 3% shorter cooldowns (down to half).
+
+## Relics
+
+Stepping into the way down after a boss offers **three relics** to carry for the rest of the run; pick one, or leave them and heal 40%. One of the three is always the next map's own relic, which blunts its hazards: Stoneshaper's Charm (stone doesn't hurt), Thornhide (brambles, half from spores), Rimewalker (ice doesn't widen turns, half from icicles) and Emberwalk (lava and burning ground, half from eruptions). The others range from the Ouroboros Coil (+1% damage per 4 body segments), the Tail Sigil (the tail fires bolts) and Glass Fang (+40% damage, −25% health) to Sacrificial Scales (once per map a killing blow sheds a third of the body instead) and Hunter's Mark (elites and bosses take 25% more). Carried relics show as icons under the HUD bars, with their effects in the pause menu. Ten are known from the start; the Grimoire unlocks eight more.
+
+## The Grimoire, waystones and heat
+
+The **Permanent Upgrades** screen has a second tab, the **Grimoire**: one-time unlocks that add options rather than power. It sells the eight locked relics, three duos, extra rerolls and banishes, a fourth card at every level-up, a primed ultimate, and **waystones**. A waystone (once you've reached that map) lets a run start on the Hollows, the Catacombs or the Ember Depths, picked in the atlas on the setup screen. To catch up, the run first chooses a relic and drafts twelve level-ups for each map it skips, through the usual panel, with **Auto-pick the rest** to hurry.
+
+Reaching Depth 5 (the Ruins again) unlocks **heat**. Each heat level gives foes 12% more health, 6% more damage and 3% more elites, and the run 15% more shards. Reaching Depth 5 at a heat unlocks the next, up to 10. It's set on the setup screen.
+
 ## Wizards
 
-Chosen on the **Wizard & Curses** screen (reached from the title) and remembered between runs. Each has its own colours in both art styles.
+Chosen on the **Wizard & Curses** screen (reached from the title) and remembered between runs. Each has its own colours in both art styles, and its own **ultimate**.
 
-| Wizard | Starting sigils | Perks | Unlock |
-| --- | --- | --- | --- |
-| **Arcanist** | Line, V, Circle | Balanced | Always |
-| **Frostcoil** | Line, Zigzag, Circle | +20% Frost Field radius | Survive 3:00 |
-| **Wardscale** | Line, Triangle, V | +25 max health, the ward blocks one more hit | Reach level 10 |
-| **Stormtongue** | V, Line, Zigzag | +20% spell damage, lightning chains once more, −25 max health | Defeat Ouroboros |
+| Wizard | Starting sigils | Perks | Ultimate | Unlock |
+| --- | --- | --- | --- | --- |
+| **Arcanist** | Line, V, Circle | Balanced | Starfall | Always |
+| **Frostcoil** | Line, Zigzag, Circle | +20% Frost Field radius | Absolute Zero | Survive 3:00 |
+| **Wardscale** | Line, Triangle, V | +25 max health, the ward blocks one more hit | Bastion | Reach level 10 |
+| **Stormtongue** | V, Line, Zigzag | +20% spell damage, lightning chains once more, −25 max health | Maelstrom | Defeat Ouroboros |
+
+## Ultimates
+
+Each wizard has one, cast with **Space** (or Q, rebindable) or by clicking its card at the bottom of the screen. It recharges over 70–80 s (Quickened Runes and the Hourglass relic shorten that, down to 45 s), and a run starts with 30 s to go. Ultimates scale with spell damage, and non-boss foes also lose a share of their own max health, so they stay decisive at depth:
+
+| Ultimate | Effect |
+| --- | --- |
+| **Starfall** | For 3 s, 36 stars fall on foes in view (elites and the boss first), each bursting in a 75 radius |
+| **Absolute Zero** | Every foe in view freezes for 4 s (a boss slows to 40%) and takes a heavy blow; frozen foes take 50% more, and shots in view shatter |
+| **Bastion** | 6 s of immunity to everything, even stone; heals 35%, and foes touching the body are burned and shoved away |
+| **Maelstrom** | For 6 s a storm strikes a foe near the head every 0.2 s, chaining to 2 more |
 
 ## Curses
 
@@ -190,7 +235,7 @@ Optional handicaps toggled on the same screen. Each adds to the run's shard mult
 
 ## Depths and elites
 
-The run never ends on its own. Each Archmage defeated takes you one **depth** deeper (shown next to the kill count), onto the next map. Every depth adds 35% enemy health, 20% damage, 15% spawn rate and room for 12 more foes, and the boss keeps returning stronger.
+The run never ends on its own. Each Archmage defeated takes you one **depth** deeper (shown next to the kill count), onto the next map. Foes grow tougher with the time spent on the map you're on, not the run's length, and each depth adds a step: health ×(1 + 0.75·d + 0.1·d²) for d depths down, 25% more damage, 20% more spawns and room for 12 more foes each depth. So each map opens a little easier than the last one closed, and the boss keeps returning stronger.
 
 From Depth 2, spawns can be **elites** (10% at Depth 2, +5% per depth, up to 35%): bigger, 1.6× health, 2.5× experience, a crown marker and one modifier:
 
@@ -254,11 +299,13 @@ The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite raster
 - `HIT_STOP`: freeze lengths, what counts as a big hit, boss-kill slow motion
 - `SPELLS.ward`, `SPELLS.frost`: the new spells' cooldowns, duration, charges, slow, damage
 - `EVOLUTIONS`, `EVOLUTION_PARTNER_RANKS`: what each evolution needs and does
-- `DEPTH`, `ELITE`: per-depth scaling and elite chances and modifiers
+- `DEPTH`, `ELITE`, `HEAT`: per-depth scaling, elite chances and modifiers, and what each heat level adds
+- `ASPECTS`, `DUOS`, `OVERCHARGE`, `LEVEL_TOOLS`: each aspect's and duo's numbers, overcharge ranks, and the rerolls, banishes and skip heal a run starts with
+- `ULTIMATE`: how charged an ultimate starts and its cooldown floor (each ultimate's own numbers are in `src/game/ultimates.ts`, each relic's in `src/game/relics.ts`, and the Grimoire's prices in `src/game/grimoire.ts`)
 - `CLEAN_CAST`: per-sigil Perfect and Clean thresholds and their power bonus
 - `CONSTRICT`: loop closing distance, damage, hold, pull and cooldown
 - `ENEMIES`: per-type health, speed, damage, XP, telegraph timings, boss attack patterns
-- `DIRECTOR`: spawn rate curve, alive cap, enemy-type unlock times, boss timing, difficulty scaling over time
+- `DIRECTOR`: spawn rate curve, alive cap, enemy-type unlock times, boss timing, difficulty scaling over the time on each map
 - `PROGRESSION`: XP curve, passive survival XP, crystal cap
 - `REWARDS`: Arcane Shards per 10 s survived, per kill, per level and per boss
 - `BREAKABLES`, `PICKUPS`, `BUFFS`: urn and reliquary health, drops and refill times, heal sizes, and each buff's strength, length and drop weight
@@ -266,7 +313,7 @@ The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite raster
 - `BOSSES`, `METEORS`, `BOSS_MOVES`: each Archmage's name, banners, moves and summons, and their themed attacks; `ARCHETYPE`: which older foe each new one is built on
 - `ARENA`: damage and bounce from walls and every other solid; `CAMERA`: view size, look-ahead and easing; `NAV`: flow-field cells, the spawn ring, the off-screen attack margin, when stragglers are brought back, and how early the boss clearing is marked
 
-Each map's layout is in `src/game/maps/` (`ruins.ts`, `hollows.ts`, `catacombs.ts`, `ember.ts`), and their order in `maps/index.ts`. After changing foes or hazards, `npx vite-node scripts/balance.ts` has a bot play every map at the same depth and level and prints the damage taken per minute by kind (melee, shots, bursts, vents, lava, fire, brambles, stone), deaths, kills and the share of XP from breakables. Measured over six seeds (`npx vite-node scripts/balance.ts 240 6`), the last pass brought the four maps to 29–46 per minute, the Hollows the gentlest; it trimmed the Pyromancer's burning ground (2.5 s → 1.6 s), the Frost Archer's icicle (13 → 11 damage, 560 → 420 speed, a 0.9 s line) and the Puffcap's spores (10 → 7 damage, drifting 7 s).
+Each map's layout is in `src/game/maps/` (`ruins.ts`, `hollows.ts`, `catacombs.ts`, `ember.ts`), and their order in `maps/index.ts`. After changing foes or hazards, `npx vite-node scripts/balance.ts` has a bot play every map at the same depth and level and prints the damage taken per minute by kind (melee, shots, bursts, vents, lava, fire, brambles, stone), deaths, kills and the share of XP from breakables. With depth 0 it plays whole runs instead: from level 1, levelling as it goes, taking cards and relics at random and casting its ultimate, and going down a map when each boss is due (`npx vite-node scripts/balance.ts 0 6 0 6 max` for six seeds, six maps, the shop maxed; `none` for an empty shop). With the shop maxed, the last pass measured 28, 29, 68, 115, 87 and 96 damage a minute on the six maps, with no deaths until the Ember Depths. Measured over six seeds (`npx vite-node scripts/balance.ts 240 6`), the last pass brought the four maps to 29–46 per minute, the Hollows the gentlest; it trimmed the Pyromancer's burning ground (2.5 s → 1.6 s), the Frost Archer's icicle (13 → 11 damage, 560 → 420 speed, a 0.9 s line) and the Puffcap's spores (10 → 7 damage, drifting 7 s).
 
 Run upgrades (stack sizes and per-level effects), the level-up offer (when new sigils and evolutions appear) and permanent upgrades (costs and caps) are in **`src/game/progression.ts`**. Wizards are in **`src/game/wizards.ts`** and curses in **`src/game/curses.ts`**.
 
@@ -283,7 +330,11 @@ src/game/            framework-free game code (no React)
   nav.ts             the flow field foes follow to the serpent
   heap.ts, hash.ts   a min-heap for path searches; position-keyed randomness for seamless floors
   breakables.ts      urns and reliquaries, their drops, pickups, and buffs
-  descent.ts         the way down after a boss, and moving the run to the next map
+  descent.ts         the way down after a boss, its relic choice, and moving the run to the next map
+  levelup.ts         level-up offers, applying cards, reroll, banish and skip
+  relics.ts          the relics: their table, offers, and what each does as things happen
+  ultimates.ts       the four ultimates: casting, cooldown, and their effects each step
+  grimoire.ts        the Grimoire's unlocks, waystone starts and heat
   hazards.ts         lava, brambles, ice, burning trails, vents and telegraphed blasts
   hazardDraw.ts      the classic look of hazards, blasts and the way down
   telegraph.ts       what both renderers need to preview attacks: lanes, aim lines, blasts in flight
@@ -319,4 +370,4 @@ The animation loop and all fast-changing state live in `Game` outside React. Rea
 
 ## Saves
 
-Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, records (best time, level, kills, run count, lifetime bosses defeated, deepest depth, maps reached for the atlas, lifetime containers smashed), mute/volume, the chosen wizard and curses, and the options (shake, reduced flashing, safe warnings, minimap, steady camera, game speed, key bindings). Saved bindings are cleaned on load: unknown keys, duplicates and a stray Esc are dropped. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.
+Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, Grimoire unlocks, records (best time, level, kills, run count, lifetime bosses defeated, deepest depth, maps reached for the atlas, lifetime containers smashed, heat unlocked and cleared), mute/volume, the chosen wizard, curses, heat and start map, and the options (shake, reduced flashing, safe warnings, minimap, steady camera, game speed, key bindings). Saved bindings are cleaned on load: unknown keys, duplicates and a stray Esc are dropped. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.

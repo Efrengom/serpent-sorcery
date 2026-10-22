@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { audio } from '../game/audio';
-import { buyMeta, commitRunResult, loadSave, optionsOf, writeSave, type RunResult, type SaveData } from '../game/persistence';
+import { buyMeta, buyUnlock, commitRunResult, loadSave, optionsOf, writeSave, type RunResult, type SaveData } from '../game/persistence';
+import { grimoireSetup, playableHeat, startMaps, type UnlockId } from '../game/grimoire';
+import { MAP_ORDER } from '../game/maps';
+import type { MapId } from '../game/maps/types';
 import type { CurseId } from '../game/curses';
 import { bindingMap } from '../game/keys';
 import type { GameOptions } from '../game/options';
@@ -118,6 +121,25 @@ export function App() {
     }
   }, []);
 
+  const buyGrimoire = useCallback((id: UnlockId) => {
+    const next = buyUnlock(saveRef.current, id);
+    if (next) {
+      saveRef.current = next;
+      setSave(next);
+      audio.play('evolve');
+    }
+  }, []);
+
+  const setHeat = useCallback((heat: number) => {
+    setSave((s) => ({ ...s, settings: { ...s.settings, heat } }));
+    audio.play('select');
+  }, []);
+
+  const pickStart = useCallback((startMap: MapId) => {
+    setSave((s) => ({ ...s, settings: { ...s.settings, startMap } }));
+    audio.play('select');
+  }, []);
+
   const pickWizard = useCallback((wizard: WizardId) => {
     setSave((s) => ({ ...s, settings: { ...s.settings, wizard } }));
     audio.play('select');
@@ -132,10 +154,16 @@ export function App() {
     audio.play('select');
   }, []);
 
-  // A locked wizard (say, from an edited save) quietly falls back to the Arcanist.
+  // A locked wizard (say, from an edited save) quietly falls back to the Arcanist; likewise heat
+  // above what's unlocked, and a start map without its waystone.
+  const startMap = startMaps(save.grimoire).includes(save.settings.startMap) ? save.settings.startMap : MAP_ORDER[0];
+  const startDepth = MAP_ORDER.indexOf(startMap) + 1;
   const setup: RunSetup = {
     wizard: playableWizard(save.settings.wizard, save.records),
     curses: save.settings.curses,
+    grimoire: grimoireSetup(save.grimoire),
+    heat: playableHeat(save.settings.heat, save.records.heatUnlocked),
+    ...(startDepth > 1 ? { startDepth, waystone: true } : {}),
   };
 
   const pixel = save.settings.pixelArt;
@@ -171,12 +199,14 @@ export function App() {
       {screen === 'howto' && <HowToPlay onBack={toTitle} onPlay={play} onPractice={() => setScreen('practice')} safeWarnings={options.safeWarnings} />}
       {screen === 'options' && <OptionsScreen options={options} onChange={setOptions} onBack={toTitle} />}
       {screen === 'practice' && <PracticeScreen onBack={toTitle} onPlay={play} />}
-      {screen === 'shop' && <ShopScreen save={save} onBuy={buy} onBack={() => setScreen('title')} onPlay={play} />}
+      {screen === 'shop' && <ShopScreen save={save} onBuy={buy} onBuyUnlock={buyGrimoire} onBack={() => setScreen('title')} onPlay={play} />}
       {screen === 'setup' && (
         <SetupScreen
           save={save}
           onPickWizard={pickWizard}
           onToggleCurse={toggleCurse}
+          onSetHeat={setHeat}
+          onPickStart={pickStart}
           onBack={() => setScreen('title')}
           onPlay={play}
         />

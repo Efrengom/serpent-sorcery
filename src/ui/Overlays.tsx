@@ -1,12 +1,16 @@
 import { useCallback, useContext, useEffect, useState, type ComponentProps, type CSSProperties } from 'react';
-import { SPELL_IDS, SPELLS, type SpellId } from '../game/config';
+import { HEAT, SPELL_IDS, SPELLS, type SpellId } from '../game/config';
 import { MOVE_ACTIONS, primaryKeyLabel } from '../game/keys';
 import { formatTime } from '../game/math';
 import type { GameOptions } from '../game/options';
 import type { CommitOutcome, RunResult } from '../game/persistence';
-import type { UpgradeChoice } from '../game/progression';
+import type { LevelUpOffer, RelicOffer } from '../game/engine';
+import { MAPS } from '../game/maps';
+import { RELICS, type RelicId } from '../game/relics';
+import { ULTIMATES, ultimateFor } from '../game/ultimates';
+import { canBanish, type UpgradeChoice } from '../game/progression';
 import { describeHurt, worstHurt, type RunRecap } from '../game/recap';
-import { CoilIcon, Shard, UpgradeGlyph } from './art';
+import { CoilIcon, RelicIcon, Shard, UpgradeGlyph } from './art';
 import { BindingsContext, KeyHint, OptionsPanel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 import { VolumeControls } from './VolumeControls';
@@ -22,55 +26,98 @@ function useArmed(delayMs: number, key: unknown): boolean {
   return armed;
 }
 
+const DIGITS = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
+const NUMPAD = ['Numpad1', 'Numpad2', 'Numpad3', 'Numpad4'];
+
+/** The small line under a card's name saying what kind of card it is. */
+function cardKind(c: UpgradeChoice): string {
+  switch (c.kind) {
+    case 'restore':
+      return 'Bonus';
+    case 'learn':
+      return `New sigil · ${SPELL_UI[c.spell!].shape}`;
+    case 'evolve':
+      return 'Evolution';
+    case 'aspect':
+      return `Aspect of ${SPELLS[c.spell!].name}`;
+    case 'duo':
+      return 'Duo evolution';
+    case 'overcharge':
+      return `Overcharge · rank ${c.nextLevel}`;
+    default:
+      return c.nextLevel === 1 ? `New · max ${c.maxLevel}` : `Lv ${c.nextLevel - 1} → ${c.nextLevel} / ${c.maxLevel}`;
+  }
+}
+
 export function LevelUpPanel({
-  level,
-  choices,
+  offer,
   onChoose,
+  onReroll,
+  onBanish,
+  onSkip,
+  onAutoDraft,
 }: {
-  level: number;
-  choices: UpgradeChoice[];
+  offer: LevelUpOffer;
   onChoose(choice: UpgradeChoice): void;
+  onReroll(): void;
+  onBanish(choice: UpgradeChoice): void;
+  onSkip(): void;
+  onAutoDraft(): void;
 }) {
+  const { level, choices, rerolls, banishes, draft } = offer;
   const armed = useArmed(450, choices);
+  // Banish mode: the next card picked is banished instead of taken.
+  const [banishing, setBanishing] = useState(false);
+  useEffect(() => setBanishing(false), [choices]);
+  const pick = useCallback(
+    (c: UpgradeChoice) => {
+      if (!banishing) onChoose(c);
+      else if (canBanish(c)) onBanish(c);
+    },
+    [banishing, onChoose, onBanish],
+  );
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!armed) return;
-      const i = ['Digit1', 'Digit2', 'Digit3', 'Numpad1', 'Numpad2', 'Numpad3'].indexOf(e.code) % 3;
-      if (i >= 0 && choices[i]) onChoose(choices[i]);
+      if (!armed || e.repeat) return;
+      const i = Math.max(DIGITS.indexOf(e.code), NUMPAD.indexOf(e.code));
+      if (i >= 0 && choices[i]) pick(choices[i]);
+      else if (e.code === 'KeyR' && rerolls > 0) onReroll();
+      else if (e.code === 'KeyB' && banishes > 0) setBanishing((b) => !b);
+      else if (e.code === 'KeyX') onSkip();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [armed, choices, onChoose]);
+  }, [armed, choices, pick, rerolls, banishes, onReroll, onSkip]);
 
   return (
     <div className="overlay levelup">
       <div className="overlay-inner wide">
-        <p className="eyebrow">Your serpent grows longer</p>
+        <p className="eyebrow">{draft ? `Waystone draft · ${draft.n} of ${draft.total}` : 'Your serpent grows longer'}</p>
         <h2 className="overlay-title gold">Level {level}</h2>
-        <p className="overlay-sub">Choose a rune to inscribe</p>
-        <div className={`cards${armed ? ' armed' : ''}`}>
+        <p className="overlay-sub">{banishing ? 'Pick a card to banish for the rest of the run' : 'Choose a rune to inscribe'}</p>
+        <div className={`cards${armed ? ' armed' : ''}${banishing ? ' banishing' : ''}`} style={{ '--cols': choices.length } as CSSProperties}>
           {choices.map((c, i) => (
             <button
               key={`${c.id}-${i}`}
               className={`upgrade-card ${c.kind}`}
+              data-card={c.id}
               style={c.spell ? ({ '--spell': SPELL_UI[c.spell].color } as CSSProperties) : undefined}
-              disabled={!armed}
-              onClick={() => onChoose(c)}
+              disabled={!armed || (banishing && !canBanish(c))}
+              onClick={() => pick(c)}
             >
               <span className="card-key">{i + 1}</span>
-              {c.spell ? <SigilIcon spell={c.spell} size={48} /> : <UpgradeGlyph id={c.id} glyph={c.glyph} />}
+              {c.pair ? (
+                <span className="card-pair">
+                  <SigilIcon spell={c.pair[0]} size={40} />
+                  <SigilIcon spell={c.pair[1]} size={40} />
+                </span>
+              ) : c.spell ? (
+                <SigilIcon spell={c.spell} size={48} />
+              ) : (
+                <UpgradeGlyph id={c.id} glyph={c.glyph} />
+              )}
               <span className="card-name">{c.name}</span>
-              <span className="card-level">
-                {c.kind === 'restore'
-                  ? 'Bonus'
-                  : c.kind === 'learn'
-                    ? `New sigil · ${SPELL_UI[c.spell!].shape}`
-                    : c.kind === 'evolve'
-                      ? 'Evolution'
-                      : c.nextLevel === 1
-                        ? `New · max ${c.maxLevel}`
-                        : `Lv ${c.nextLevel - 1} → ${c.nextLevel} / ${c.maxLevel}`}
-              </span>
+              <span className="card-level">{cardKind(c)}</span>
               <span className="card-pips">
                 {c.kind === 'upgrade' &&
                   Array.from({ length: c.maxLevel }, (_, k) => (
@@ -81,13 +128,99 @@ export function LevelUpPanel({
             </button>
           ))}
         </div>
+        <div className="level-tools">
+          <button className="btn small" data-tool="reroll" disabled={!armed || rerolls <= 0} onClick={onReroll}>
+            Reroll · {rerolls} <kbd>R</kbd>
+          </button>
+          <button
+            className={`btn small${banishing ? ' on' : ''}`}
+            data-tool="banish"
+            aria-pressed={banishing}
+            disabled={!armed || banishes <= 0}
+            onClick={() => setBanishing((b) => !b)}
+          >
+            {banishing ? 'Cancel banish' : `Banish · ${banishes}`} <kbd>B</kbd>
+          </button>
+          <button className="btn small" data-tool="skip" disabled={!armed} onClick={onSkip}>
+            Skip · heal 10% <kbd>X</kbd>
+          </button>
+          {draft && (
+            <button className="btn small" data-tool="auto" disabled={!armed} onClick={onAutoDraft}>
+              Auto-pick the rest
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
+/** The threshold of the way down: one relic to carry deeper, or leave them and heal. */
+export function RelicPanel({ offer, onChoose }: { offer: RelicOffer; onChoose(relic: RelicId | null): void }) {
+  const { relics, nextMap, depth, draft } = offer;
+  const armed = useArmed(500, relics);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!armed || e.repeat) return;
+      const i = Math.max(DIGITS.indexOf(e.code), NUMPAD.indexOf(e.code));
+      if (i >= 0 && relics[i]) onChoose(relics[i]);
+      else if (e.code === 'KeyX') onChoose(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [armed, relics, onChoose]);
+  return (
+    <div className="overlay relic-offer">
+      <div className="overlay-inner wide">
+        <p className="eyebrow">{draft ? `Waystone · relic ${draft.n} of ${draft.total}` : 'On the threshold of the way down'}</p>
+        <h2 className="overlay-title gold">Choose a relic</h2>
+        <p className="overlay-sub">
+          Carry one {draft ? 'into' : 'to'} Depth {depth}: {nextMap}
+        </p>
+        <div className={`cards${armed ? ' armed' : ''}`} style={{ '--cols': relics.length } as CSSProperties}>
+          {relics.map((id, i) => {
+            const r = RELICS[id];
+            return (
+              <button key={id} className="upgrade-card relic" data-relic={id} style={{ '--spell': r.color } as CSSProperties} disabled={!armed} onClick={() => onChoose(id)}>
+                <span className="card-key">{i + 1}</span>
+                <RelicIcon id={id} size={52} />
+                <span className="card-name">{r.name}</span>
+                <span className="card-level">{r.map ? `Relic of the ${MAPS[r.map].name}` : 'Relic'}</span>
+                <span className="card-desc">{r.description}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="level-tools">
+          <button className="btn small" data-tool="leave" disabled={!armed} onClick={() => onChoose(null)}>
+            {draft ? 'Take none' : 'Leave them · heal 40%'} <kbd>X</kbd>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The relics a run carries, with what each does. */
+export function RelicList({ relics }: { relics: RelicId[] }) {
+  if (relics.length === 0) return null;
+  return (
+    <ul className="relic-list">
+      {relics.map((id) => (
+        <li key={id} data-relic={id}>
+          <RelicIcon id={id} size={22} />
+          <span>
+            <b>{RELICS[id].name}</b> {RELICS[id].description}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function PauseMenu({
   pixelArt,
+  relics,
   onResume,
   onEndRun,
   onToggleArt,
@@ -96,6 +229,7 @@ export function PauseMenu({
   volume,
 }: {
   pixelArt: boolean;
+  relics: RelicId[];
   onResume(): void;
   onEndRun(): void;
   onToggleArt(): void;
@@ -142,6 +276,7 @@ export function PauseMenu({
             End run &amp; bank shards
           </button>
         </div>
+        <RelicList relics={relics} />
         <ul className="mini-help">
           <li>
             <b>{steer}</b> steer — the serpent never stops
@@ -159,11 +294,12 @@ export function PauseMenu({
 }
 
 /** What ended the run, and how much each spell contributed. */
-function RunRecapView({ recap }: { recap: RunRecap }) {
+function RunRecapView({ recap, ultimate }: { recap: RunRecap; ultimate: string }) {
   // Damage from lava, vents and the like isn't yours, so it gets a line below rather than a row.
-  const used: (SpellId | 'constrict')[] = SPELL_IDS.filter((id) => recap.spells[id].casts > 0);
-  const rows: (SpellId | 'constrict')[] = used.length > 0 ? used : SPELL_IDS.slice(0, 3);
+  const used: (SpellId | 'constrict' | 'ultimate')[] = SPELL_IDS.filter((id) => recap.spells[id].casts > 0);
+  const rows: (SpellId | 'constrict' | 'ultimate')[] = used.length > 0 ? used : SPELL_IDS.slice(0, 3);
   if (recap.spells.constrict.casts > 0) rows.push('constrict');
+  if (recap.spells.ultimate?.casts > 0) rows.push('ultimate');
   const total = rows.reduce((sum, id) => sum + recap.spells[id].damage, 0);
   const worst = worstHurt(recap);
   const { perfect, clean, rough } = recap.casts;
@@ -193,6 +329,27 @@ function RunRecapView({ recap }: { recap: RunRecap }) {
         {rows.map((id) => {
           const s = recap.spells[id];
           const coil = id === 'constrict';
+          if (id === 'ultimate') {
+            return (
+              <div key={id} className="recap-row" style={{ '--spell': 'var(--gold)', '--share': `${total > 0 ? (s.damage / total) * 100 : 0}%` } as CSSProperties} data-source={id}>
+                <span className="recap-ult" aria-hidden="true">
+                  ✸
+                </span>
+                <span className="recap-name">
+                  {ultimate}
+                  <span className="recap-sub">
+                    {s.kills} {s.kills === 1 ? 'kill' : 'kills'} · {s.casts} {s.casts === 1 ? 'cast' : 'casts'}
+                  </span>
+                </span>
+                <span className="recap-bar">
+                  <i />
+                </span>
+                <span className="recap-num" title="Damage dealt">
+                  {Math.round(s.damage).toLocaleString()}
+                </span>
+              </div>
+            );
+          }
           const style = {
             '--spell': coil ? 'var(--coil)' : SPELL_UI[id].color,
             '--share': `${total > 0 ? (s.damage / total) * 100 : 0}%`,
@@ -286,13 +443,23 @@ export function GameOverPanel({
             </div>
           )}
         </div>
-        {result.recap && <RunRecapView recap={result.recap} />}
+        {result.recap && <RunRecapView recap={result.recap} ultimate={ULTIMATES[ultimateFor(result.wizard ?? 'arcanist')].name} />}
+        {result.relics && result.relics.length > 0 && (
+          <p className="recap-relics" title="Relics carried">
+            {result.relics.map((id) => (
+              <span key={id} title={RELICS[id].name}>
+                <RelicIcon id={id} size={20} />
+              </span>
+            ))}
+          </p>
+        )}
         <div className="reward">
           <span className="reward-gain">
             +{result.reward} <Shard scale={4} />
           </span>
           <span className="reward-total">
-            Arcane Shards{(result.shardMult ?? 1) > 1 && ` · ×${result.shardMult!.toFixed(2)} from curses`} · {totalCurrency} total
+            Arcane Shards{(result.shardMult ?? 1) > 1 && ` · ×${result.shardMult!.toFixed(2)} from curses`}
+            {(result.heat ?? 0) > 0 && ` · ×${(1 + HEAT.shards * result.heat!).toFixed(2)} from heat ${result.heat}`} · {totalCurrency} total
             {result.gameSpeed && ` · played at ${Math.round(result.gameSpeed * 100)}% speed`}
           </span>
         </div>

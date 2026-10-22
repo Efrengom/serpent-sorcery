@@ -35,8 +35,8 @@ export interface SpellRecap {
   kills: number;
 }
 
-/** Everything that can damage a foe: the five spells, and Constrict. */
-export type DamageSource = SpellId | 'constrict' | 'hazard';
+/** Everything that can damage a foe: the five spells, Constrict, the ultimate, and hazards. */
+export type DamageSource = SpellId | 'constrict' | 'hazard' | 'ultimate';
 
 /** Per-run statistics shown on the game-over screen. */
 export interface RunRecap {
@@ -65,7 +65,7 @@ export interface RunRecap {
 export function emptyRecap(): RunRecap {
   const spell = (): SpellRecap => ({ casts: 0, damage: 0, kills: 0 });
   return {
-    spells: { bolt: spell(), lightning: spell(), nova: spell(), ward: spell(), frost: spell(), constrict: spell(), hazard: spell() },
+    spells: { bolt: spell(), lightning: spell(), nova: spell(), ward: spell(), frost: spell(), constrict: spell(), hazard: spell(), ultimate: spell() },
     casts: { perfect: 0, clean: 0, rough: 0 },
     taken: {},
     killedBy: null,

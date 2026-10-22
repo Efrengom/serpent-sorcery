@@ -4,6 +4,7 @@ import { bindingMap, DEFAULT_BINDINGS, RESERVED_KEY, type KeyAction, type KeyBin
 
 export interface InputCallbacks {
   onPause(): void;
+  onUltimate(): void;
   onToggleMute(): void;
   onToggleArt(): void;
   /** Return false to refuse the gesture (e.g. while paused). */
@@ -123,10 +124,11 @@ export class InputManager {
     this.cb.onUserGesture();
     const action = e.code === RESERVED_KEY ? 'pause' : this.keys.get(e.code);
     if (!action) return;
-    if (action === 'pause' || action === 'mute' || action === 'art') {
+    if (action === 'pause' || action === 'mute' || action === 'art' || action === 'ultimate') {
       if (!e.repeat) {
         if (action === 'pause') this.cb.onPause();
         else if (action === 'mute') this.cb.onToggleMute();
+        else if (action === 'ultimate') this.cb.onUltimate();
         else this.cb.onToggleArt();
       }
       e.preventDefault();

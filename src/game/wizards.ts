@@ -1,5 +1,6 @@
 import type { SpellId } from './config';
 import type { RunMods } from './progression';
+import type { UltimateId } from './ultimates';
 
 export type WizardId = 'arcanist' | 'frostcoil' | 'wardscale' | 'stormtongue';
 export const WIZARD_IDS: WizardId[] = ['arcanist', 'frostcoil', 'wardscale', 'stormtongue'];
@@ -30,6 +31,8 @@ export interface WizardDef {
   title: string;
   /** The three sigils known at the start of a run; the others can be learned at level-up. */
   spells: SpellId[];
+  /** The wizard's own ultimate (U1). */
+  ultimate: UltimateId;
   perks: string[];
   mods: Partial<RunMods>;
   look: WizardLook;
@@ -44,6 +47,7 @@ export const WIZARDS: Record<WizardId, WizardDef> = {
     name: 'Arcanist',
     title: 'Balanced sorcerer',
     spells: ['bolt', 'lightning', 'nova'],
+    ultimate: 'starfall',
     perks: ['The classic trio of sigils', 'No weaknesses'],
     mods: {},
     look: {
@@ -66,6 +70,7 @@ export const WIZARDS: Record<WizardId, WizardDef> = {
     name: 'Frostcoil',
     title: 'Patient hunter of the cold',
     spells: ['bolt', 'frost', 'nova'],
+    ultimate: 'absoluteZero',
     perks: ['Starts with Frost Field instead of Lightning', '+20% Frost Field radius'],
     mods: { frostRadiusMult: 1.2 },
     look: {
@@ -92,6 +97,7 @@ export const WIZARDS: Record<WizardId, WizardDef> = {
     name: 'Wardscale',
     title: 'Armoured warden',
     spells: ['bolt', 'ward', 'lightning'],
+    ultimate: 'bastion',
     perks: ['Starts with Arcane Ward instead of Nova', '+25 max health', 'Ward blocks one extra hit'],
     mods: { maxHp: 25, wardCharges: 1 },
     look: {
@@ -118,6 +124,7 @@ export const WIZARDS: Record<WizardId, WizardDef> = {
     name: 'Stormtongue',
     title: 'Reckless tempest',
     spells: ['lightning', 'bolt', 'frost'],
+    ultimate: 'maelstrom',
     perks: ['Lightning, Bolt and Frost Field', '+20% spell damage, lightning chains once more', '−25 max health'],
     mods: { damageMult: 1.2, chains: 1, maxHp: -25 },
     look: {

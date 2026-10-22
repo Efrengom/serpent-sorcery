@@ -6,6 +6,7 @@ import { pixelFloorPicture } from '../game/pixel/floor';
 import { PX } from '../game/pixel/palette';
 import { segmentFill, segmentOutline, wizardHead } from '../game/pixel/sprites';
 import { blit } from '../game/pixel/bake';
+import { RELICS, type RelicId } from '../game/relics';
 import { WIZARDS, type WizardId } from '../game/wizards';
 
 /** True when the pixel-art style is active; menus and HUD switch their art from this. */
@@ -129,6 +130,9 @@ const UPGRADE_ICON: Record<string, IconName> = {
   wardRunes: 'triangle',
   deepFrost: 'snowflake',
   restore: 'potion',
+  'over-power': 'star',
+  'over-vigor': 'heart',
+  'over-focus': 'hourglass',
   // permanent upgrades
   health: 'heart',
   damage: 'star',
@@ -141,6 +145,16 @@ export function UpgradeGlyph({ id, glyph }: { id: string; glyph: string }) {
   const pixel = usePixelArt();
   if (pixel && UPGRADE_ICON[id]) return <PixelIcon name={UPGRADE_ICON[id]} scale={4} className="card-glyph-px" />;
   return <span className="card-glyph">{glyph}</span>;
+}
+
+/** A relic's icon in its own colour (the same shape in both art styles). */
+export function RelicIcon({ id, size = 24 }: { id: RelicId; size?: number }) {
+  const r = RELICS[id];
+  return (
+    <svg className="relic-icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ color: r.color }}>
+      <path d={r.icon} fill="currentColor" fillRule="evenodd" />
+    </svg>
+  );
 }
 
 /** A serpent coiled around a foe, for Constrict. */

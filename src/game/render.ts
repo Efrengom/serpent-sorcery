@@ -20,6 +20,7 @@ import {
   drawBreakables,
   drawPickups,
   drawArcs,
+  drawUltimatePixel,
   drawBeams,
   drawBolts,
   drawClearingMark,
@@ -48,6 +49,7 @@ import {
 } from './pixel/draw';
 import { PixelFloor } from './pixel/floor';
 import { SPELL_COLORS, spellName } from './spells';
+import { stormAngle, ULTIMATES } from './ultimates';
 import { WIZARDS } from './wizards';
 import type { Breakable, Enemy, EnemyShot, GestureView, World } from './world';
 
@@ -368,6 +370,7 @@ export class Renderer {
     this.drawBolts(world);
     this.drawBeams(world);
     this.drawArcs(world, realTime);
+    this.drawUltimate(world, realTime);
     this.drawShots(world);
     drawBlastsInFlight(ctx, world, near, glow);
     this.drawParticles(world);
@@ -558,6 +561,7 @@ export class Renderer {
     drawBolts(low, world);
     drawBeams(low, world);
     drawArcs(low, world, realTime, quiet);
+    drawUltimatePixel(low, world, realTime, quiet);
     drawShots(low, world);
     drawBlastsInFlightPixel(low, world);
     drawParticles(low, world);
@@ -2893,6 +2897,78 @@ export class Renderer {
   }
 
   /** Arcane Ward: a glowing ring with a turning triangle; one bright pip per remaining charge. */
+  /** The ultimates: cast waves, Bastion's golden body, Maelstrom's storm, and Starfall's stars with their landing marks. */
+  private drawUltimate(world: World, t: number): void {
+    const ctx = this.ctx;
+    const quiet = this.view.reduceFlashing;
+    for (const r of world.ultRings) {
+      const k = r.t / r.life;
+      ctx.strokeStyle = hexAlpha(r.color, (1 - k) * (quiet ? 0.3 : 0.65));
+      ctx.lineWidth = 2 + 8 * (1 - k);
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, r.r * (1 - (1 - k) * (1 - k)), 0, TAU);
+      ctx.stroke();
+    }
+    const u = world.ult;
+    const s = world.snake;
+    if (u.active > 0 && u.id === 'bastion') {
+      const fade = Math.min(1, u.active / 0.8);
+      const pulse = quiet ? 0.55 : 0.5 + 0.25 * Math.sin(t * 9);
+      ctx.globalCompositeOperation = 'lighter';
+      this.drawGlow(ULTIMATES.bastion.color, s.x, s.y, SNAKE.headRadius * 3.2, pulse * fade);
+      for (let i = 0; i < s.segments.length; i += 2) this.drawGlow(ULTIMATES.bastion.color, s.segments[i].x, s.segments[i].y, 32, 0.45 * pulse * fade);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    if (u.active > 0 && u.id === 'maelstrom') {
+      const R = ULTIMATES.maelstrom.radius;
+      const fade = Math.min(1, u.active / 0.8, u.t / 0.3);
+      const spin = stormAngle(t);
+      ctx.strokeStyle = hexAlpha(ULTIMATES.maelstrom.color, 0.4 * fade);
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 7; i++) {
+        const a = spin + (i / 7) * TAU;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, R * (0.9 + 0.07 * Math.sin(t * 3 + i)), a, a + 0.55);
+        ctx.stroke();
+      }
+      ctx.globalCompositeOperation = 'lighter';
+      this.drawGlow('#6a8cff', s.x, s.y, R * 0.6, 0.12 * fade);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    const gold = ULTIMATES.starfall.color;
+    for (const st of world.stars) {
+      const k = Math.min(1, st.t / st.fall);
+      ctx.strokeStyle = hexAlpha(gold, 0.25 + 0.5 * k);
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.arc(st.x, st.y, st.r * (1.3 - 0.3 * k), 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // The star itself, falling in on a slant from high above.
+      const x = st.x + 160 * (1 - k);
+      const y = st.y - 520 * (1 - k);
+      ctx.strokeStyle = hexAlpha('#fff3c4', 0.55);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x + 48, y - 156);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.globalCompositeOperation = 'lighter';
+      this.drawGlow(gold, x, y, 26, 0.9);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#fffbe8';
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (i / 10) * TAU;
+        const rr = i % 2 === 0 ? 10 : 4;
+        if (i === 0) ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+        else ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+      }
+      ctx.fill();
+    }
+  }
+
   private drawWard(world: World, t: number): void {
     const w = world.ward;
     if (!w) return;

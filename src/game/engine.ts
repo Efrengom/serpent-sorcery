@@ -2,10 +2,10 @@ import { audio } from './audio';
 import { buffDuration, TIMED_BUFFS, updateBreakables, updateBuffs, updatePickups } from './breakables';
 import { clampCamera, updateCamera } from './camera';
 import { castPower, castTier, tierBonusLabel } from './cast';
-import { ARENA, BOSSES, BUFFS, CLEAN_CAST, HAZARDS, EVOLUTIONS, GESTURE, HIT_STOP, SIM, SPELL_IDS, SPELL_INFO, SPELLS, type SpellId } from './config';
+import { ARENA, ASPECTS, BOSSES, BUFFS, CLEAN_CAST, DUOS, HAZARDS, EVOLUTIONS, GESTURE, HIT_STOP, SIM, SPELL_IDS, SPELL_INFO, SPELLS, type SpellId } from './config';
 import { updateConstrict } from './constrict';
 import { gainXp, hurtPlayer, updateContacts, updateCrystals, updateShots } from './combat';
-import { updateDescent } from './descent';
+import { leaveForNextMap, updateDescent } from './descent';
 import { updateDirector, updateEnemies, updatePortals } from './enemies';
 import { onIce, updateHazards } from './hazards';
 import { burst, floater, updateEffects } from './effects';
@@ -17,12 +17,9 @@ import { arenaPressure, IntensityTracker } from './music/mood';
 import type { MusicScene } from './music/score';
 import { COLORS } from './palette';
 import type { RunResult } from './persistence';
+import { applyChoice, banishFromOffer, rerollOffer, rollOffer, skipLevelUp } from './levelup';
 import {
-  applyUpgrade,
   computeReward,
-  computeStats,
-  RESTORE_HEAL,
-  rollUpgradeChoices,
   segmentsForLevel,
   spellCooldown,
   survivalXpRate,
@@ -30,12 +27,16 @@ import {
   type MetaLevels,
   type UpgradeChoice,
 } from './progression';
+import { mapForIndex } from './maps';
 import type { SolidName } from './maps/types';
 import { Renderer } from './render';
+import { afterSigil, hasRelic, offerRelics, takeRelic, updateRelics, type RelicId } from './relics';
 import { shardMultiplier } from './curses';
 import {
   castSpell,
+  regenPerSecond,
   SIGIL_TO_SPELL,
+  spawnBolt,
   tickCooldowns,
   SPELL_COLORS,
   spellName,
@@ -46,9 +47,10 @@ import {
   updateNovas,
   updateWard,
 } from './spells';
-import { createWorld, DEFAULT_SETUP, type GestureView, type RunSetup, type SigilReading, type TimedBuff, type World } from './world';
+import { castUltimate, ULTIMATES, ultimateCooldown, updateUltimate } from './ultimates';
+import { createWorld, DEFAULT_SETUP, refreshStats, type GestureView, type RunSetup, type SigilReading, type TimedBuff, type World } from './world';
 
-export type Phase = 'playing' | 'paused' | 'levelup' | 'dying' | 'gameover';
+export type Phase = 'playing' | 'paused' | 'levelup' | 'relic' | 'dying' | 'gameover';
 
 export interface HudSnapshot {
   hp: number;
@@ -70,11 +72,36 @@ export interface HudSnapshot {
   bossIncoming: number | null;
   /** Timed buffs running now, with seconds left out of their full length. */
   buffs: { id: TimedBuff; left: number; total: number }[];
+  /** Relics carried, in the order they were taken. */
+  relics: RelicId[];
+  /** The wizard's ultimate: its name, colour, cooldown and whether it's running. */
+  ultimate: { name: string; color: string; remaining: number; total: number; active: number; flash: number };
+}
+
+/** The relics on the threshold of the way down (or at a waystone start), and where it leads. */
+export interface RelicOffer {
+  relics: RelicId[];
+  nextMap: string;
+  depth: number;
+  /** A waystone start's catch-up: which of its relic choices this is. */
+  draft: { n: number; total: number } | null;
+}
+
+/** A level-up's cards, and the tools left for an offer you don't like. */
+export interface LevelUpOffer {
+  level: number;
+  choices: UpgradeChoice[];
+  rerolls: number;
+  banishes: number;
+  /** A waystone start's catch-up draft: which of its level-ups this is. */
+  draft: { n: number; total: number } | null;
 }
 
 export interface GameEvents {
   onPhase(phase: Phase): void;
-  onLevelUp(level: number, choices: UpgradeChoice[]): void;
+  onLevelUp(offer: LevelUpOffer): void;
+  /** The way down offers relics; answer with chooseRelic. */
+  onRelicOffer(offer: RelicOffer): void;
   onGameOver(result: RunResult): void;
   onHud(hud: HudSnapshot): void;
   onToggleMute(): void;
@@ -97,6 +124,12 @@ export class Game {
   private hudTimer = 0;
   private dyingTime = 0;
   private pendingLevelUps = 0;
+  /** The level-up offer on screen, and the level it's for. */
+  private offer: UpgradeChoice[] = [];
+  private offerLevel = 1;
+  /** A waystone start's catch-up in progress: relic choices made so far, and level-ups drafted in all. */
+  private draftRelics = { n: 0, total: 0 };
+  private draftLevels = 0;
   private finished = false;
   private destroyed = false;
   private runId = newRunId();
@@ -118,6 +151,7 @@ export class Game {
     this.renderer = new Renderer(canvas, pixelArt);
     this.input = new InputManager(canvas, {
       onPause: () => this.togglePause(),
+      onUltimate: () => this.castUltimate(),
       onToggleMute: () => this.events.onToggleMute(),
       onToggleArt: () => this.events.onToggleArt(),
       onGestureStart: (p) => this.beginGesture(p),
@@ -160,6 +194,70 @@ export class Game {
     this.raf = requestAnimationFrame(this.frame);
     this.events.onPhase(this.phase);
     this.emitHud();
+    this.beginDraft();
+  }
+
+  /**
+   * A waystone start catches up before play (M2): a relic choice for each map skipped, then a
+   * draft of level-ups through the usual panel. The clock doesn't run until it's done.
+   */
+  private beginDraft(): void {
+    const draft = this.world.draft;
+    if (!draft) return;
+    this.draftRelics = { n: 0, total: draft.relics };
+    this.draftLevels = 0;
+    this.nextDraftStep();
+  }
+
+  private nextDraftStep(): void {
+    const w = this.world;
+    const draft = w.draft;
+    if (!draft) return;
+    if (draft.relics > 0) {
+      const offer = offerRelics(w, Math.random, w.mapIndex);
+      if (offer.length > 0) {
+        w.relicOffer = offer;
+        this.draftRelics.n++;
+        this.setPhase('relic');
+        this.events.onRelicOffer({ relics: [...offer], nextMap: w.map.def.name, depth: w.depth, draft: { ...this.draftRelics } });
+        return;
+      }
+      draft.relics = 0;
+    }
+    const levels = draft.levels;
+    w.draft = null;
+    if (levels <= 0) {
+      this.setPhase('playing');
+      return;
+    }
+    // Every level of the catch-up at once: the body grows to match, then each is drafted in turn.
+    w.level += levels;
+    w.snake.segmentTarget = w.snake.segmentCount = segmentsForLevel(w.level);
+    w.snake.updateSegments();
+    refreshStats(w);
+    w.hp = w.stats.maxHp;
+    this.draftLevels = levels;
+    this.pendingLevelUps = levels;
+    this.offerLevelUp();
+  }
+
+  /** Finishes a waystone draft at once, taking the first card of each offer. */
+  autoDraft(): void {
+    if (this.phase !== 'levelup' || this.draftLevels === 0) return;
+    const w = this.world;
+    while (this.pendingLevelUps > 0) {
+      const pick = this.offer[0];
+      if (pick) applyChoice(w, pick);
+      this.pendingLevelUps--;
+      if (this.pendingLevelUps > 0) {
+        this.offerLevel = w.level - this.pendingLevelUps + 1;
+        this.offer = rollOffer(w, this.offerLevel, Math.random);
+      }
+    }
+    w.hp = w.stats.maxHp;
+    audio.play('evolve');
+    this.pendingLevelUps = 1;
+    this.nextLevelUp();
   }
 
   destroy(): void {
@@ -224,6 +322,7 @@ export class Game {
     this.last = performance.now();
     this.phase = 'gameover';
     this.setPhase('playing');
+    this.beginDraft();
   }
 
   /** Ends the run from the pause menu; rewards are still banked. */
@@ -232,43 +331,109 @@ export class Game {
   }
 
   chooseUpgrade(choice: UpgradeChoice): void {
-    if (this.phase !== 'levelup') return;
+    if (this.phase !== 'levelup' || !this.offer.some((c) => c.id === choice.id)) return;
     const w = this.world;
     const s = w.snake;
+    applyChoice(w, choice);
     let label = choice.name;
     let color: string = COLORS.nova;
-    if (choice.kind === 'restore') {
-      w.hp = Math.min(w.stats.maxHp, w.hp + RESTORE_HEAL);
-      audio.play('select');
-    } else if (choice.kind === 'learn' && choice.spell) {
-      if (!w.known.includes(choice.spell)) w.known.push(choice.spell);
-      w.cooldowns[choice.spell] = 0;
+    let fanfare = false;
+    if (choice.kind === 'learn' && choice.spell) {
       label = `New sigil: ${SPELLS[choice.spell].name}`;
       color = SPELL_COLORS[choice.spell];
-      audio.play('evolve');
+      fanfare = true;
     } else if (choice.kind === 'evolve' && choice.spell) {
-      w.evolved[choice.spell] = true;
-      w.cooldowns[choice.spell] = 0;
       label = `${SPELLS[choice.spell].name} → ${EVOLUTIONS[choice.spell].name}`;
       color = SPELL_COLORS[choice.spell];
       burst(w, s.x, s.y, '#ffffff', 30, 340, { kind: 'shard', size: 4, life: 0.7 });
-      audio.play('evolve');
-    } else if (choice.upgrade) {
-      const prevMax = w.stats.maxHp;
-      w.upgrades = applyUpgrade(w.upgrades, choice.upgrade);
-      w.stats = computeStats(w.upgrades, w.meta, w.mods);
-      if (choice.upgrade === 'vitality') w.hp += w.stats.maxHp - prevMax + 30;
-      w.hp = Math.min(w.stats.maxHp, w.hp);
-      // Refresh cooldown totals so HUD sweeps match the new cooldowns.
-      for (const id of SPELL_IDS) w.cooldowns[id] = Math.min(w.cooldowns[id], spellCooldown(id, w.stats));
-      audio.play('select');
+      fanfare = true;
+    } else if (choice.kind === 'aspect' && choice.aspect) {
+      const spell = ASPECTS[choice.aspect].spell;
+      label = `${SPELLS[spell].name}: ${choice.name}`;
+      color = SPELL_COLORS[spell];
+      fanfare = true;
+    } else if (choice.kind === 'duo' && choice.duo) {
+      label = `Duo: ${DUOS[choice.duo].name}`;
+      color = COLORS.nova;
+      burst(w, s.x, s.y, '#ffffff', 36, 380, { kind: 'shard', size: 4, life: 0.8 });
+      fanfare = true;
     }
+    audio.play(fanfare ? 'evolve' : 'select');
     burst(w, s.x, s.y, color, 24, 260, { kind: 'glow', size: 8, life: 0.5 });
     floater(w, s.x, s.y - 30, label, color, { size: 18, life: 1.4 });
+    this.nextLevelUp();
+  }
+
+  /** Casts the wizard's ultimate, from its key or the HUD card. */
+  castUltimate(): void {
+    if (this.phase !== 'playing') return;
+    const w = this.world;
+    if (!castUltimate(w)) {
+      const left = w.ult.active > 0 ? 0 : w.ult.cooldown;
+      if (left > 0) floater(w, w.snake.x, w.snake.y - 40, `${ULTIMATES[w.ult.id].name} recharging ${Math.ceil(left)}s`, '#b9c4ff', { size: 16, life: 0.9 });
+      audio.play('cooldown');
+    }
+    this.emitHud();
+  }
+
+  /** Takes a relic from the way down's offer (or none, to heal instead) and descends; at a waystone start, the draft goes on. */
+  chooseRelic(relic: RelicId | null): void {
+    if (this.phase !== 'relic') return;
+    const w = this.world;
+    audio.play(relic ? 'evolve' : 'select');
+    this.last = performance.now();
+    if (w.draft) {
+      if (relic && w.relicOffer?.includes(relic)) {
+        takeRelic(w, relic);
+        refreshStats(w);
+      }
+      w.relicOffer = null;
+      w.draft.relics--;
+      this.nextDraftStep();
+      return;
+    }
+    leaveForNextMap(w, relic);
+    this.setPhase('playing');
+  }
+
+  /** Spends a reroll on a fresh offer. */
+  rerollLevelUp(): void {
+    if (this.phase !== 'levelup') return;
+    const offer = rerollOffer(this.world, this.offerLevel, Math.random);
+    if (!offer) return;
+    this.offer = offer;
+    audio.play('select');
+    this.emitOffer();
+  }
+
+  /** Spends a banish: the card is gone for the run and a new one takes its place. */
+  banishChoice(choice: UpgradeChoice): void {
+    if (this.phase !== 'levelup') return;
+    const offer = banishFromOffer(this.world, this.offer, choice, this.offerLevel, Math.random);
+    if (!offer) return;
+    this.offer = offer;
+    audio.play('wall');
+    this.emitOffer();
+  }
+
+  /** Takes no card and heals a little instead. */
+  skipLevelUp(): void {
+    if (this.phase !== 'levelup') return;
+    const w = this.world;
+    const healed = skipLevelUp(w);
+    floater(w, w.snake.x, w.snake.y - 30, healed > 0 ? `Skipped · +${Math.round(healed)} health` : 'Skipped', '#9fe8a0', { size: 16, life: 1.2 });
+    audio.play('select');
+    this.nextLevelUp();
+  }
+
+  /** Moves on to the next waiting level-up, or back to play. */
+  private nextLevelUp(): void {
     this.pendingLevelUps--;
     if (this.pendingLevelUps > 0) {
       this.offerLevelUp();
     } else {
+      this.offer = [];
+      this.draftLevels = 0;
       this.last = performance.now();
       this.setPhase('playing');
     }
@@ -276,17 +441,16 @@ export class Game {
 
   private offerLevelUp(): void {
     const w = this.world;
-    const levelShown = w.level - this.pendingLevelUps + 1;
-    const choices = rollUpgradeChoices(
-      w.upgrades,
-      w.meta,
-      Math.random,
-      3,
-      { known: w.known, evolved: w.evolved, level: levelShown },
-      w.mods,
-    );
+    this.offerLevel = w.level - this.pendingLevelUps + 1;
+    this.offer = rollOffer(w, this.offerLevel, Math.random);
     this.setPhase('levelup');
-    this.events.onLevelUp(levelShown, choices);
+    this.emitOffer();
+  }
+
+  private emitOffer(): void {
+    const w = this.world;
+    const draft = this.draftLevels > 0 ? { n: this.draftLevels - this.pendingLevelUps + 1, total: this.draftLevels } : null;
+    this.events.onLevelUp({ level: this.offerLevel, choices: this.offer, rerolls: w.rerolls, banishes: w.banishes, draft });
   }
 
   // ------------------------------------------------------------ gestures
@@ -357,6 +521,7 @@ export class Game {
     const cd = spellCooldown(spell, w.stats);
     w.cooldowns[spell] = cd;
     w.cooldownTotals[spell] = cd;
+    afterSigil(w, spell, tier === 'perfect', () => castSpell(w, spell, target, castPower(tier)));
     w.castFlash[spell] = 1;
     floater(w, c.x, fy, `${name}!`, SPELL_COLORS[spell], { size: 24, life: 0.9, screen: true });
     if (tier !== 'rough') {
@@ -451,12 +616,14 @@ export class Game {
       const dir = this.input.direction();
       this.input.endStep();
       w.snake.speedMult = w.buffs.swiftscale > 0 ? BUFFS.swiftscale.speed : 1;
-      w.snake.turnMult = onIce(w, w.snake.x, w.snake.y) ? HAZARDS.ice.turn : 1;
+      w.snake.turnMult = onIce(w, w.snake.x, w.snake.y) && !hasRelic(w, 'rimewalker') ? HAZARDS.ice.turn : 1;
       const hit = w.snake.update(dt, dir.x, dir.y, w.map);
       if (hit) this.onWallHit(hit);
       updateBreakables(w, dt);
       updateCamera(w.camera, w.snake, w.map.width, w.map.height, dt, this.options.steadyCamera);
       updateConstrict(w, dt);
+      updateRelics(w, dt, (x, y, a, damage) => spawnBolt(w, x, y, a, damage, 0, SPELLS.bolt.radius));
+      updateUltimate(w, dt);
     }
 
     updateDirector(w, dying ? 0 : dt);
@@ -475,15 +642,21 @@ export class Game {
       updateCrystals(w, dt);
       updatePickups(w, dt);
       updateBuffs(w, dt);
-      // Last: stepping into the way down swaps the whole map.
+      // Last: stepping into the way down offers relics, then swaps the whole map.
       updateDescent(w, dt);
+      if (w.relicOffer) {
+        this.setPhase('relic');
+        this.events.onRelicOffer({ relics: [...w.relicOffer], nextMap: mapForIndex(w.mapIndex + 1).name, depth: w.depth + 1, draft: null });
+        return;
+      }
     }
     w.fade = Math.max(0, w.fade - dt);
 
     tickCooldowns(w, dt);
     w.invuln = Math.max(0, w.invuln - dt);
-    if (w.stats.regenPerSec > 0 && w.hp > 0 && w.hp < w.stats.maxHp) {
-      w.hp = Math.min(w.stats.maxHp, w.hp + w.stats.regenPerSec * dt);
+    const regen = regenPerSecond(w);
+    if (regen > 0 && w.hp > 0 && w.hp < w.stats.maxHp) {
+      w.hp = Math.min(w.stats.maxHp, w.hp + regen * dt);
     }
     updateEffects(w, dt);
 
@@ -502,6 +675,8 @@ export class Game {
     }
     if (gained > 0) {
       w.snake.segmentTarget = segmentsForLevel(w.level);
+      // The Ouroboros Coil grows with the body.
+      refreshStats(w);
       this.pendingLevelUps += gained;
       audio.play('levelup');
       this.offerLevelUp();
@@ -545,7 +720,7 @@ export class Game {
     if (this.finished || this.destroyed) return;
     this.finished = true;
     const w = this.world;
-    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills, shardMult: shardMultiplier(w.curses), bonusShards: w.bonusShards };
+    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills, shardMult: shardMultiplier(w.curses), bonusShards: w.bonusShards, heat: w.heat };
     const result: RunResult = {
       ...summary,
       runId: this.runId,
@@ -557,6 +732,7 @@ export class Game {
       depth: w.recap.depth,
       maps: [...w.visited],
       breakables: w.recap.breakables,
+      relics: [...w.relics],
     };
     this.setPhase('gameover');
     this.events.onGameOver(result);
@@ -593,6 +769,15 @@ export class Game {
         : null,
       bossIncoming: !w.boss && incoming <= 30 && incoming > 0 ? incoming : null,
       buffs: TIMED_BUFFS.filter((id) => w.buffs[id] > 0).map((id) => ({ id, left: w.buffs[id], total: buffDuration(id) })),
+      relics: [...w.relics],
+      ultimate: {
+        name: ULTIMATES[w.ult.id].name,
+        color: ULTIMATES[w.ult.id].color,
+        remaining: w.ult.cooldown,
+        total: w.ult.cooldown > 0 ? w.ult.total : ultimateCooldown(w),
+        active: w.ult.active,
+        flash: w.ult.flash,
+      },
     });
   }
 

@@ -1,11 +1,13 @@
-import { ARCHETYPE, BUFFS, ELITE, ENEMIES, EVOLUTIONS, HIT_STOP, PROGRESSION, SNAKE, SPELLS, type EnemyKind } from './config';
+import { ARCHETYPE, ASPECTS, BUFFS, ELITE, ENEMIES, EVOLUTIONS, HIT_STOP, PROGRESSION, SNAKE, SPELLS, type EnemyKind } from './config';
 import { beginDescent } from './descent';
 import { addShake, burst, floater, hitStop } from './effects';
 import { spawnEnemy } from './enemies';
 import { clamp, dist2, TAU } from './math';
 import { COLORS } from './palette';
 import { hurtKey, type DamageSource, type HurtSource } from './recap';
-import { frostAt } from './spells';
+import { hasRelic, onRelicKill, RELIC_TUNING, relicShare, ringBell, sacrifice } from './relics';
+import { castSpell, frostAt, spawnBolt } from './spells';
+import { bastionUp, zeroBrittle } from './ultimates';
 import { clearanceAt, pushOut } from './terrain';
 import type { Crystal, Enemy, World } from './world';
 
@@ -57,6 +59,11 @@ export function damageEnemy(
   if (e.kind === 'wraith' && clearanceAt(world.map.index, e.x, e.y) < 0) amount *= ENEMIES.wraith.phaseArmor;
   // Glacier: frozen-field foes are brittle.
   if (world.evolved.frost && e.chill > 0) amount *= EVOLUTIONS.frost.brittle;
+  // Overload: a shocked foe takes more from everything.
+  if (e.shockUntil > world.time) amount *= ASPECTS.overload.damage;
+  if ((e.elite || e.kind === 'boss') && hasRelic(world, 'huntersMark')) amount *= RELIC_TUNING.markDamage;
+  // Absolute Zero: what it froze shatters easily.
+  amount *= zeroBrittle(world, e);
   // Empower (a buff) strengthens every spell, on top of a clean cast's bonus.
   if (world.buffs.empower > 0 && spell !== 'constrict' && spell !== 'hazard') amount *= BUFFS.empower.damage;
   const stats = world.recap.spells[spell];
@@ -122,7 +129,12 @@ export function killEnemy(world: World, e: Enemy): void {
   for (const s of e.segments) burst(world, s.x, s.y, bodyColor, 3, 160, { size: 3, life: 0.5 });
   dropCrystals(world, e.x, e.y, e.xp, isBoss ? 30 : 0);
   if (e.elite) world.recap.elitesSlain++;
+  // Shatter: a foe that dies in a Frost Field bursts against its neighbours next step.
+  if (world.aspects.frost === 'shatter' && !isBoss && frostAt(world, e.x, e.y, e.r * 0.5)) {
+    world.shatters.push({ x: e.x, y: e.y, damage: e.maxHp * ASPECTS.shatter.share });
+  }
   if (e.elite === 'splitting') splitEnemy(world, e);
+  if (!isBoss) onRelicKill(world);
   if (isBoss) {
     world.bossKills++;
     world.boss = null;
@@ -223,7 +235,12 @@ function spawnCrystal(world: World, c: Crystal): void {
 }
 
 export function hurtPlayer(world: World, amount: number, source: HurtSource): boolean {
-  if (world.invuln > 0 || world.hp <= 0) return false;
+  // Bastion turns every blow aside, stone and stinging ground too.
+  if (world.invuln > 0 || world.hp <= 0 || bastionUp(world)) return false;
+  // The map relics blunt their own ground and bursts (Stoneshaper's Charm turns stone harmless).
+  const share = relicShare(world, source);
+  if (share <= 0) return false;
+  amount *= share;
   const ward = world.ward;
   if (ward && ward.charges > 0 && source.kind !== 'wall') {
     // Arcane Ward absorbs the hit; its pulse goes off on the next step (spells.updateWard).
@@ -247,11 +264,13 @@ export function hurtPlayer(world: World, amount: number, source: HurtSource): bo
     world.sfx('shieldHit');
     return false;
   }
-  const dmg = Math.max(1, Math.round(amount));
+  // Thick Hide and the like soften what foes deal; stone and stinging ground bite the same.
+  const foe = source.kind !== 'wall' && source.kind !== 'hazard';
+  const dmg = Math.max(1, Math.round(amount * (foe ? world.stats.damageTaken : 1)));
   const key = hurtKey(source);
   world.recap.taken[key] = (world.recap.taken[key] ?? 0) + Math.min(dmg, world.hp);
   world.hp = Math.max(0, world.hp - dmg);
-  if (world.hp <= 0) world.recap.killedBy = key;
+  if (world.hp <= 0 && !sacrifice(world)) world.recap.killedBy = key;
   world.invuln = SNAKE.invulnTime;
   world.hurtFlash = 1;
   addShake(world, 0.45);
@@ -260,6 +279,8 @@ export function hurtPlayer(world: World, amount: number, source: HurtSource): bo
   burst(world, s.x, s.y, COLORS.hurt, 16, 260, { size: 3.5, life: 0.45 });
   floater(world, s.x, s.y - 26, `-${dmg}`, COLORS.hurt, { size: 20, life: 0.8 });
   world.sfx('hurt');
+  // Last, so its moment of safety outlasts the usual one.
+  ringBell(world, () => castSpell(world, 'nova', null));
   return true;
 }
 
@@ -334,7 +355,12 @@ export function updateShots(world: World, dt: number): void {
     } else {
       const rr = SNAKE.hitRadius + p.r * 0.75;
       if (dist2(p.x, p.y, s.x, s.y) < rr * rr) {
-        if (hurtPlayer(world, p.damage, p.source) || world.invuln > 0) {
+        if (world.ward && world.ward.charges > 0 && world.aspects.ward === 'mirror') {
+          // Mirror: the shot comes back as a bolt, and the Ward keeps its charge.
+          spawnBolt(world, p.x, p.y, Math.atan2(-p.vy, -p.vx), SPELLS.bolt.damage * world.stats.damageMult, 0, SPELLS.bolt.radius);
+          burst(world, p.x, p.y, COLORS.ward, 8, 180, { kind: 'glow', size: 4, life: 0.3 });
+          remove = true;
+        } else if (hurtPlayer(world, p.damage, p.source) || world.invuln > 0) {
           burst(world, p.x, p.y, COLORS.hostile, 8, 160, { size: 3, life: 0.3 });
           remove = true;
         }

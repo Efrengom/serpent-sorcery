@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { clampCamera } from '../camera';
 import { damageEnemy, hurtPlayer, killEnemy } from '../combat';
 import { DESCENT, DIRECTOR, ENEMIES, HAZARDS, METEORS } from '../config';
-import { beginDescent, enterNextMap, updateDescent } from '../descent';
+import { beginDescent, enterNextMap, leaveForNextMap, updateDescent } from '../descent';
 import { flameReaches, kindWeights, spawnEnemy, updateDirector, updateEnemies, updatePortals } from '../enemies';
 import { burnFoe, hazardAt, spawnBlast, updateHazards } from '../hazards';
 import { MAP_ORDER, mapForIndex } from '../maps';
@@ -70,6 +70,10 @@ describe('descending after the boss', () => {
     placeSerpent(w, w.descent!.x + DESCENT.radius - 5, w.descent!.y);
     w.snake.segmentCount = w.snake.segmentTarget = 30;
     updateDescent(w, DT);
+    // The threshold offers relics first; taking one goes down.
+    expect(w.relicOffer).not.toBeNull();
+    expect(w.depth).toBe(1);
+    leaveForNextMap(w, w.relicOffer![0]);
     expect(w.descent).toBeNull();
     expect(w.map.def.id).toBe(MAP_ORDER[1]);
     expect(w.depth).toBe(2);
@@ -95,6 +99,8 @@ describe('descending after the boss', () => {
     for (let i = 0; i < (DESCENT.pullAfter - 0.5) / DT; i++) updateDescent(w, DT);
     expect(w.depth).toBe(1);
     for (let i = 0; i < 1 / DT; i++) updateDescent(w, DT);
+    expect(w.relicOffer).not.toBeNull();
+    leaveForNextMap(w, null);
     expect(w.depth).toBe(2);
   });
 

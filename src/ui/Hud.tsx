@@ -2,7 +2,8 @@ import { BUFF_INFO } from '../game/breakables';
 import type { HudSnapshot } from '../game/engine';
 import { ICON_PATHS } from '../game/icons';
 import { formatTime } from '../game/math';
-import { PixelIcon, usePixelArt } from './art';
+import { RELICS } from '../game/relics';
+import { PixelIcon, RelicIcon, usePixelArt } from './art';
 import { useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 
@@ -11,12 +12,40 @@ interface Props {
   muted: boolean;
   onPause(): void;
   onToggleMute(): void;
+  onUltimate(): void;
 }
 
-export function Hud({ hud, muted, onPause, onToggleMute }: Props) {
+/** The wizard's ultimate: its charge filling up, a glow when ready, and a click (or its key) to cast. */
+function UltimateCard({ ult, keyLabel, onCast }: { ult: HudSnapshot['ultimate']; keyLabel: string; onCast(): void }) {
+  const ready = ult.remaining <= 0 && ult.active <= 0;
+  const charge = ult.active > 0 ? 1 : 1 - Math.min(1, ult.remaining / Math.max(0.01, ult.total));
+  return (
+    <button
+      className={`ult-card${ready ? ' ready' : ''}${ult.active > 0 ? ' active' : ''}`}
+      data-ult
+      tabIndex={-1}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onCast}
+      style={{ ['--ult' as string]: ult.color, ['--charge' as string]: `${charge * 100}%` }}
+      title={`${ult.name} (${keyLabel})`}
+    >
+      <span className="ult-fill" />
+      <span className="ult-star" aria-hidden="true">
+        ✸
+      </span>
+      <span className="ult-text">
+        <span className="ult-name">{ult.name}</span>
+        <span className="ult-state">{ult.active > 0 ? 'Unleashed!' : ready ? <kbd>{keyLabel}</kbd> : `${Math.ceil(ult.remaining)}s`}</span>
+      </span>
+    </button>
+  );
+}
+
+export function Hud({ hud, muted, onPause, onToggleMute, onUltimate }: Props) {
   const pixel = usePixelArt();
   const muteKey = useKeyLabel('mute');
   const pauseKey = useKeyLabel('pause');
+  const ultKey = useKeyLabel('ultimate');
   if (!hud) return null;
   const hpPct = Math.max(0, Math.min(1, hud.hp / hud.maxHp));
   const xpPct = Math.max(0, Math.min(1, hud.xp / hud.xpNext));
@@ -41,6 +70,15 @@ export function Hud({ hud, muted, onPause, onToggleMute }: Props) {
                 XP {Math.floor(hud.xp)} / {hud.xpNext}
               </span>
             </div>
+            {hud.relics.length > 0 && (
+              <div className="relic-row">
+                {hud.relics.map((id) => (
+                  <span key={id} className="relic-chip" data-relic={id} title={`${RELICS[id].name}: ${RELICS[id].description}`}>
+                    <RelicIcon id={id} size={16} />
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -124,6 +162,7 @@ export function Hud({ hud, muted, onPause, onToggleMute }: Props) {
           ))}
         </div>
       )}
+      <UltimateCard ult={hud.ultimate} keyLabel={ultKey} onCast={onUltimate} />
       {hud.boss && (
         <div className={`boss-bar${hud.boss.enraged ? ' enraged' : ''}`}>
           <span className="boss-name">{hud.boss.name}</span>

@@ -1,8 +1,8 @@
 import { placeBreakables } from './breakables';
 import { createCamera, clampCamera, type Camera } from './camera';
 import type { CastTier } from './cast';
-import type { BossId, BossMove, EnemyKind, SpellId } from './config';
-import { DIRECTOR, SPELL_IDS } from './config';
+import type { AspectId, BossId, BossMove, DuoId, EnemyKind, SpellId } from './config';
+import { DIRECTOR, LEVEL_TOOLS, SPELL_IDS, ULTIMATE } from './config';
 import { curseEffects, type CurseEffects, type CurseId } from './curses';
 import type { Pt, SigilKind } from './gesture';
 import { buildLayout, mapArea, mapForIndex, mapSeed, type MapLayout } from './maps';
@@ -11,15 +11,22 @@ import type { BreakableLook, MapId } from './maps/types';
 import { mulberry32, type Vec } from './math';
 import { createFlowField, refreshFlowField, type FlowField } from './nav';
 import {
+  combineMods,
   computeStats,
+  emptyOvercharge,
   emptyUpgradeLevels,
+  KNOWN_DUOS,
   NO_MODS,
+  overchargeMods,
   type MetaLevels,
+  type OverchargeLevels,
   type PlayerStats,
   type RunMods,
   type UpgradeLevels,
 } from './progression';
 import { emptyRecap, type HurtSource, type RunRecap } from './recap';
+import { KNOWN_RELICS, relicMods, type RelicId } from './relics';
+import type { UltimateId } from './ultimates';
 import { PathTrail, Snake } from './snake';
 import { WIZARDS, type WizardId } from './wizards';
 
@@ -65,7 +72,10 @@ export type SfxName =
   | 'icicle'
   | 'burrow'
   | 'slam'
-  | 'rattle';
+  | 'rattle'
+  | 'ultimate'
+  | 'ultReady'
+  | 'starfall';
 
 /** Buffs from breakables. The first four are timed; Lodestone and Shard Cache act at once. */
 export type BuffId = 'quickening' | 'empower' | 'swiftscale' | 'stoneskin' | 'lodestone' | 'shardCache';
@@ -165,6 +175,9 @@ export interface Enemy {
   frozenBy: number;
   /** Seconds left held still after being constricted. */
   stunned: number;
+  /** Shocked by Overload, or chilled by Rimeshot, until this game time. */
+  shockUntil: number;
+  chillUntil: number;
   nav: EnemyNav;
 }
 
@@ -203,6 +216,9 @@ export interface Bolt {
   pierce: number;
   life: number;
   hit: number[];
+  /** Seeker bolts steer toward foes ahead; Ricochet bolts bounce this many more times. */
+  seek: boolean;
+  bounces: number;
 }
 
 export interface EnemyShot {
@@ -243,6 +259,10 @@ export interface Nova {
   hits: number;
   /** Supernova: health restored per enemy hit, up to a cap per ring. */
   heal: number;
+  /** Knockback scale (negative pulls in, for Implosion), stun on hit (Shockwave), and lightning strikes left (Thunderclap). */
+  knock: number;
+  stun: number;
+  strikes: number;
 }
 
 export interface FrostField {
@@ -310,6 +330,11 @@ export interface ConstrictFlash {
 export interface RunSetup {
   wizard: WizardId;
   curses: CurseId[];
+  /** What the save's Grimoire adds: extra rerolls and banishes, a fourth card, the duos and relics unlocked, a primed ultimate. */
+  grimoire?: { rerolls: number; banishes: number; fourthCard: boolean; duos: DuoId[]; relics: RelicId[]; ultReady: boolean };
+  /** Heat (M3), and whether `startDepth` comes from a waystone (M2: the run catches up with a draft). */
+  heat?: number;
+  waystone?: boolean;
   /** Development only: start at this depth (and its map). */
   startDepth?: number;
 }
@@ -348,6 +373,42 @@ export interface Blast {
  * icicles from above, a Crypt Golem's slam (a ring round it), or something erupting from below.
  */
 export type BlastLook = 'meteor' | 'fireball' | 'vent' | 'spores' | 'icicle' | 'slam' | 'burrow';
+
+/** The wizard's ultimate (U1-U2): its cooldown, and the effect running now. */
+export interface UltimateState {
+  id: UltimateId;
+  /** Seconds left to recharge, out of `total`; `ready` once announced. */
+  cooldown: number;
+  total: number;
+  ready: boolean;
+  /** Seconds left of the effect running now (Starfall, Bastion, Maelstrom), and the time since it began. */
+  active: number;
+  t: number;
+  /** Clock to the next star, burn or strike, and Starfall's stars still to fall. */
+  next: number;
+  left: number;
+  /** The cast's flash, fading. */
+  flash: number;
+}
+
+/** A Starfall star on its way down to (x, y). */
+export interface Star {
+  x: number;
+  y: number;
+  t: number;
+  fall: number;
+  r: number;
+}
+
+/** A wave of colour rolling out from where an ultimate was cast. */
+export interface UltRing {
+  x: number;
+  y: number;
+  t: number;
+  life: number;
+  r: number;
+  color: string;
+}
 
 /** The way down, open where the boss fell. */
 export interface Descent {
@@ -449,6 +510,33 @@ export interface World {
   known: SpellId[];
   evolved: Record<SpellId, boolean>;
   upgrades: UpgradeLevels;
+  /** Aspects (one per spell at most), duo evolutions and overcharge ranks taken this run. */
+  aspects: Partial<Record<SpellId, AspectId>>;
+  duos: DuoId[];
+  overcharge: OverchargeLevels;
+  /** Duos the save has unlocked, cards per level-up offer, rerolls and banishes left, and cards banished. */
+  duoPool: DuoId[];
+  cardCount: number;
+  rerolls: number;
+  banishes: number;
+  banished: string[];
+  /** The wizard's and curses' modifiers; overcharge and relics stack on these into `mods`. */
+  baseMods: RunMods;
+  /** Heat this run is played at (M3). */
+  heat: number;
+  /** The ultimate, Starfall's stars in flight, cast waves, and when Absolute Zero ends. */
+  ult: UltimateState;
+  stars: Star[];
+  ultRings: UltRing[];
+  zeroUntil: number;
+  /** A waystone start's catch-up still to come: relic choices, then level-ups (M2). */
+  draft: { relics: number; levels: number } | null;
+  /** Relics carried (R4), the ones the save knows, and the three on offer at the way down until one is chosen. */
+  relics: RelicId[];
+  relicPool: RelicId[];
+  relicOffer: RelicId[] | null;
+  /** Relic clocks and counters: the Tail Sigil's next shot, when the Bell can ring again, Scales shed on this map, kills and casts. */
+  relicState: { tail: number; bellReady: number; sacrificed: boolean; kills: number; casts: number };
   stats: PlayerStats;
   hp: number;
   invuln: number;
@@ -476,6 +564,8 @@ export interface World {
   beams: Beam[];
   echoes: Echo[];
   ward: Ward | null;
+  /** Foes that died in a Frost Field with Shatter, bursting next step. */
+  shatters: { x: number; y: number; damage: number }[];
   coil: Coil | null;
   constricts: ConstrictFlash[];
   constrictCooldown: number;
@@ -514,6 +604,9 @@ export interface World {
 
 export const DEFAULT_SETUP: RunSetup = { wizard: 'arcanist', curses: [] };
 
+/** Level-ups a waystone start drafts for each map it skips. */
+export const WAYSTONE_LEVELS = 12;
+
 /** The wizard's perks combined with what the curses do to the player. */
 export function runMods(setup: RunSetup): RunMods {
   const wiz = WIZARDS[setup.wizard].mods;
@@ -526,6 +619,16 @@ export function runMods(setup: RunSetup): RunMods {
   };
 }
 
+/**
+ * Recomputes the run's modifiers and stats after anything that changes them: an upgrade,
+ * overcharge or a relic. Health never rises here (callers heal on purpose), only drops to a lower max.
+ */
+export function refreshStats(world: World): void {
+  world.mods = combineMods(world.baseMods, overchargeMods(world.overcharge), ...relicMods(world));
+  world.stats = computeStats(world.upgrades, world.meta, world.mods);
+  world.hp = Math.min(world.stats.maxHp, world.hp);
+}
+
 const perSpell = <T>(v: () => T) => Object.fromEntries(SPELL_IDS.map((id) => [id, v()])) as Record<SpellId, T>;
 
 export function createWorld(
@@ -536,6 +639,7 @@ export function createWorld(
 ): World {
   const upgrades = emptyUpgradeLevels();
   const mods = runMods(setup);
+  const grimoire = setup.grimoire;
   const stats = computeStats(upgrades, meta, mods);
   const effects = curseEffects(setup.curses);
   const depth = Math.max(1, Math.floor(setup.startDepth ?? 1));
@@ -570,6 +674,35 @@ export function createWorld(
     known: [...WIZARDS[setup.wizard].spells],
     evolved: perSpell(() => false),
     upgrades,
+    aspects: {},
+    duos: [],
+    overcharge: emptyOvercharge(),
+    duoPool: grimoire ? [...grimoire.duos] : [...KNOWN_DUOS],
+    cardCount: grimoire?.fourthCard ? 4 : 3,
+    rerolls: LEVEL_TOOLS.rerolls + (grimoire?.rerolls ?? 0),
+    banishes: LEVEL_TOOLS.banishes + (grimoire?.banishes ?? 0),
+    banished: [],
+    baseMods: mods,
+    heat: Math.max(0, Math.floor(setup.heat ?? 0)),
+    ult: {
+      id: WIZARDS[setup.wizard].ultimate,
+      cooldown: grimoire?.ultReady ? 0 : ULTIMATE.start,
+      total: grimoire?.ultReady ? 1 : ULTIMATE.start,
+      ready: !!grimoire?.ultReady,
+      active: 0,
+      t: 0,
+      next: 0,
+      left: 0,
+      flash: 0,
+    },
+    stars: [],
+    ultRings: [],
+    zeroUntil: 0,
+    draft: setup.waystone && depth > 1 ? { relics: depth - 1, levels: WAYSTONE_LEVELS * (depth - 1) } : null,
+    relics: [],
+    relicPool: grimoire ? [...grimoire.relics] : [...KNOWN_RELICS],
+    relicOffer: null,
+    relicState: { tail: 0, bellReady: 0, sacrificed: false, kills: 0, casts: 0 },
     stats,
     hp: stats.maxHp,
     invuln: 1.5,
@@ -594,6 +727,7 @@ export function createWorld(
     beams: [],
     echoes: [],
     ward: null,
+    shatters: [],
     coil: null,
     constricts: [],
     constrictCooldown: 0,
