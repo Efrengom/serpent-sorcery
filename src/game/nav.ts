@@ -1,6 +1,7 @@
 import { NAV } from './config';
 import { MinHeap, NEIGHBOURS } from './heap';
 import type { MapLayout } from './maps/types';
+import { clearanceAt } from './terrain';
 
 /**
  * A flow field toward the serpent's head: the path distance from every navigation cell, so a
@@ -26,9 +27,11 @@ export function createFlowField(map: MapLayout): FlowField {
   const n = cols * rows;
   const walkable = new Uint8Array(n);
   const cost = new Float32Array(n);
+  const harm = map.harmIndex;
   for (let i = 0; i < n; i++) {
     walkable[i] = values[i] >= NAV.minClearance ? 1 : 0;
     cost[i] = 1 + (values[i] < NAV.hugClearance ? NAV.hugCost : 0);
+    if (harm && clearanceAt(harm, ((i % cols) + 0.5) * cell, (Math.floor(i / cols) + 0.5) * cell) < 10) cost[i] += NAV.harmCost;
   }
   return { cell, cols, rows, walkable, cost, dist: new Float64Array(n).fill(Infinity), timer: 0, heap: new MinHeap() };
 }

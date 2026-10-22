@@ -1,9 +1,10 @@
+import { damageBreakable } from './breakables';
 import { CONSTRICT, HIT_STOP, SNAKE } from './config';
 import { damageEnemy } from './combat';
 import { addShake, burst, floater, hitStop } from './effects';
 import { dist, type Vec } from './math';
 import { WIZARDS } from './wizards';
-import type { Enemy, World } from './world';
+import type { Breakable, Enemy, World } from './world';
 
 /**
  * Constrict: the serpent's body forms a loop when its head comes back around to a point far
@@ -71,15 +72,17 @@ export function updateConstrict(world: World, dt: number): void {
   const at = closed ? index : nearestD <= CONSTRICT.hintDistance ? nearest : -1;
   if (at < 0) return;
   const loop: Vec[] = [{ x: s.x, y: s.y }, ...segs.slice(0, at + 1)];
-  const inside = world.enemies.filter((e) => !e.dead && pointInPolygon(e.x, e.y, loop));
+  const inside = world.enemies.filter((e) => !e.dead && !e.hidden && pointInPolygon(e.x, e.y, loop));
+  const boxes = world.breakables.filter((b) => pointInPolygon(b.x, b.y, loop));
   // A loop with nothing in it is just a turn: no hint and no crush.
-  if (inside.length === 0) return;
-  world.coil = { index: at, closed, enclosed: inside.length };
-  if (closed && world.constrictCooldown <= 0) crush(world, loop, inside, color);
+  if (inside.length === 0 && boxes.length === 0) return;
+  world.coil = { index: at, closed, enclosed: inside.length + boxes.length };
+  if (closed && world.constrictCooldown <= 0) crush(world, loop, inside, boxes, color);
 }
 
-function crush(world: World, loop: Vec[], inside: Enemy[], color: string): void {
+function crush(world: World, loop: Vec[], inside: Enemy[], boxes: Breakable[], color: string): void {
   const c = centroid(loop);
+  for (const b of boxes) damageBreakable(world, b, CONSTRICT.damage * world.stats.damageMult);
   for (const e of inside) {
     const d = dist(e.x, e.y, c.x, c.y) || 1;
     damageEnemy(world, e, CONSTRICT.damage * world.stats.damageMult, 'constrict', color, ((c.x - e.x) / d) * CONSTRICT.pull, ((c.y - e.y) / d) * CONSTRICT.pull);
@@ -89,8 +92,9 @@ function crush(world: World, loop: Vec[], inside: Enemy[], color: string): void 
   world.constrictCooldown = CONSTRICT.cooldown;
   world.constricts.push({ points: loop.map((p) => ({ ...p })), life: 0.6, maxLife: 0.6 });
   for (let i = 0; i < loop.length; i += 2) burst(world, loop[i].x, loop[i].y, color, 2, 160, { size: 3, life: 0.4 });
-  floater(world, c.x, c.y, inside.length > 1 ? `Constrict ×${inside.length}` : 'Constrict!', color, { size: 22, life: 1 });
-  addShake(world, Math.min(0.6, 0.25 + 0.06 * inside.length));
+  const caught = inside.length + boxes.length;
+  floater(world, c.x, c.y, caught > 1 ? `Constrict ×${caught}` : 'Constrict!', color, { size: 22, life: 1 });
+  addShake(world, Math.min(0.6, 0.25 + 0.06 * caught));
   hitStop(world, HIT_STOP.heavyKill);
   world.sfx('constrict');
 }

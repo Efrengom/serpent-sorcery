@@ -1,10 +1,13 @@
 import { audio } from './audio';
+import { buffDuration, TIMED_BUFFS, updateBreakables, updateBuffs, updatePickups } from './breakables';
 import { clampCamera, updateCamera } from './camera';
 import { castPower, castTier, tierBonusLabel } from './cast';
-import { ARENA, CLEAN_CAST, ENEMIES, EVOLUTIONS, GESTURE, HIT_STOP, SIM, SPELL_IDS, SPELL_INFO, SPELLS, type SpellId } from './config';
+import { ARENA, BOSSES, BUFFS, CLEAN_CAST, HAZARDS, EVOLUTIONS, GESTURE, HIT_STOP, SIM, SPELL_IDS, SPELL_INFO, SPELLS, type SpellId } from './config';
 import { updateConstrict } from './constrict';
 import { gainXp, hurtPlayer, updateContacts, updateCrystals, updateShots } from './combat';
+import { updateDescent } from './descent';
 import { updateDirector, updateEnemies, updatePortals } from './enemies';
+import { onIce, updateHazards } from './hazards';
 import { burst, floater, updateEffects } from './effects';
 import { recognize, type Pt } from './gesture';
 import { InputManager } from './input';
@@ -33,6 +36,7 @@ import { shardMultiplier } from './curses';
 import {
   castSpell,
   SIGIL_TO_SPELL,
+  tickCooldowns,
   SPELL_COLORS,
   spellName,
   updateBeams,
@@ -42,7 +46,7 @@ import {
   updateNovas,
   updateWard,
 } from './spells';
-import { createWorld, DEFAULT_SETUP, type GestureView, type RunSetup, type SigilReading, type World } from './world';
+import { createWorld, DEFAULT_SETUP, type GestureView, type RunSetup, type SigilReading, type TimedBuff, type World } from './world';
 
 export type Phase = 'playing' | 'paused' | 'levelup' | 'dying' | 'gameover';
 
@@ -64,6 +68,8 @@ export interface HudSnapshot {
   mapName: string;
   boss: { name: string; hp: number; maxHp: number; enraged: boolean } | null;
   bossIncoming: number | null;
+  /** Timed buffs running now, with seconds left out of their full length. */
+  buffs: { id: TimedBuff; left: number; total: number }[];
 }
 
 export interface GameEvents {
@@ -144,7 +150,8 @@ export class Game {
   }
 
   private makeWorld(): World {
-    return createWorld(this.meta, (name) => audio.play(name, name === 'pickup' ? this.world.pickupPitch : 0), Date.now(), this.setup);
+    const setup = { ...this.setup, startDepth: this.setup.startDepth ?? devStartDepth() };
+    return createWorld(this.meta, (name) => audio.play(name, name === 'pickup' ? this.world.pickupPitch : 0), Date.now(), setup);
   }
 
   start(): void {
@@ -443,8 +450,11 @@ export class Game {
       gainXp(w, survivalXpRate(w.time) * dt);
       const dir = this.input.direction();
       this.input.endStep();
+      w.snake.speedMult = w.buffs.swiftscale > 0 ? BUFFS.swiftscale.speed : 1;
+      w.snake.turnMult = onIce(w, w.snake.x, w.snake.y) ? HAZARDS.ice.turn : 1;
       const hit = w.snake.update(dt, dir.x, dir.y, w.map);
       if (hit) this.onWallHit(hit);
+      updateBreakables(w, dt);
       updateCamera(w.camera, w.snake, w.map.width, w.map.height, dt, this.options.steadyCamera);
       updateConstrict(w, dt);
     }
@@ -461,14 +471,16 @@ export class Game {
     if (!dying) {
       updateShots(w, dt);
       updateContacts(w);
+      updateHazards(w, dt);
       updateCrystals(w, dt);
+      updatePickups(w, dt);
+      updateBuffs(w, dt);
+      // Last: stepping into the way down swaps the whole map.
+      updateDescent(w, dt);
     }
+    w.fade = Math.max(0, w.fade - dt);
 
-    for (const id of Object.keys(w.cooldowns) as SpellId[]) {
-      w.cooldowns[id] = Math.max(0, w.cooldowns[id] - dt);
-      w.castFlash[id] = Math.max(0, w.castFlash[id] - dt * 3);
-      w.denyFlash[id] = Math.max(0, w.denyFlash[id] - dt * 3);
-    }
+    tickCooldowns(w, dt);
     w.invuln = Math.max(0, w.invuln - dt);
     if (w.stats.regenPerSec > 0 && w.hp > 0 && w.hp < w.stats.maxHp) {
       w.hp = Math.min(w.stats.maxHp, w.hp + w.stats.regenPerSec * dt);
@@ -500,7 +512,8 @@ export class Game {
     const w = this.world;
     const s = w.snake;
     burst(w, s.x, s.y, '#c9b8ff', 10, 200, { size: 3, life: 0.35 });
-    if (!hurtPlayer(w, ARENA.wallDamage, { kind: 'wall', attack: solid })) audio.play('wall');
+    // The map's own walls go by its name for them ("the catacomb walls").
+    if (!hurtPlayer(w, ARENA.wallDamage, { kind: 'wall', attack: solid === 'wall' ? w.map.def.wallName : solid })) audio.play('wall');
   }
 
   /** Picks the soundtrack arrangement: layered by danger, a hush before the boss, its theme during the fight. */
@@ -532,7 +545,7 @@ export class Game {
     if (this.finished || this.destroyed) return;
     this.finished = true;
     const w = this.world;
-    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills, shardMult: shardMultiplier(w.curses) };
+    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills, shardMult: shardMultiplier(w.curses), bonusShards: w.bonusShards };
     const result: RunResult = {
       ...summary,
       runId: this.runId,
@@ -541,6 +554,9 @@ export class Game {
       wizard: w.wizard,
       curses: [...w.curses],
       gameSpeed: this.options.gameSpeed < 1 ? this.options.gameSpeed : undefined,
+      depth: w.recap.depth,
+      maps: [...w.visited],
+      breakables: w.recap.breakables,
     };
     this.setPhase('gameover');
     this.events.onGameOver(result);
@@ -571,11 +587,12 @@ export class Game {
       spellNames: Object.fromEntries(SPELL_IDS.map((id) => [id, spellName(w, id)])) as Record<SpellId, string>,
       evolved: { ...w.evolved },
       depth: w.depth,
-      mapName: w.area === 0 ? w.map.def.name : 'Ember Depths',
+      mapName: w.map.def.name,
       boss: w.boss
-        ? { name: ENEMIES.boss.name, hp: Math.max(0, w.boss.hp), maxHp: w.boss.maxHp, enraged: w.boss.enraged }
+        ? { name: BOSSES[w.boss.bossId].name, hp: Math.max(0, w.boss.hp), maxHp: w.boss.maxHp, enraged: w.boss.enraged }
         : null,
       bossIncoming: !w.boss && incoming <= 30 && incoming > 0 ? incoming : null,
+      buffs: TIMED_BUFFS.filter((id) => w.buffs[id] > 0).map((id) => ({ id, left: w.buffs[id], total: buffDuration(id) })),
     });
   }
 
@@ -593,4 +610,11 @@ function centroid(points: Pt[]): Vec {
     y += p.y;
   }
   return { x: x / points.length, y: y / points.length };
+}
+
+/** Development only: `?depth=N` starts each run N maps down, on that depth's map. */
+function devStartDepth(): number | undefined {
+  if (!import.meta.env.DEV || typeof location === 'undefined') return undefined;
+  const n = Number(new URLSearchParams(location.search).get('depth'));
+  return n >= 1 ? Math.floor(n) : undefined;
 }

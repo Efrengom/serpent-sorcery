@@ -29,6 +29,41 @@ fs.mkdirSync(OUT, { recursive: true });
 const AUTOPILOT_SECONDS = Number(process.env.AUTOPILOT_SECONDS ?? 150);
 const SAVE_KEY = 'serpent-sorcery-save-v1';
 
+/**
+ * Where to look on each map after the first: a spot by each landmark ([name, x, y, heading]),
+ * and a lane open end to end ([y, from x, to x]) to race the view along for frame times.
+ */
+const DEEP_TOURS = {
+  hollows: {
+    tour: [
+      ['glowring', 3800, 2000, -Math.PI / 2],
+      ['grotto', 3800, 1050, -Math.PI / 2],
+      ['heartroot', 5250, 2100, 0],
+      ['fallen', 2150, 1700, 0],
+      ['thicket', 3800, 3350, -Math.PI / 2],
+    ],
+    lane: [1100, 200, 7400],
+  },
+  catacombs: {
+    tour: [
+      ['bellcourt', 4000, 2000, -Math.PI / 2],
+      ['ossuary', 4000, 1000, -Math.PI / 2],
+      ['kings', 4000, 3300, 0],
+      ['lake', 6000, 2200, 0],
+    ],
+    lane: [4260, 200, 7800],
+  },
+  ember: {
+    tour: [
+      ['caldera', 1600, 2000, -Math.PI / 2],
+      ['falls', 3600, 1150, -Math.PI / 2],
+      ['forge', 5000, 1400, 0],
+      ['spires', 5000, 2666, 0],
+    ],
+    lane: [2666, 200, 7000],
+  },
+};
+
 function findBrowser() {
   const local = process.env.LOCALAPPDATA ?? '';
   const candidates = [
@@ -389,6 +424,13 @@ try {
   {
     await sleep(500);
     const P = { x: 1080, y: 170 };
+    // Nothing nearby to catch the bolt before it is measured: no foes, and no reliquary in the way.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.enemies.length = 0;
+      w.portals.length = 0;
+      w.breakables = w.breakables.filter((b) => Math.hypot(b.x - w.snake.x, b.y - w.snake.y) > 600);
+    });
     await setKeys(new Set(['KeyS']));
     const atDown = await state();
     // The camera scrolls while the stroke is drawn, so the aim is whatever was recorded at the press.
@@ -564,8 +606,12 @@ try {
     for (let i = 0; i < 10 && !killed; i++) {
       const aim = await page.evaluate(() => {
         const g = window.__serpent;
-        const b = g.debug().world.boss;
+        const w = g.debug().world;
+        const b = w.boss;
         if (!b) return null;
+        // Side-on and well clear of it, so the serpent isn't already on the way down when it falls.
+        const a = Math.atan2(w.snake.y - b.y, w.snake.x - b.x);
+        w.snake.reset(b.x + Math.cos(a) * 420, b.y + Math.sin(a) * 420, a + Math.PI / 2);
         const pts = [{ x: b.x, y: b.y }, ...b.segments].map((p) => g.renderer.worldToScreen(p));
         return pts.find((p) => p.y > 110 && p.y < 600 && p.x > 30 && p.x < 1150) ?? null;
       });
@@ -573,6 +619,12 @@ try {
       await sleep(650);
       killed = await page.evaluate(() => window.__serpent.debug().world.bossKills > 0);
     }
+    // Turn away from where it fell, so the serpent doesn't slide into the way down while we watch the slow motion.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      const d = w.descent;
+      if (d) w.snake.reset(Math.max(w.map.bounds.minX + 200, d.x - 700), d.y, Math.PI);
+    });
     await sleep(2600);
     const tl = await page.evaluate(() => window.__timeline);
     // The longest stretch of real time during which the simulation clock stood still while playing.
@@ -599,12 +651,44 @@ try {
     check('then plays out in slow motion before returning to full speed', slow !== null && slow < 0.5 && after !== null && after > 0.85, { slow, after });
     const back = await audioState();
     check('main theme returns after the boss falls', back.theme === 'main' && /^run/.test(back.scene), back);
-    const deeper = await page.evaluate(() => {
-      const w = window.__serpent.debug().world;
-      return { depth: w.depth, area: w.area, hud: document.querySelector('.kills')?.textContent };
+    // A way down opens where the boss fell: off-screen it gets an arrow; steering into it with a real key descends.
+    const way = await page.evaluate(() => {
+      const g = window.__serpent;
+      const w = g.debug().world;
+      const d = w.descent;
+      if (!d) return null;
+      // Well to its left, heading up, so the arrow shows; then just left of it.
+      w.snake.reset(Math.max(w.map.bounds.minX + 200, d.x - 1500), d.y, -Math.PI / 2);
+      return { x: d.x, y: d.y, depth: w.depth, alive: w.enemies.filter((e) => !e.dead).length };
     });
-    check('defeating the boss descends to Depth 2, the Ember Depths', deeper.depth === 2 && deeper.area === 1 && /Depth 2/.test(deeper.hud ?? ''), deeper);
-    await page.screenshot({ path: path.join(OUT, '08-ember-depths.png') });
+    await sleep(500);
+    const arrow = await page.evaluate(() => {
+      const g = window.__serpent;
+      return g.renderer.arrows(g.debug().world).map((a) => a.p.label);
+    });
+    check('the boss falls: the field clears and a way down opens, with an arrow while it is off-screen', !!way && way.depth === 1 && way.alive === 0 && arrow.includes('Way down'), { way, arrow });
+    await page.evaluate((d) => {
+      const w = window.__serpent.debug().world;
+      if (d) w.snake.reset(d.x - 260, d.y + 40, -Math.PI / 2);
+    }, way);
+    await setKeys(new Set(['KeyD']));
+    let deeper = null;
+    for (let i = 0; i < 20 && !deeper; i++) {
+      await sleep(100);
+      deeper = await page.evaluate(() => {
+        const w = window.__serpent.debug().world;
+        return w.depth > 1 ? { depth: w.depth, map: w.map.def.id, area: w.area, banner: w.banner?.text ?? null } : null;
+      });
+    }
+    await setKeys(new Set());
+    await sleep(700);
+    const hud = await page.evaluate(() => `${document.querySelector('.kills')?.textContent ?? ''} / ${document.querySelector('.map-name')?.textContent ?? ''}`);
+    check(
+      'steering into the way down descends to Depth 2, the Mycelium Hollows, with its banner',
+      !!deeper && deeper.depth === 2 && deeper.map === 'hollows' && deeper.banner === 'Depth 2: Mycelium Hollows' && /Depth 2/.test(hud) && /Mycelium Hollows/i.test(hud),
+      { deeper, hud },
+    );
+    await page.screenshot({ path: path.join(OUT, '08-depth-2.png') });
     const rec = await page.evaluate(() => window.__serpent.debug().world.recap.spells.bolt);
     check('the recap credits the boss kill to Arcane Bolt', rec.kills >= 1 && rec.casts >= 1, rec);
   }
@@ -872,6 +956,9 @@ try {
     const pillar = await page.evaluate(() => {
       const w = window.__serpent.debug().world;
       const p = w.map.solids.find((s) => s.name === 'pillar' && s.shape === 'circle' && Math.abs(s.x - 3200) < 40 && Math.abs(s.y - 780) < 40);
+      // No urn on the way whose heart could heal the bump.
+      w.breakables = w.breakables.filter((b) => Math.hypot(b.x - p.x, b.y - p.y) > 500);
+      w.pickups.length = 0;
       w.snake.reset(p.x, p.y + p.r + 15 + 150, -Math.PI / 2);
       w.invuln = 0;
       return { hp: w.hp };
@@ -1016,6 +1103,185 @@ try {
       await sleep(300);
     }
     check('frame times stay smooth while the view races across the whole map, in both styles', Object.values(frameTimes).every((f) => f.p95 < 34 && f.max < 120), frameTimes);
+
+    // The deeper maps: each one's landmarks in both styles, and frame times across each.
+    const tours = (
+      await page.evaluate(async () => {
+        const { MAP_ORDER } = await import('/src/game/maps/index.ts');
+        return MAP_ORDER.slice(1);
+      })
+    ).map((id) => ({ id, tour: DEEP_TOURS[id]?.tour ?? [], lane: DEEP_TOURS[id]?.lane ?? null }));
+    const deepTimes = {};
+    for (const { id, tour, lane } of tours) {
+      await page.evaluate(async (id) => {
+        const { enterNextMap } = await import('/src/game/descent.ts');
+        const w = window.__serpent.debug().world;
+        while (w.map.def.id !== id) enterNextMap(w);
+        w.invuln = 1e9;
+        w.spawnAcc = -1e9;
+        w.fade = 0;
+        w.banner = null;
+      }, id);
+      for (let pass = 0; pass < 2; pass++) {
+        const pixel = await page.evaluate(() => document.querySelector('.app').classList.contains('pixel'));
+        const name = pixel ? 'pixel' : 'classic';
+        for (const [spot, x, y, h] of tour) {
+          await page.evaluate(([x, y, h]) => window.__serpent.debug().world.snake.reset(x, y, h), [x, y, h]);
+          await sleep(450);
+          await page.screenshot({ path: path.join(OUT, `24-${id}-${spot}-${name}.png`) });
+        }
+        if (pass === 0 && id === 'catacombs') {
+          // On the Frozen Lake the head turns at half rate; off it, at full.
+          const ice = await page.evaluate(async () => {
+            const w = window.__serpent.debug().world;
+            w.snake.reset(6700, 2200, 0);
+            await new Promise((r) => setTimeout(r, 150));
+            const on = w.snake.turnMult;
+            w.snake.reset(4000, 2000, -Math.PI / 2);
+            await new Promise((r) => setTimeout(r, 150));
+            return { on, off: w.snake.turnMult };
+          });
+          check('ice on the Catacombs halves the serpent’s turn rate, and only on the ice', ice.on === 0.5 && ice.off === 1, ice);
+        }
+        if (pass === 0 && id === 'hollows') {
+          // Brambles sting (recorded by name) even with the serpent otherwise untouchable by foes.
+          const thorns = await page.evaluate(async () => {
+            const w = window.__serpent.debug().world;
+            w.invuln = 0;
+            const hp = w.hp;
+            w.snake.reset(1000, 2300, Math.PI / 2);
+            await new Promise((r) => setTimeout(r, 250));
+            const out = { lost: Math.round(hp - w.hp), taken: w.recap.taken['wall:bramble'] ?? 0 };
+            w.invuln = 1e9;
+            w.hp = w.stats.maxHp;
+            return out;
+          });
+          check('brambles in the Hollows sting on touch, and the recap names them', thorns.lost === 5 && thorns.taken === 5, thorns);
+        }
+        if (lane) {
+          deepTimes[`${id}-${name}`] = await page.evaluate(async ([y, x0, x1]) => {
+            const w = window.__serpent.debug().world;
+            w.snake.reset(x0, y, 0);
+            const times = [];
+            let last = performance.now();
+            await new Promise((done) => {
+              const tick = (t) => {
+                times.push(t - last);
+                last = t;
+                w.snake.x += 7;
+                w.snake.y = y;
+                w.snake.heading = 0;
+                if (w.snake.x < x1 && times.length < 1400) requestAnimationFrame(tick);
+                else done();
+              };
+              requestAnimationFrame(tick);
+            });
+            times.shift();
+            times.sort((a, b) => a - b);
+            return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), max: +times[times.length - 1].toFixed(1) };
+          }, lane);
+        }
+        await page.keyboard.press('KeyP');
+        await sleep(300);
+      }
+    }
+    check(
+      'every deeper map has a landmark tour, and frame times stay smooth racing across each, in both styles',
+      tours.every((t) => t.tour.length >= 3 && t.lane) && Object.values(deepTimes).every((f) => f.p95 < 34 && f.max < 120),
+      { maps: tours.map((t) => t.id), deepTimes },
+    );
+  }
+
+  // ============================================================== Part N: breakables, pickups and buffs
+  {
+    await page.evaluate(() => window.__serpent.restart());
+    await sleep(200);
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.spawnAcc = -1e9;
+      w.xp = -1e6;
+      w.invuln = 1e9;
+    });
+
+    // Run into an urn: approach from the open side, away from the stone it stands by.
+    const urn = await page.evaluate(async () => {
+      const { nearestSolid } = await import('/src/game/terrain.ts');
+      const w = window.__serpent.debug().world;
+      const u = w.breakables.find((b) => b.size === 'small' && nearestSolid(w.map.index, b.x, b.y).d > 30);
+      const n = nearestSolid(w.map.index, u.x, u.y);
+      w.snake.reset(u.x + n.nx * 130, u.y + n.ny * 130, Math.atan2(-n.ny, -n.nx));
+      return { x: u.x, y: u.y, smashed: w.recap.breakables, crystals: w.crystals.length };
+    });
+    await sleep(900);
+    const smashed = await page.evaluate((u) => {
+      const w = window.__serpent.debug().world;
+      return { smashed: w.recap.breakables, xp: w.recap.breakableXp, near: w.crystals.filter((c) => Math.hypot(c.x - u.x, c.y - u.y) < 160).length + w.recap.breakableXp };
+    }, urn);
+    check('running into an urn smashes it and drops experience crystals', smashed.smashed === urn.smashed + 1 && smashed.xp >= 2 && smashed.xp <= 3, smashed);
+
+    // Break the reliquary at the plaza's west way in with real Bolt strokes.
+    const rel = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      const r = w.breakables.find((b) => b.size === 'large' && Math.abs(b.x - 2300) < 5 && Math.abs(b.y - 1800) < 5);
+      w.snake.reset(2620, 2000, -Math.PI / 2);
+      return r ? { id: r.id, hp: r.hp } : null;
+    });
+    await sleep(250);
+    await page.screenshot({ path: path.join(OUT, '22-reliquary.png') });
+    let broken = false;
+    let strokes = 0;
+    for (let i = 0; i < 8 && !broken; i++) {
+      const aim = await page.evaluate((id) => {
+        const g = window.__serpent;
+        const w = g.debug().world;
+        w.cooldowns.bolt = 0;
+        // Stay beside it (the serpent never stops moving), so it stays on screen.
+        w.snake.reset(2620, 1950, -Math.PI / 2);
+        const r = w.breakables.find((b) => b.id === id);
+        return r ? g.renderer.worldToScreen(r) : null;
+      }, rel?.id);
+      if (!aim) {
+        broken = true;
+        break;
+      }
+      await stroke(shapes.line(aim.x + 40, aim.y + 25, -2.6, 120), 130);
+      strokes++;
+      await sleep(350);
+    }
+    const loot = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { pickups: w.pickups.map((p) => p.kind), smashed: w.recap.breakables };
+    });
+    check('real Bolt strokes break a reliquary, which drops a buff', !!rel && broken && strokes >= 2 && loot.pickups.some((k) => k !== 'heal' && k !== 'bigHeal'), { strokes, ...loot });
+
+    // Collect its buff (made a Quickening here, to measure): the HUD counts it down and cooldowns recover faster.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      const p = w.pickups.find((k) => k.kind !== 'heal' && k.kind !== 'bigHeal') ?? w.pickups[w.pickups.push({ id: 999998, kind: 'quickening', x: w.snake.x, y: w.snake.y, vx: 0, vy: 0, t: 0, magnet: true }) - 1];
+      p.kind = 'quickening';
+      p.magnet = true;
+    });
+    await sleep(1200);
+    const chip1 = await page.evaluate(() => document.querySelector('.buff-chip[data-buff="quickening"]')?.textContent ?? null);
+    const cd = await page.evaluate(async () => {
+      const w = window.__serpent.debug().world;
+      w.cooldowns.nova = 6;
+      const t0 = w.time;
+      await new Promise((r) => setTimeout(r, 1000));
+      return { recovered: 6 - w.cooldowns.nova, gameTime: w.time - t0, left: w.buffs.quickening };
+    });
+    const chip2 = await page.evaluate(() => document.querySelector('.buff-chip[data-buff="quickening"]')?.textContent ?? null);
+    check('the buff shows on the HUD counting down, and Quickening makes cooldowns recover 50% faster', /Quickening/.test(chip1 ?? '') && chip1 !== chip2 && Math.abs(cd.recovered / cd.gameTime - 1.5) < 0.1, { chip1, chip2, ...cd });
+    await page.screenshot({ path: path.join(OUT, '23-buff-chip.png') });
+
+    const healed = await page.evaluate(async () => {
+      const w = window.__serpent.debug().world;
+      w.hp = 50;
+      w.pickups.push({ id: 999999, kind: 'heal', x: w.snake.x, y: w.snake.y, vx: 0, vy: 0, t: 0, magnet: false });
+      await new Promise((r) => setTimeout(r, 300));
+      return { hp: w.hp, healed: w.recap.healed, text: w.floaters.map((f) => f.text).find((t) => /health/.test(t)) ?? null };
+    });
+    check('a health pickup heals the serpent', healed.hp === 70 && healed.healed === 20 && healed.text === '+20 health', healed);
   }
 
   // ============================================================== Part B: autopilot run
@@ -1216,7 +1482,10 @@ try {
   log.end = { phase: s.phase, t: +s.t.toFixed(1), level: s.level, kills: s.kills, segs: s.segs, upgrades: s.upgrades };
   console.log('AUTOPILOT', JSON.stringify(log));
   const firstLevel = log.levelUps[0];
-  check('autopilot: first level-up around 20-30 s', firstLevel !== undefined && firstLevel >= 15 && firstLevel <= 32, { firstLevel });
+  // On the big map foes die at range and their crystals wait where they fell until the serpent
+  // passes, so the first level comes later than in the old one-screen arena: 20-40 s here, and a
+  // median of 44 s for the balance bot (which never goes for crystals) over 20 seeds.
+  check('autopilot: first level-up within 15-45 s', firstLevel !== undefined && firstLevel >= 15 && firstLevel <= 45, { firstLevel });
   check('autopilot: level-ups resume play', log.levelUps.length >= 2 && s.phase !== 'levelup', { levelUps: log.levelUps.length });
   check('autopilot: no stroke cast the wrong spell', log.misfires === 0, { outcomes: log.outcomes });
   check('autopilot: snake grew with levels', s.segs > 6, { segs: s.segs, level: s.level });
@@ -1233,6 +1502,14 @@ try {
     scenes: log.scenes,
   });
   check('autopilot: foes spawn just outside the view, never on screen', log.spawns > 20 && log.spawnsInView === 0, { spawns: log.spawns, inView: log.spawnsInView });
+  const xpShare = await page.evaluate(async () => {
+    const { xpToNext } = await import('/src/game/progression.ts');
+    const w = window.__serpent.debug().world;
+    let earned = Math.max(0, w.xp);
+    for (let l = 1; l < w.level; l++) earned += xpToNext(l);
+    return { fromBreakables: w.recap.breakableXp, earned: Math.round(earned), smashed: w.recap.breakables, share: earned > 0 ? +(w.recap.breakableXp / earned).toFixed(3) : 0 };
+  });
+  check('autopilot: breakables are a side source of XP (at most 15%)', xpShare.share <= 0.15, xpShare);
   const nearShare = log.nearShare.reduce((a, b) => a + b, 0) / Math.max(1, log.nearShare.length);
   check('autopilot: the fight stays around the serpent (foes within 1.5 views of it)', nearShare > 0.9, { share: +nearShare.toFixed(2), samples: log.nearShare.length });
 
@@ -1333,11 +1610,32 @@ try {
     await page.evaluate((k) => {
       const sv = JSON.parse(localStorage.getItem(k));
       sv.records.bestTime = Math.max(sv.records.bestTime, 200);
+      // As if a run had reached the Hollows (the atlas reveals what's been reached).
+      sv.records.maps = ['ruins', 'hollows'];
+      sv.records.breakables = Math.max(sv.records.breakables, 12);
       localStorage.setItem(k, JSON.stringify(sv));
     }, SAVE_KEY);
     await page.reload({ waitUntil: 'networkidle0' });
     await clickButton('Wizard');
     await sleep(300);
+    const atlas = await page.evaluate(() =>
+      [...document.querySelectorAll('.atlas-card')].map((c) => {
+        const canvas = c.querySelector('canvas');
+        const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        let light = 0;
+        for (let i = 0; i < data.length; i += 4) light += (data[i] + data[i + 1] + data[i + 2]) / 3;
+        return { map: c.dataset.map, name: c.querySelector('.atlas-name')?.textContent, unknown: c.classList.contains('unknown'), size: [canvas.width, canvas.height], light: Math.round(light / (data.length / 4)) };
+      }),
+    );
+    check(
+      'the setup screen’s atlas shows the four maps in order, the ones not yet reached as dark silhouettes',
+      atlas.map((a) => a.map).join() === 'ruins,hollows,catacombs,ember' &&
+        atlas.filter((a) => !a.unknown).map((a) => a.name).join() === 'Sunken Ruins,Mycelium Hollows' &&
+        atlas.filter((a) => a.unknown).every((a) => a.name === 'Undiscovered') &&
+        atlas.every((a) => a.size[0] > 100 && a.size[1] > 50) &&
+        Math.min(...atlas.filter((a) => !a.unknown).map((a) => a.light)) > Math.max(...atlas.filter((a) => a.unknown).map((a) => a.light)),
+      { atlas },
+    );
     const cards = await page.evaluate(() =>
       [...document.querySelectorAll('.wizard-card')].map((c) => ({ name: c.querySelector('.wizard-name')?.textContent, locked: c.disabled })),
     );
@@ -1530,6 +1828,23 @@ try {
     const redYellow = await countPixels(lane, 'yellow');
     await setView({ safeWarnings: true });
     check('colorblind-safe warnings paint the charge lane in hazard yellow', safeYellow > 200 && redYellow < 20, { safeYellow, standard: redYellow });
+
+    // A vent's circle (a burst hazard) is warned the same way.
+    const vent = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      const at = { x: w.camera.x - 380, y: w.camera.y + 180 };
+      w.blasts.push({ ...at, r: 90, t: 0.8, delay: 1, damage: 0, hitsFoes: false, source: { kind: 'hazard', attack: 'vent' }, after: null, look: 'vent', from: null });
+      return at;
+    });
+    const ventBox = { x0: vent.x - 45, y0: vent.y - 45, x1: vent.x + 45, y1: vent.y + 45 };
+    await frame();
+    const ventSafe = await countPixels(ventBox, 'yellow');
+    await setView({ safeWarnings: false });
+    await frame();
+    const ventStandard = await countPixels(ventBox, 'yellow');
+    await setView({ safeWarnings: true });
+    await page.evaluate(() => (window.__serpent.debug().world.blasts.length = 0));
+    check('colorblind-safe warnings stripe a vent’s circle in hazard yellow too', ventSafe > 200 && ventStandard < 20, { ventSafe, standard: ventStandard });
 
     // Esc in the pause menu's options steps back to the pause menu, then resumes.
     await page.evaluate(() => (window.__serpent.debug().world.hitStop = 0));

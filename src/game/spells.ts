@@ -1,4 +1,5 @@
-import { EFFECTS, EVOLUTIONS, HIT_STOP, SNAKE, SPELLS, type SpellId } from './config';
+import { BUFFS, EFFECTS, EVOLUTIONS, HIT_STOP, SNAKE, SPELLS, type SpellId } from './config';
+import { damageBreakable, eachBreakableNear } from './breakables';
 import { damageEnemy, enemyDistance, enemyHitTest } from './combat';
 import { addShake, burst, floater, hitStop } from './effects';
 import type { SigilKind } from './gesture';
@@ -57,6 +58,16 @@ export function castSpell(world: World, id: SpellId, target: Vec | null, power =
     if (world.evolved.nova) world.echoes.push({ at: world.time + EVOLUTIONS.nova.echoDelay, spell: 'nova', aim, target, power });
   } else if (id === 'ward') castWard(world, power);
   else castFrost(world, target, power);
+}
+
+/** Cooldowns recover (faster under Quickening), and the HUD's cast and refusal flashes fade. */
+export function tickCooldowns(world: World, dt: number): void {
+  const recover = dt * (world.buffs.quickening > 0 ? BUFFS.quickening.cooldownRate : 1);
+  for (const id of Object.keys(world.cooldowns) as SpellId[]) {
+    world.cooldowns[id] = Math.max(0, world.cooldowns[id] - recover);
+    world.castFlash[id] = Math.max(0, world.castFlash[id] - dt * 3);
+    world.denyFlash[id] = Math.max(0, world.denyFlash[id] - dt * 3);
+  }
 }
 
 /** Fires delayed second strikes from evolved spells once they are due. */
@@ -132,7 +143,7 @@ function castLance(world: World, aim: number, power: number): void {
     const x1 = x0 + c * len;
     const y1 = y0 + sn * len;
     for (const e of world.enemies) {
-      if (e.dead || hit.has(e.id)) continue;
+      if (e.dead || e.hidden || hit.has(e.id)) continue;
       let d = segmentDistance(e.x, e.y, x0, y0, x1, y1) - e.r;
       for (const seg of e.segments) d = Math.min(d, segmentDistance(seg.x, seg.y, x0, y0, x1, y1) - e.segRadius);
       if (d <= evo.beamWidth / 2) {
@@ -140,6 +151,10 @@ function castLance(world: World, aim: number, power: number): void {
         struck++;
         damageEnemy(world, e, damage, 'bolt', COLORS.bolt, c * 160, sn * 160);
       }
+    }
+    for (let k = world.breakables.length - 1; k >= 0; k--) {
+      const b = world.breakables[k];
+      if (segmentDistance(b.x, b.y, x0, y0, x1, y1) - b.r <= evo.beamWidth / 2) damageBreakable(world, b, damage);
     }
     world.beams.push({ x0, y0, x1, y1, width: evo.beamWidth, life: 0.28, maxLife: 0.28 });
     burst(world, x1, y1, COLORS.bolt, 6, 160, { size: 2.5, life: 0.3 });
@@ -163,7 +178,7 @@ function lightningTarget(world: World, aim: number, target: Vec | null): Enemy |
     let best: Enemy | null = null;
     let bestScore = Infinity;
     for (const e of world.enemies) {
-      if (e.dead) continue;
+      if (e.dead || e.hidden) continue;
       const d = dist(s.x, s.y, e.x, e.y);
       if (d > cfg.range) continue;
       const off = Math.abs(angleDiff(aim, Math.atan2(e.y - s.y, e.x - s.x)));
@@ -217,7 +232,7 @@ function castLightning(world: World, aim: number, target: Vec | null, damageScal
     let bestD = cfg.chainRange * cfg.chainRange;
     const from = points[points.length - 1];
     for (const e of world.enemies) {
-      if (e.dead || struck.has(e.id)) continue;
+      if (e.dead || e.hidden || struck.has(e.id)) continue;
       const d = dist2(from.x, from.y, e.x, e.y);
       if (d < bestD) {
         bestD = d;
@@ -268,7 +283,7 @@ function wardPulse(world: World, damaging: boolean, power = 1): void {
   const s = world.snake;
   const cfg = SPELLS.ward;
   for (const e of world.enemies) {
-    if (e.dead || dist(s.x, s.y, e.x, e.y) > cfg.pulseRadius + e.r) continue;
+    if (e.dead || e.hidden || dist(s.x, s.y, e.x, e.y) > cfg.pulseRadius + e.r) continue;
     const d = dist(s.x, s.y, e.x, e.y) || 1;
     const kx = ((e.x - s.x) / d) * cfg.pulseKnockback;
     const ky = ((e.y - s.y) / d) * cfg.pulseKnockback;
@@ -279,6 +294,7 @@ function wardPulse(world: World, damaging: boolean, power = 1): void {
       e.ky += ky * k;
     }
   }
+  if (damaging) eachBreakableNear(world, s.x, s.y, cfg.pulseRadius, (b) => damageBreakable(world, b, cfg.pulseDamage * world.stats.damageMult * power));
   for (let i = 0; i < 18; i++) {
     const a = (i / 18) * TAU;
     burst(world, s.x + Math.cos(a) * 24, s.y + Math.sin(a) * 24, COLORS.ward, 1, 300, { dir: a, spread: 0.15, size: 2.5, life: 0.35 });
@@ -378,8 +394,9 @@ export function updateFrost(world: World, dt: number): void {
     if (f.tick <= 0) {
       f.tick += cfg.tick;
       for (const e of world.enemies) {
-        if (!e.dead && enemyDistance(e, f.x, f.y) <= f.radius) damageEnemy(world, e, f.damage, 'frost', COLORS.frost);
+        if (!e.dead && !e.hidden && enemyDistance(e, f.x, f.y) <= f.radius) damageEnemy(world, e, f.damage, 'frost', COLORS.frost);
       }
+      eachBreakableNear(world, f.x, f.y, f.radius, (b) => damageBreakable(world, b, f.damage));
     }
     // Drifting snow.
     if (world.rng() < dt * 14) {
@@ -434,8 +451,17 @@ export function updateBolts(world: World, dt: number): void {
       remove = true;
     }
     if (!remove) {
+      // Urns shatter as a bolt passes without using it up; a reliquary takes the hit like a foe.
+      eachBreakableNear(world, b.x, b.y, b.r, (k) => {
+        if (remove || b.hit.includes(k.id)) return;
+        b.hit.push(k.id);
+        damageBreakable(world, k, b.damage);
+        if (k.size === 'large' && --b.pierce < 0) remove = true;
+      });
+    }
+    if (!remove) {
       for (const e of world.enemies) {
-        if (e.dead || b.hit.includes(e.id)) continue;
+        if (e.dead || e.hidden || b.hit.includes(e.id)) continue;
         // Generous hitbox for friendly projectiles.
         if (enemyHitTest(e, b.x, b.y, b.r + 5)) {
           b.hit.push(e.id);
@@ -465,7 +491,7 @@ export function updateNovas(world: World, dt: number): void {
     n.radius = n.maxRadius * (1 - (1 - k) * (1 - k));
     if (n.t <= n.duration + dt) {
       for (const e of world.enemies) {
-        if (e.dead || e.lastNovaId === n.id) continue;
+        if (e.dead || e.hidden || e.lastNovaId === n.id) continue;
         if (enemyDistance(e, n.x, n.y) <= n.radius) {
           e.lastNovaId = n.id;
           const d = dist(n.x, n.y, e.x, e.y) || 1;
@@ -478,6 +504,11 @@ export function updateNovas(world: World, dt: number): void {
           }
         }
       }
+      eachBreakableNear(world, n.x, n.y, n.radius, (b) => {
+        if (b.lastNovaId === n.id) return;
+        b.lastNovaId = n.id;
+        damageBreakable(world, b, n.damage);
+      });
       // The shockwave also dispels hostile projectiles it touches.
       const r2 = n.radius * n.radius;
       for (let j = world.shots.length - 1; j >= 0; j--) {

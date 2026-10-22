@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ELITE, EVOLUTIONS, SPELL_IDS, SPELLS } from '../config';
 import { damageEnemy, hurtPlayer, killEnemy } from '../combat';
 import { CURSES, curseEffects, shardMultiplier } from '../curses';
+import { enterNextMap } from '../descent';
+import { MAP_ORDER, mapArea } from '../maps';
 import { eliteChance, spawnEnemy, updateEnemies } from '../enemies';
 import { mulberry32 } from '../math';
 import {
@@ -206,15 +208,20 @@ describe('depth and elites', () => {
     expect(eliteChance(50, true)).toBe(ELITE.maxChance);
   });
 
-  it('descends to the Ember Depths when the boss falls', () => {
+  it('opens a way down when the boss falls, to the next map and a deeper depth', () => {
     const w = newWorld();
-    killEnemy(w, spawnEnemy(w, 'boss', 600, 300));
+    killEnemy(w, spawnEnemy(w, 'boss', 3200, 2000));
+    expect(w.descent).not.toBeNull();
+    expect(w.depth).toBe(1);
+    enterNextMap(w);
     expect(w.depth).toBe(2);
-    expect(w.area).toBe(1);
+    expect(w.map.def.id).toBe(MAP_ORDER[1]);
+    expect(w.area).toBe(mapArea(MAP_ORDER[1]));
     expect(w.recap.depth).toBe(2);
-    killEnemy(w, spawnEnemy(w, 'boss', 600, 300));
+    killEnemy(w, spawnEnemy(w, 'boss', w.map.start.x, w.map.start.y - 200));
+    enterNextMap(w);
     expect(w.depth).toBe(3);
-    expect(w.area).toBe(1);
+    expect(w.map.def.id).toBe(MAP_ORDER[2 % MAP_ORDER.length]);
   });
 
   it('shielded elites soak damage on their shield first', () => {

@@ -1,7 +1,10 @@
-import { ARENA, NAV } from '../config';
+import { ARENA, BREAKABLES, NAV } from '../config';
 import { mulberry32, type Vec } from '../math';
 import { buildSolidIndex, clearanceAt } from '../terrain';
-import type { ClearanceGrid, Landmark, MapDef, MapLayout, Rect, Solid, SolidIndex } from './types';
+import type { BreakableSlot, ClearanceGrid, Hazard, Landmark, MapDef, MapLayout, Rect, Solid, SolidIndex } from './types';
+
+/** The grid characters that mark hazard cells. */
+const HAZARD_CELLS = { '~': 'lava', '%': 'bramble', '=': 'ice' } as const;
 
 /** Builds a map for one run: grid walls, the boundary, the seeded pieces and every lookup table. */
 export function buildLayout(def: MapDef, seed: number): MapLayout {
@@ -36,12 +39,26 @@ export function buildLayout(def: MapDef, seed: number): MapLayout {
   }
 
   const index = buildSolidIndex(solids, width, height);
+  // Hazards: the grid's cells of each kind, plus pools, thickets and sheets placed on top.
+  const hazards: Hazard[] = [
+    ...(Object.keys(HAZARD_CELLS) as (keyof typeof HAZARD_CELLS)[]).flatMap((ch) => wallRects(def, ch).map((r): Hazard => ({ shape: 'rect', name: HAZARD_CELLS[ch], ...r }))),
+    ...def.hazards.map((h) => ({ ...h })),
+  ];
+  const lookup = (list: Hazard[]) => (list.length > 0 ? buildSolidIndex(list, width, height) : null);
+  const hazardIndex = lookup(hazards);
+  const zones: MapLayout['zones'] = {};
+  for (const kind of ['lava', 'bramble', 'ice'] as const) {
+    const index = lookup(hazards.filter((h) => h.name === kind));
+    if (index) zones[kind] = index;
+  }
+  const harmIndex = lookup(hazards.filter((h) => h.name !== 'ice'));
   const marks = cellMarks(def);
+  const bounds = { minX: wall, minY: wall, maxX: width - wall, maxY: height - wall };
   return {
     def,
     width,
     height,
-    bounds: { minX: wall, minY: wall, maxX: width - wall, maxY: height - wall },
+    bounds,
     solids,
     index,
     start: marks.start,
@@ -49,8 +66,46 @@ export function buildLayout(def: MapDef, seed: number): MapLayout {
     clearings: marks.clearings,
     landmarks: marks.landmarks,
     torches: wallTorches(index, width, height),
+    slots: breakableSlots(def, index, hazardIndex, bounds, marks.start),
+    hazards,
+    hazardIndex,
+    zones,
+    harmIndex,
+    vents: def.vents.map(([x, y]) => ({ x, y })),
     clearance: clearanceGrid(index, width, height),
   };
+}
+
+/**
+ * Breakable slots: the map's hand-placed large ones (minus any an optional piece covers this
+ * run), then small ones scattered by the map's own seed, mostly along the stonework, never
+ * crowding each other or the start.
+ */
+function breakableSlots(def: MapDef, index: SolidIndex, hazards: SolidIndex | null, bounds: MapLayout['bounds'], start: Vec): BreakableSlot[] {
+  const cfg = def.breakables;
+  const slots: BreakableSlot[] = [];
+  // Nothing stands in lava.
+  const dry = (x: number, y: number, r: number) => !hazards || clearanceAt(hazards, x, y) >= r;
+  for (const [x, y] of cfg.largeSlots) {
+    if (clearanceAt(index, x, y) >= BREAKABLES.large.radius && dry(x, y, BREAKABLES.large.radius + 20)) slots.push({ x, y, size: 'large' });
+  }
+  const rng = mulberry32(cfg.smallSeed);
+  const r = BREAKABLES.small.radius;
+  let small = 0;
+  for (let tries = 0; tries < 30000 && small < cfg.smallCount; tries++) {
+    const x = bounds.minX + 40 + rng() * (bounds.maxX - bounds.minX - 80);
+    const y = bounds.minY + 40 + rng() * (bounds.maxY - bounds.minY - 80);
+    const keep = rng();
+    const d = clearanceAt(index, x, y);
+    if (d < r + 10 || !dry(x, y, r + 30)) continue;
+    // Urns gather against walls and pillars; a few stand in the open.
+    if (keep > (d < 90 ? 0.9 : 0.12)) continue;
+    if (Math.hypot(x - start.x, y - start.y) < 360) continue;
+    if (slots.some((s) => Math.hypot(s.x - x, s.y - y) < (s.size === 'large' ? 80 : 140))) continue;
+    slots.push({ x, y, size: 'small' });
+    small++;
+  }
+  return slots;
 }
 
 function rectSolid(x0: number, y0: number, x1: number, y1: number): Solid {
@@ -67,8 +122,8 @@ function hashString(s: string): number {
   return h >>> 0;
 }
 
-/** Merges the grid's wall cells into as few rectangles as possible: row runs, stacked when identical. */
-export function wallRects(def: MapDef): Rect[] {
+/** Merges the grid's wall cells (or another character's) into as few rectangles as possible: row runs, stacked when identical. */
+export function wallRects(def: MapDef, cellChar = '#'): Rect[] {
   const c = def.cell;
   const out: Rect[] = [];
   let open = new Map<string, Rect>();
@@ -76,12 +131,12 @@ export function wallRects(def: MapDef): Rect[] {
     const next = new Map<string, Rect>();
     let x = 0;
     while (x < row.length) {
-      if (row[x] !== '#') {
+      if (row[x] !== cellChar) {
         x++;
         continue;
       }
       const x0 = x;
-      while (x < row.length && row[x] === '#') x++;
+      while (x < row.length && row[x] === cellChar) x++;
       const key = `${x0}:${x}`;
       const above = open.get(key);
       if (above) {

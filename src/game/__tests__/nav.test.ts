@@ -180,7 +180,7 @@ describe('solids and spells', () => {
     const w = newWorld();
     placeSerpent(w, 3200, 1300, Math.PI / 2);
     // A shot fired up at the colonnade pillar from just below it.
-    w.shots.push({ x: 3200, y: 950, vx: 0, vy: -300, r: 8, damage: 5, life: 5, spin: 0, source: 'caster' });
+    w.shots.push({ x: 3200, y: 950, vx: 0, vy: -300, r: 8, damage: 5, life: 5, spin: 0, source: { kind: 'caster', attack: 'shot' }, look: 'orb' });
     for (let i = 0; i < 1 / DT && w.shots.length; i++) updateShots(w, DT);
     expect(w.shots).toHaveLength(0);
 

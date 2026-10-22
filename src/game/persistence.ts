@@ -14,6 +14,8 @@ import {
   type RunSummary,
 } from './progression';
 import { CURSE_IDS, type CurseId } from './curses';
+import { MAP_ORDER } from './maps';
+import type { MapId } from './maps/types';
 import { sanitizeBindings, type KeyBindings } from './keys';
 import { clampSpeed, defaultOptions, type GameOptions } from './options';
 import type { RunRecap } from './recap';
@@ -33,6 +35,12 @@ export interface SaveData {
     totalRuns: number;
     /** Lifetime Archmages defeated (unlocks a wizard). */
     bossKills: number;
+    /** Deepest depth ever reached (1 = the first map). */
+    deepest: number;
+    /** Maps reached at least once, in the order they come in a run (for the atlas). */
+    maps: MapId[];
+    /** Lifetime urns, reliquaries and the like smashed. */
+    breakables: number;
   };
   settings: {
     muted: boolean;
@@ -64,7 +72,7 @@ export function defaultSave(): SaveData {
     version: SAVE_VERSION,
     currency: 0,
     meta: emptyMetaLevels(),
-    records: { bestTime: 0, bestKills: 0, bestLevel: 0, totalRuns: 0, bossKills: 0 },
+    records: { bestTime: 0, bestKills: 0, bestLevel: 0, totalRuns: 0, bossKills: 0, deepest: 1, maps: ['ruins'], breakables: 0 },
     settings: { muted: false, volume: 0.7, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [], ...defaultOptions() },
     lastRunId: '',
   };
@@ -98,6 +106,10 @@ export function sanitizeSave(input: unknown): SaveData {
       bestLevel: num(records.bestLevel, 0, 0, 1e5, true),
       totalRuns: num(records.totalRuns, 0, 0, 1e9, true),
       bossKills: num(records.bossKills, 0, 0, 1e9, true),
+      deepest: num(records.deepest, 1, 1, 1e5, true),
+      // The first map is always known; saves from before the atlas start with just it.
+      maps: Array.isArray(records.maps) ? MAP_ORDER.filter((id) => id === 'ruins' || (records.maps as unknown[]).includes(id)) : ['ruins'],
+      breakables: num(records.breakables, 0, 0, 1e9, true),
     },
     settings: {
       muted: typeof settings.muted === 'boolean' ? settings.muted : d.settings.muted,
@@ -175,6 +187,10 @@ export interface RunResult extends RunSummary {
   curses?: CurseId[];
   /** Game speed the run was played at, when slowed. */
   gameSpeed?: number;
+  /** Deepest depth the run reached, the maps it saw, and what it smashed (for the records). */
+  depth?: number;
+  maps?: MapId[];
+  breakables?: number;
 }
 
 export interface CommitOutcome {
@@ -202,6 +218,9 @@ export function commitRunResult(save: SaveData, run: RunResult): CommitOutcome {
         bestLevel: Math.max(save.records.bestLevel, run.level),
         totalRuns: save.records.totalRuns + 1,
         bossKills: save.records.bossKills + Math.max(0, Math.floor(run.bossKills)),
+        deepest: Math.max(save.records.deepest, Math.floor(run.depth ?? 1)),
+        maps: MAP_ORDER.filter((id) => save.records.maps.includes(id) || (run.maps ?? []).includes(id)),
+        breakables: save.records.breakables + Math.max(0, Math.floor(run.breakables ?? 0)),
       },
       lastRunId: run.runId,
     },

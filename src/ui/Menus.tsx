@@ -1,7 +1,10 @@
-import { useContext, useEffect, type ComponentProps } from 'react';
+import { useContext, useEffect, useRef, type ComponentProps } from 'react';
+import { drawAtlasPicture } from '../game/atlas';
 import { SPELL_IDS, SPELLS } from '../game/config';
 import { CURSE_IDS, CURSES, shardMultiplier, type CurseId } from '../game/curses';
 import { MOVE_ACTIONS, primaryKeyLabel } from '../game/keys';
+import { MAP_ORDER, MAPS } from '../game/maps';
+import type { MapId } from '../game/maps/types';
 import { formatTime } from '../game/math';
 import type { SaveData } from '../game/persistence';
 import { META_IDS, META_UPGRADES, metaMaxLevel, metaNextCost, type MetaId } from '../game/progression';
@@ -141,6 +144,10 @@ export function TitleScreen({
             <b>{save.records.bestKills}</b>
           </div>
           <div>
+            <span>Deepest</span>
+            <b>{save.records.deepest}</b>
+          </div>
+          <div>
             <span>Runs</span>
             <b>{save.records.totalRuns}</b>
           </div>
@@ -234,6 +241,21 @@ export function HowToPlay({
           <p className="muted">Each spell has its own short cooldown. A messy stroke shows “Sigil unclear” and costs nothing.</p>
         </section>
       </div>
+      <section className="howto-card howto-maps">
+        <h3>4 · Maps</h3>
+        <p>
+          <b>Stone hurts, containers don't.</b> Run into small containers to smash them; break the big ones with spells. They
+          drop crystals, health and buffs: Quickening, Empower, Swiftscale, Stoneskin, Lodestone and Shard Caches.
+        </p>
+        <p>Each Archmage you defeat opens a way down to the next map. After the last, the run starts over, deeper and harder.</p>
+        <ol className="map-list">
+          {MAP_ORDER.map((id) => (
+            <li key={id}>
+              <b>{MAPS[id].name}</b> {MAPS[id].tip}
+            </li>
+          ))}
+        </ol>
+      </section>
       <ul className="tips">
         <li>
           {safeWarnings ? (
@@ -251,8 +273,8 @@ export function HowToPlay({
           <span className="dot violet" /> Defeated foes drop crystals. Survive and level up to grow longer and stronger.
         </li>
         <li>
-          <span className="dot gold" /> Around 5:00 a rival Archmage serpent arrives. Defeat it to descend deeper, where elites
-          roam.
+          <span className="dot gold" /> Around 5:00 on each map a rival Archmage serpent arrives. Defeat it, then steer into the
+          way down to the next map, where elites roam.
         </li>
         <li>
           <KeyHint action="pause" /> pause · <KeyHint action="mute" /> mute · keys and comfort settings are in Options
@@ -356,6 +378,16 @@ export function SetupScreen({
           </div>
         </section>
       </div>
+      <section className="setup-section atlas">
+        <h3 className="setup-head">
+          Maps <span className="setup-mult">{records.breakables} containers smashed</span>
+        </h3>
+        <div className="atlas-list">
+          {MAP_ORDER.map((id, i) => (
+            <AtlasCard key={id} id={id} depth={i + 1} known={records.maps.includes(id)} />
+          ))}
+        </div>
+      </section>
       <div className="menu-buttons row">
         <button className="btn" onClick={onBack}>
           Back <kbd>Esc</kbd>
@@ -364,6 +396,23 @@ export function SetupScreen({
           Begin as {WIZARDS[chosen].name} <kbd>Enter</kbd>
         </button>
       </div>
+    </div>
+  );
+}
+
+/** One map of a run in the atlas: its picture, name and hazard tip once reached, else a silhouette. */
+function AtlasCard({ id, depth, known }: { id: MapId; depth: number; known: boolean }) {
+  const picture = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (picture.current) drawAtlasPicture(picture.current, id, known);
+  }, [id, known]);
+  const def = MAPS[id];
+  return (
+    <div className={`atlas-card${known ? '' : ' unknown'}`} data-map={id}>
+      <canvas ref={picture} className="atlas-map" aria-hidden="true" />
+      <span className="atlas-depth">Depth {depth}</span>
+      <span className="atlas-name">{known ? def.name : 'Undiscovered'}</span>
+      <span className="atlas-tip">{known ? def.tip : 'Defeat the Archmage before it to find the way down'}</span>
     </div>
   );
 }

@@ -1,4 +1,6 @@
+import { BUFF_INFO } from '../game/breakables';
 import type { HudSnapshot } from '../game/engine';
+import { ICON_PATHS } from '../game/icons';
 import { formatTime } from '../game/math';
 import { PixelIcon, usePixelArt } from './art';
 import { useKeyLabel } from './Options';
@@ -102,6 +104,26 @@ export function Hud({ hud, muted, onPause, onToggleMute }: Props) {
         </div>
       </div>
 
+      {hud.buffs.length > 0 && (
+        <div className="buff-chips">
+          {hud.buffs.map((b) => (
+            <div
+              key={b.id}
+              className="buff-chip"
+              data-buff={b.id}
+              style={{ ['--buff' as string]: BUFF_INFO[b.id].color, ['--left' as string]: `${(b.left / b.total) * 360}deg` }}
+            >
+              <span className="buff-ring">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d={ICON_PATHS[b.id]} />
+                </svg>
+              </span>
+              <span className="buff-name">{BUFF_INFO[b.id].name}</span>
+              <span className="buff-left">{Math.ceil(b.left)}s</span>
+            </div>
+          ))}
+        </div>
+      )}
       {hud.boss && (
         <div className={`boss-bar${hud.boss.enraged ? ' enraged' : ''}`}>
           <span className="boss-name">{hud.boss.name}</span>

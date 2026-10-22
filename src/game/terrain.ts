@@ -1,5 +1,5 @@
 import { ARENA, TERRAIN } from './config';
-import type { Solid, SolidIndex } from './maps/types';
+import type { AnyShape, SolidIndex } from './maps/types';
 
 /**
  * Terrain queries: distances to solids, pushing bodies out of them, bounces and ray casts.
@@ -13,13 +13,13 @@ export interface Contact {
   /** Outward surface normal at the closest point. */
   nx: number;
   ny: number;
-  solid: Solid | null;
+  solid: AnyShape | null;
 }
 
 const scratch: Contact = { d: 0, nx: 0, ny: -1, solid: null };
 
 /** Signed distance from (x, y) to one solid, writing the outward normal into `out`. */
-export function solidDistance(s: Solid, x: number, y: number, out: Contact = scratch): number {
+export function solidDistance(s: AnyShape, x: number, y: number, out: Contact = scratch): number {
   let d: number;
   if (s.shape === 'circle') {
     const dx = x - s.x;
@@ -78,7 +78,7 @@ export function solidDistance(s: Solid, x: number, y: number, out: Contact = scr
 }
 
 /** The axis-aligned box around a solid. */
-export function solidBounds(s: Solid): { x0: number; y0: number; x1: number; y1: number } {
+export function solidBounds(s: AnyShape): { x0: number; y0: number; x1: number; y1: number } {
   if (s.shape === 'circle') return { x0: s.x - s.r, y0: s.y - s.r, x1: s.x + s.r, y1: s.y + s.r };
   if (s.shape === 'capsule') {
     return {
@@ -95,7 +95,7 @@ export function solidBounds(s: Solid): { x0: number; y0: number; x1: number; y1:
  * Lists every solid in each lookup cell it comes within `margin` of. Any point then finds all
  * solids closer than `margin` in its own cell alone.
  */
-export function buildSolidIndex(solids: Solid[], width: number, height: number): SolidIndex {
+export function buildSolidIndex(solids: AnyShape[], width: number, height: number): SolidIndex {
   const cell = TERRAIN.indexCell;
   const margin = TERRAIN.indexMargin;
   const cols = Math.ceil(width / cell);
@@ -157,8 +157,8 @@ export const lastPush = { nx: 0, ny: -1 };
  * Moves a circle of radius `r` out of every solid it overlaps. Returns the solid it was
  * pushed out of (the first, if several) and leaves its outward normal in `lastPush`.
  */
-export function pushOut(index: SolidIndex, body: { x: number; y: number }, r: number): Solid | null {
-  let first: Solid | null = null;
+export function pushOut(index: SolidIndex, body: { x: number; y: number }, r: number): AnyShape | null {
+  let first: AnyShape | null = null;
   // A corner between two solids can need a second or third push.
   for (let pass = 0; pass < 3; pass++) {
     nearestSolid(index, body.x, body.y, hit);
@@ -183,7 +183,7 @@ export function bounceOffSolids(
   e: { x: number; y: number; heading: number },
   r: number,
   minOut = ARENA.wallMinInward,
-): Solid | null {
+): AnyShape | null {
   const solid = pushOut(index, e, r);
   if (!solid) return null;
   const { nx, ny } = lastPush;
