@@ -26,6 +26,7 @@ import {
 } from './progression';
 import { emptyRecap, type HurtSource, type RunRecap } from './recap';
 import { KNOWN_RELICS, relicMods, type RelicId } from './relics';
+import { placeSites, siteMods, type PactId, type RiftState, type Site } from './sites';
 import type { UltimateId } from './ultimates';
 import { PathTrail, Snake } from './snake';
 import { WIZARDS, type WizardId } from './wizards';
@@ -161,6 +162,8 @@ export interface Enemy {
   /** Where a burrowing foe will come up. */
   goal: Vec | null;
   moveIndex: number;
+  /** Which of a phased boss's phases it has reached (the Ascendant has three). */
+  phase: number;
   enraged: boolean;
   elite: EliteKind | null;
   /** Shielded elites: damage goes to the shield first. */
@@ -337,6 +340,9 @@ export interface RunSetup {
   waystone?: boolean;
   /** Development only: start at this depth (and its map). */
   startDepth?: number;
+  /** A fixed seed for the maps, foes and offers, and the date when it is that day's daily run (D1). */
+  seed?: number;
+  daily?: string;
 }
 
 /** Burning ground, or a trail of lava or brambles, or a patch of ice: a short-lived hazard circle. */
@@ -451,6 +457,15 @@ export interface Floater {
   screen: boolean;
 }
 
+/** The run's ending (V1): the Ascendant rising where the last Archmage fell, the fight, then the win. */
+export interface Finale {
+  x: number;
+  y: number;
+  /** Seconds in this stage. */
+  t: number;
+  stage: 'rising' | 'fight' | 'won';
+}
+
 export interface Banner {
   text: string;
   sub: string;
@@ -489,6 +504,18 @@ export interface World {
   mapStart: number;
   /** The way down once the boss has fallen, and the fade from black after descending. */
   descent: Descent | null;
+  /** This map's shrines, rifts, chests and merchants (E1); a rift being fought, and a won rift's relic still to offer. */
+  sites: Site[];
+  rift: RiftState | null;
+  riftReward: boolean;
+  /** Shrine pacts taken, seconds left of a cursed chest's curse, and shards spent at merchants. */
+  pacts: PactId[];
+  chestCurse: number;
+  spentShards: number;
+  /** The Ascendant's rising and fight at the end of the first pass, and whether (and when) the run was won. */
+  finale: Finale | null;
+  won: boolean;
+  wonAt: number;
   fade: number;
   groundFx: GroundFx[];
   blasts: Blast[];
@@ -624,7 +651,7 @@ export function runMods(setup: RunSetup): RunMods {
  * overcharge or a relic. Health never rises here (callers heal on purpose), only drops to a lower max.
  */
 export function refreshStats(world: World): void {
-  world.mods = combineMods(world.baseMods, overchargeMods(world.overcharge), ...relicMods(world));
+  world.mods = combineMods(world.baseMods, overchargeMods(world.overcharge), ...relicMods(world), ...siteMods(world));
   world.stats = computeStats(world.upgrades, world.meta, world.mods);
   world.hp = Math.min(world.stats.maxHp, world.hp);
 }
@@ -657,6 +684,15 @@ export function createWorld(
     visited: [map.def.id],
     mapStart: 0,
     descent: null,
+    finale: null,
+    won: false,
+    wonAt: 0,
+    sites: [],
+    rift: null,
+    riftReward: false,
+    pacts: [],
+    chestCurse: 0,
+    spentShards: 0,
     fade: 0,
     groundFx: [],
     blasts: [],
@@ -761,5 +797,6 @@ export function createWorld(
   };
   placeBreakables(world);
   placeVents(world);
+  placeSites(world);
   return world;
 }

@@ -21,6 +21,8 @@ export interface GameOptions extends ViewOptions {
    */
   gameSpeed: number;
   bindings: KeyBindings;
+  /** On a touch screen, the right thumb steers and the left draws. */
+  steerRight: boolean;
 }
 
 export const GAME_SPEED = { min: 0.5, max: 1, step: 0.1 };
@@ -28,7 +30,7 @@ export const GAME_SPEED = { min: 0.5, max: 1, step: 0.1 };
 export const DEFAULT_VIEW: ViewOptions = { shake: 1, reduceFlashing: false, safeWarnings: false, minimap: true, steadyCamera: false };
 
 export function defaultOptions(): GameOptions {
-  return { ...DEFAULT_VIEW, gameSpeed: 1, bindings: copyBindings(DEFAULT_BINDINGS) };
+  return { ...DEFAULT_VIEW, gameSpeed: 1, bindings: copyBindings(DEFAULT_BINDINGS), steerRight: false };
 }
 
 /** Snaps a speed to the slider's steps and range. */

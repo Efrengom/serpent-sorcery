@@ -193,7 +193,7 @@ class AudioEngine {
 
   private applyCue(): void {
     const c = this.jukeboxCue ?? this.cue;
-    if (this.music && this.ctx) this.music.cue(c.map, c.loop, c.scene, this.ctx.currentTime);
+    if (this.music && this.ctx) this.music.cue(c.map, c.loop, c.scene, this.ctx.currentTime, c.finale ?? false);
   }
 
   // Music and sample state for the play-test.
@@ -353,13 +353,15 @@ class AudioEngine {
     opts: {
       map?: MapId;
       loop?: number;
+      /** The Ascendant's theme in place of the map's. */
+      finale?: boolean;
       from?: MusicScene;
       solo?: LayerId | null;
       ambience?: 'with' | 'without' | 'only';
       weighted?: boolean;
     } = {},
   ): Promise<{ rms: number; peak: number; perSecond: number[]; scheduled: number }> {
-    const { map = 'ruins', loop = 0, from, solo = null, ambience = 'without', weighted = false } = opts;
+    const { map = 'ruins', loop = 0, finale = false, from, solo = null, ambience = 'without', weighted = false } = opts;
     const octx = new OfflineAudioContext(1, Math.ceil(44100 * seconds), 44100);
     const player = new MusicPlayer(octx);
     player.solo = solo;
@@ -381,11 +383,11 @@ class AudioEngine {
     } else {
       vol.connect(octx.destination);
     }
-    player.cue(map, loop, from ?? scene, 0);
+    player.cue(map, loop, from ?? scene, 0, finale);
     player.start(0.05);
     if (from) {
       player.pump(1);
-      player.cue(map, loop, scene, 1);
+      player.cue(map, loop, scene, 1, finale);
     }
     player.pump(seconds);
     const data = (await octx.startRendering()).getChannelData(0);

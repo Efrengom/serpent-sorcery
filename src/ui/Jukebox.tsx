@@ -13,13 +13,15 @@ export function Jukebox() {
   const [map, setMap] = useState<MapId>('ruins');
   const [scene, setScene] = useState<MusicScene>('run2');
   const [loop, setLoop] = useState(0);
+  const [finale, setFinale] = useState(false);
   const [on, setOn] = useState(false);
-  const play = (m: MapId, s: MusicScene, l: number) => {
+  const play = (m: MapId, s: MusicScene, l: number, f = finale) => {
     setMap(m);
     setScene(s);
     setLoop(l);
+    setFinale(f);
     setOn(true);
-    audio.jukebox({ map: m, loop: l, scene: s });
+    audio.jukebox({ map: m, loop: l, scene: s, finale: f });
   };
   const release = () => {
     setOn(false);
@@ -27,13 +29,16 @@ export function Jukebox() {
   };
   return (
     <div className="jukebox" aria-label="Jukebox">
-      <div className="jukebox-title">Jukebox{on && `: ${THEMES[themeFor(map, scene)].title}`}</div>
+      <div className="jukebox-title">Jukebox{on && `: ${THEMES[finale ? 'finale' : themeFor(map, scene)].title}`}</div>
       <div className="jukebox-row">
         {MAP_ORDER.map((m) => (
-          <button key={m} className={`btn small${on && m === map ? ' on' : ''}`} data-jukebox-map={m} onClick={() => play(m, scene, loop)}>
+          <button key={m} className={`btn small${on && !finale && m === map ? ' on' : ''}`} data-jukebox-map={m} onClick={() => play(m, scene, loop, false)}>
             {MAPS[m].name}
           </button>
         ))}
+        <button className={`btn small${on && finale ? ' on' : ''}`} data-jukebox-map="finale" onClick={() => play('ember', scene, 0, true)}>
+          The Ascendant
+        </button>
       </div>
       <div className="jukebox-row">
         {MUSIC_SCENES.filter((s) => s !== 'silent').map((s) => (

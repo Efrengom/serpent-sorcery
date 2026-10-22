@@ -1,5 +1,6 @@
 import { ARCHETYPE, ASPECTS, BUFFS, ELITE, ENEMIES, EVOLUTIONS, HIT_STOP, PROGRESSION, SNAKE, SPELLS, type EnemyKind } from './config';
 import { beginDescent } from './descent';
+import { beginFinale, finaleDue, winRun } from './finale';
 import { addShake, burst, floater, hitStop } from './effects';
 import { spawnEnemy } from './enemies';
 import { clamp, dist2, TAU } from './math';
@@ -123,6 +124,8 @@ export function killEnemy(world: World, e: Enemy): void {
   e.dead = true;
   world.kills++;
   const isBoss = e.kind === 'boss';
+  const kind = isBoss ? e.bossId : e.kind;
+  world.recap.slain[kind] = (world.recap.slain[kind] ?? 0) + 1;
   const bodyColor = KILL_COLORS[e.kind];
   burst(world, e.x, e.y, bodyColor, isBoss ? 60 : 14, isBoss ? 420 : 240, { size: isBoss ? 5 : 3.5, life: 0.6 });
   burst(world, e.x, e.y, '#ffffff', isBoss ? 20 : 4, 160, { kind: 'glow', size: isBoss ? 14 : 7, life: 0.35 });
@@ -138,7 +141,10 @@ export function killEnemy(world: World, e: Enemy): void {
   if (isBoss) {
     world.bossKills++;
     world.boss = null;
-    beginDescent(world, e.x, e.y);
+    // The last Archmage of the first pass raises the Ascendant; the Ascendant's fall wins the run.
+    if (e.bossId === 'ascendant') winRun(world, e.x, e.y);
+    else if (finaleDue(world)) beginFinale(world, e.x, e.y);
+    else beginDescent(world, e.x, e.y);
     addShake(world, 0.8);
     hitStop(world, HIT_STOP.bossKill, true);
     world.slowMo = HIT_STOP.bossSlowMo;

@@ -18,7 +18,8 @@ export type ThemeId =
   | 'catacombs'
   | 'catacombsBoss'
   | 'ember'
-  | 'emberBoss';
+  | 'emberBoss'
+  | 'finale';
 export type LayerId = 'bassCalm' | 'bass' | 'arp' | 'lead' | 'harmony' | 'drums' | 'hats';
 export const LAYERS: LayerId[] = ['bassCalm', 'bass', 'arp', 'lead', 'harmony', 'drums', 'hats'];
 
@@ -793,6 +794,72 @@ const EMBER_BOSS: Theme = {
   },
 };
 
+// ---------------------------------------------------------------- the finale
+
+/**
+ * "Azhdaha": the Archmage Ascendant's theme, back in the Ruins' D minor (the run has come full
+ * circle) at 160 BPM. The melody opens with the "Sigil of the Serpent" motif, and the band is
+ * every map's at once: the Ruins' chip lead, the Catacombs' organ and celesta, the Ember's
+ * distorted bass and anvil, and the bell.
+ */
+const FINALE: Theme = {
+  title: 'Azhdaha',
+  bpm: 160,
+  scale: 'D E F G A Bb C C# Eb',
+  chords: ['Dm', 'Bb', 'Gm', 'A', 'Dm', 'F', 'C', 'A7', 'Bb', 'C', 'Dm', 'Bb', 'Gm', 'Eb', 'A', 'A7'],
+  lead: [
+    'D5:2 A4:2 D5:2 E5:2 F5:4 A5:4',
+    'F5:2 D5:2 Bb4:2 D5:2 F5:4 Bb5:4',
+    'G5:2 Bb5:2 D6:4 C6:2 Bb5:2 G5:4',
+    'A5:4 C#6:2 E6:2 A5:8',
+    'D6:2 C6:2 A5:2 F5:2 D5:4 F5:4',
+    'F5:2 A5:2 C6:4 A5:2 F5:2 C5:4',
+    'E5:2 G5:2 C6:4 E6:4 C6:4',
+    'C#6:4 E6:4 G6:4 E6:4',
+    'D6:6 Bb5:2 F5:4 D6:4',
+    'E6:6 C6:2 G5:4 E6:4',
+    'F6:4 E6:2 D6:2 A5:4 F5:4',
+    'D6:4 F6:4 Bb5:8',
+    'G5:2 Bb5:2 D6:2 G6:2 F6:2 D6:2 Bb5:4',
+    'G6:4 Eb6:4 Bb5:4 G5:4',
+    'A5:2 C#6:2 E6:2 A5:2 C#6:2 E6:2 G6:4',
+    'E6:2 D6:2 C#6:2 Bb5:2 A5:2 G5:2 F5:2 E5:2',
+  ],
+  bass: BASS_GALLOP,
+  kick: 'x...x...x...x...',
+  snare: '....x.......x...',
+  hats: 'xxxxxxxxxxxxxxxx',
+  busyHats: 'xxxxxxxxxxxxxxxx',
+  perc: '....h.......h...',
+  fillEvery: 4,
+  toll: { every: 4, voice: TOLL_BELL, floor: 59 },
+  band: {
+    lead: { ...CHIP_LEAD, gain: 0.8, duty: 0.25 },
+    harmony: { wave: 'pulse', gain: 0.7, duty: 0.5, stack: [[12, 0.5], [19, 0.25]], sustain: 0.9, filter: 3000 },
+    arp: { voice: { ...CELESTA, gain: 0.7, sustain: 0.15, decay: 0.12 }, order: ARP_ORDER, every: 1, gate: 0.7, octave: 12 },
+    bass: { ...GRIT_BASS, gain: 1.05 },
+    bassCalm: TRI_BASS,
+    kit: {
+      kick: { gain: 1.15, from: 190, to: 50 },
+      snare: 'snare',
+      snareGain: 0.85,
+      hat: { gain: 0.5, cutoff: 7600, open: true },
+      perc: 'anvil',
+      percGain: 0.5,
+      fill: 'tom',
+      crash: true,
+      alwaysFill: true,
+    },
+    echo: { steps: 3, feedback: 0.28, tone: 2400, send: 0.18 },
+    reverb: { seconds: 1.4, send: 0.15 },
+    // Drums 1 dB over the Ruins' boss theme on purpose: the last fight.
+    trim: { lead: 1.13, arp: 0.59, bass: 0.67, drums: 0.89, hats: 1.29 },
+  },
+};
+
+/** The run's victory: the Ruins' fanfare, answered on the dominant and resolved to D major. */
+export const FINALE_STING: Sting = { chords: ['A7', 'D'], lead: ['A5:4 C#6:4 E6:4 G6:4', 'F#6:16'] };
+
 export const THEMES: Record<ThemeId, Theme> = {
   ruins: RUINS,
   ruinsBoss: RUINS_BOSS,
@@ -802,6 +869,7 @@ export const THEMES: Record<ThemeId, Theme> = {
   catacombsBoss: CATACOMBS_BOSS,
   ember: EMBER,
   emberBoss: EMBER_BOSS,
+  finale: FINALE,
 };
 export const THEME_IDS = Object.keys(THEMES) as ThemeId[];
 

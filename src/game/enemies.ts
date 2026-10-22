@@ -152,6 +152,7 @@ export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number, 
     segSpacing: 0,
     bossMove: 'slither',
     moveIndex: 0,
+    phase: 0,
     enraged: false,
     elite: null,
     shield: 0,
@@ -185,6 +186,13 @@ export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number, 
     world.boss = e;
   }
   world.enemies.push(e);
+  return e;
+}
+
+/** A foe made elite whatever the odds: a rift's elites and a cursed chest's guards. */
+export function spawnElite(world: World, kind: EnemyKind, x: number, y: number): Enemy {
+  const e = spawnEnemy(world, kind, x, y);
+  if (kind !== 'boss' && !e.elite) makeElite(world, e);
   return e;
 }
 
@@ -297,15 +305,18 @@ function chooseKind(world: World): EnemyKind {
 
 export function updateDirector(world: World, dt: number): void {
   const t = world.time;
-  // Nothing new arrives while the way down is open.
-  if (t < DIRECTOR.firstSpawn || world.descent) return;
+  // Nothing new arrives while the way down is open, while the Ascendant rises or once it has fallen.
+  if (t < DIRECTOR.firstSpawn || world.descent || (world.finale && world.finale.stage !== 'fight')) return;
   const boss = BOSSES[world.map.def.boss];
 
-  // Boss schedule: the clearing it will arrive in is marked, then a warning banner, then a large portal.
-  if (!world.boss && world.bossClearing < 0 && world.map.clearings.length > 0 && t >= world.nextBossTime - NAV.clearingWarning) {
+  // Boss schedule: the clearing it will arrive in is marked, then a warning banner, then a large
+  // portal. The Ascendant's fight has no schedule: it is the last boss of the pass.
+  if (world.finale) {
+    // Only the usual stream of foes, thinned as in any boss fight.
+  } else if (!world.boss && world.bossClearing < 0 && world.map.clearings.length > 0 && t >= world.nextBossTime - NAV.clearingWarning) {
     world.bossClearing = nearestClearing(world);
   }
-  if (!world.bossWarned && t >= world.nextBossTime - DIRECTOR.bossWarning) {
+  if (!world.finale && !world.bossWarned && t >= world.nextBossTime - DIRECTOR.bossWarning) {
     world.bossWarned = true;
     world.banner = {
       text: boss.warning[0],
@@ -316,7 +327,7 @@ export function updateDirector(world: World, dt: number): void {
     };
     world.sfx('bossWarn');
   }
-  if (t >= world.nextBossTime) {
+  if (!world.finale && t >= world.nextBossTime) {
     world.nextBossTime += world.effects.bossInterval ?? DIRECTOR.bossInterval;
     world.bossWarned = false;
     if (!world.boss) {
@@ -1012,13 +1023,26 @@ function updateBoss(world: World, e: Enemy, dt: number): void {
     world.banner = { text: `${boss.short} is enraged!`, sub: boss.enraged, t: 0, max: 2.2, color: '#ff7a8f' };
     world.sfx('bossWarn');
   }
+  // A phased boss (the Ascendant) takes up new magic as its health falls.
+  const phases = boss.phases;
+  if (phases) {
+    let p = e.phase;
+    while (p + 1 < phases.length && e.hp < e.maxHp * phases[p + 1].at) p++;
+    if (p !== e.phase) {
+      e.phase = p;
+      e.moveIndex = 0;
+      world.banner = { text: phases[p].banner[0], sub: phases[p].banner[1], t: 0, max: 2.4, color: '#ffd45e' };
+      world.sfx('bossWarn');
+    }
+  }
+  const moves = phases ? phases[e.phase].moves : boss.moves;
   const pace = e.enraged ? 0.7 : 1;
   switch (e.state) {
     case 'move': {
       slither(world, e, dt, e.speed, cfg.turnRate);
       e.attackTimer -= dt;
       if (e.attackTimer <= 0 && canAttack(world, e)) {
-        e.bossMove = boss.moves[e.moveIndex++ % boss.moves.length];
+        e.bossMove = moves[e.moveIndex++ % moves.length];
         e.aim = Math.atan2(s.y - e.y, s.x - e.x);
         setState(e, 'windup');
         world.sfx('telegraph');
@@ -1093,7 +1117,7 @@ function updateBoss(world: World, e: Enemy, dt: number): void {
           e.attackTimer = cfg.slitherTime * pace;
         } else {
           const count = cfg.summonCount + (e.enraged ? 2 : 0);
-          const [kind, extra] = boss.summon;
+          const [kind, extra] = phases ? phases[e.phase].summon : boss.summon;
           openSpotsAround(world, e.x, e.y, 110, count).forEach((p, i) => openPortal(world, e.enraged && i % 2 === 0 ? extra : kind, p.x, p.y));
           world.sfx('portal');
           setState(e, 'move');
@@ -1124,7 +1148,7 @@ function updateBoss(world: World, e: Enemy, dt: number): void {
       }
       e.x += Math.cos(e.heading) * cfg.chargeSpeed * dt;
       e.y += Math.sin(e.heading) * cfg.chargeSpeed * dt;
-      if (boss.fireTrail) {
+      if (phases ? phases[e.phase].fireTrail : boss.fireTrail) {
         const f = HAZARDS.fireTrail;
         leaveTrail(world, e, cfg.chargeSpeed * dt, 'fire', f.spacing, f.radius, f.life * (e.enraged ? 1.6 : 1));
       }

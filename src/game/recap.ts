@@ -60,6 +60,13 @@ export interface RunRecap {
   buffs: number;
   /** XP in the crystals breakables dropped (to keep them a side source, B5). */
   breakableXp: number;
+  /** Shrine pacts taken, merchant wares bought, cursed chests opened and rifts won (E1). */
+  pacts: number;
+  bought: number;
+  chests: number;
+  rifts: number;
+  /** Foes defeated by kind, bosses by name (for the bestiary). */
+  slain: Record<string, number>;
 }
 
 export function emptyRecap(): RunRecap {
@@ -77,6 +84,11 @@ export function emptyRecap(): RunRecap {
     healed: 0,
     buffs: 0,
     breakableXp: 0,
+    pacts: 0,
+    bought: 0,
+    chests: 0,
+    rifts: 0,
+    slain: {},
   };
 }
 
@@ -153,6 +165,13 @@ const HURT_NAMES: Record<string, string> = {
   'pyrecoil:charge': "Pyrecoil's charge",
   'pyrecoil:volley': "Pyrecoil's volley",
   'pyrecoil:meteor': "Pyrecoil's meteors",
+  'ascendant:bite': "Azhdaha's fangs",
+  'ascendant:charge': "Azhdaha's charge",
+  'ascendant:volley': "Azhdaha's volley",
+  'ascendant:spore': "Azhdaha's spores",
+  'ascendant:erupt': 'Azhdaha bursting from below',
+  'ascendant:icicle': "Azhdaha's icicles",
+  'ascendant:meteor': "Azhdaha's meteors",
 };
 
 export function describeHurt(key: string): string {

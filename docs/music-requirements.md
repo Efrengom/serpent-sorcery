@@ -133,3 +133,17 @@ Everything above is in. Notes on what it came to:
 - **Not checkable by machine:** whether each theme sounds right. The tests check that every note
   is in its scale and every bar starts on a chord tone, and the mix is matched by measurement,
   but the themes still need listening to (`?jukebox`).
+
+## 9. Later: the finale
+
+The Archmage Ascendant (see `docs/reach-and-replay-requirements.md`) has a ninth theme,
+"Azhdaha": D minor at 160 BPM, opening with the "Sigil of the Serpent" motif and played by every
+map's band at once. It isn't any map's: the music cue's `finale` flag plays it in place of the
+Ember's music while the Ascendant rises (its hush), fights (its boss arrangements) and falls (its
+own sting: the Ruins' fanfare resolved to D major), and in its calm arrangement over the victory
+screen. The jukebox plays it as "The Ascendant", and `node scripts/music-mix.mjs finale` measures
+it against the Ruins' boss theme.
+
+Measured the same way, its fight arrangements sit 0.5 dB over the Ruins' boss theme, each layer
+within 1 dB (the drums 1 dB over on purpose, and the bass with its bell), and its sting peaks at
+−2.7 dBFS, which the final limiter catches.

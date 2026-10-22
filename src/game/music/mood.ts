@@ -68,6 +68,8 @@ export interface MusicCue {
   map: MapId;
   loop: number;
   scene: MusicScene;
+  /** The Ascendant's theme in place of the map's. */
+  finale?: boolean;
 }
 
 /** Seconds of play the victory sting has to itself after a boss falls, before the way down's music. */
@@ -87,7 +89,15 @@ export function loopOf(mapIndex: number): number {
 export function musicCue(world: World, phase: Phase, level: 0 | 1 | 2): MusicCue {
   const here = { map: world.map.def.id, loop: loopOf(world.mapIndex) };
   if (phase === 'dying') return { ...here, scene: 'silent' };
-  if (phase === 'gameover') return { ...here, scene: 'calm' };
+  if (phase === 'gameover') return { ...here, scene: 'calm', ...(world.won ? { finale: true } : {}) };
+  // The run's ending: a hush as the Ascendant rises, its theme for the fight, the run's own
+  // victory sting when it falls and a calm arrangement over the victory screen.
+  const f = world.finale;
+  if (f) {
+    if (f.stage === 'rising') return { ...here, scene: 'warning', finale: true };
+    if (f.stage === 'fight' && world.boss) return { ...here, scene: world.boss.enraged ? 'boss2' : 'boss1', finale: true };
+    if (f.stage === 'won') return { ...here, scene: f.t < VICTORY_HOLD ? 'victory' : 'calm', finale: true };
+  }
   if (world.boss) return { ...here, scene: world.boss.enraged ? 'boss2' : 'boss1' };
   const d = world.descent;
   if (d) {

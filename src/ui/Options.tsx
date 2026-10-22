@@ -255,6 +255,12 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
           on={options.steadyCamera}
           onChange={(steadyCamera) => onChange({ steadyCamera })}
         />
+        <Toggle
+          label="Steer with the right thumb"
+          hint="On a touch screen, one thumb steers from its side of the screen and the other draws. On: the right thumb steers."
+          on={options.steerRight}
+          onChange={(steerRight) => onChange({ steerRight })}
+        />
         <RangeRow
           label="Game speed"
           value={Math.round(options.gameSpeed * 100)}
@@ -272,7 +278,7 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
       <section className="options-section">
         <h3 className="setup-head">Keys</h3>
         <KeyTable bindings={options.bindings} onChange={(bindings) => onChange({ bindings })} />
-        <p className="opt-note">Draw sigils with the left mouse button. Esc always pauses and goes back.</p>
+        <p className="opt-note">Draw sigils with the left mouse button, or a finger on a touch screen. Esc always pauses and goes back.</p>
       </section>
     </div>
   );

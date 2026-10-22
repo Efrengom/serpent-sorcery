@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { audio } from '../game/audio';
 import { buyMeta, buyUnlock, commitRunResult, loadSave, optionsOf, writeSave, type RunResult, type SaveData } from '../game/persistence';
 import { grimoireSetup, playableHeat, startMaps, type UnlockId } from '../game/grimoire';
+import { dailyDate, dailySetup } from '../game/daily';
 import { MAP_ORDER } from '../game/maps';
 import type { MapId } from '../game/maps/types';
 import type { CurseId } from '../game/curses';
@@ -13,11 +14,11 @@ import type { RunSetup } from '../game/world';
 import { PixelArtContext, pixelFloorUrl } from './art';
 import { GameView } from './GameView';
 import { Jukebox } from './Jukebox';
-import { HowToPlay, SetupScreen, ShopScreen, TitleScreen } from './Menus';
+import { HowToPlay, RecordsScreen, SetupScreen, ShopScreen, TitleScreen } from './Menus';
 import { BindingsContext, OptionsScreen } from './Options';
 import { PracticeScreen } from './Practice';
 
-type Screen = 'title' | 'howto' | 'shop' | 'setup' | 'options' | 'practice' | 'game';
+type Screen = 'title' | 'howto' | 'shop' | 'setup' | 'options' | 'practice' | 'records' | 'game';
 
 /** The development jukebox, shown with ?jukebox in the address. */
 const JUKEBOX = import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).has('jukebox');
@@ -26,6 +27,8 @@ export function App() {
   const [save, setSave] = useState<SaveData>(() => loadSave());
   const [screen, setScreen] = useState<Screen>('title');
   const [gameKey, setGameKey] = useState(0);
+  /** The run being played is today's daily (its own seed, wizard and curse). */
+  const [dailyRun, setDailyRun] = useState(false);
   const saveRef = useRef(save);
 
   useEffect(() => {
@@ -157,13 +160,16 @@ export function App() {
   // above what's unlocked, and a start map without its waystone.
   const startMap = startMaps(save.grimoire).includes(save.settings.startMap) ? save.settings.startMap : MAP_ORDER[0];
   const startDepth = MAP_ORDER.indexOf(startMap) + 1;
-  const setup: RunSetup = {
-    wizard: playableWizard(save.settings.wizard, save.records),
-    curses: save.settings.curses,
-    grimoire: grimoireSetup(save.grimoire),
-    heat: playableHeat(save.settings.heat, save.records.heatUnlocked),
-    ...(startDepth > 1 ? { startDepth, waystone: true } : {}),
-  };
+  const daily = dailySetup(dailyDate());
+  const setup: RunSetup = dailyRun
+    ? { wizard: daily.wizard, curses: [daily.curse], grimoire: grimoireSetup(save.grimoire), heat: 0, seed: daily.seed, daily: daily.date }
+    : {
+        wizard: playableWizard(save.settings.wizard, save.records),
+        curses: save.settings.curses,
+        grimoire: grimoireSetup(save.grimoire),
+        heat: playableHeat(save.settings.heat, save.records.heatUnlocked),
+        ...(startDepth > 1 ? { startDepth, waystone: true } : {}),
+      };
 
   const pixel = save.settings.pixelArt;
 
@@ -181,6 +187,13 @@ export function App() {
   }, [screen, startMap, listening]);
 
   const play = useCallback(() => {
+    setDailyRun(false);
+    setGameKey((k) => k + 1);
+    setScreen('game');
+  }, []);
+
+  const playDaily = useCallback(() => {
+    setDailyRun(true);
     setGameKey((k) => k + 1);
     setScreen('game');
   }, []);
@@ -198,6 +211,9 @@ export function App() {
         <TitleScreen
           save={save}
           onPlay={play}
+          onDaily={playDaily}
+          daily={daily}
+          onRecords={() => setScreen('records')}
           onSetup={() => setScreen('setup')}
           onHowTo={() => setScreen('howto')}
           onShop={() => setScreen('shop')}
@@ -210,6 +226,7 @@ export function App() {
       )}
       {screen === 'howto' && <HowToPlay onBack={toTitle} onPlay={play} onPractice={() => setScreen('practice')} safeWarnings={options.safeWarnings} />}
       {screen === 'options' && <OptionsScreen options={options} onChange={setOptions} onBack={toTitle} />}
+      {screen === 'records' && <RecordsScreen save={save} onBack={toTitle} />}
       {screen === 'practice' && <PracticeScreen onBack={toTitle} onPlay={play} />}
       {screen === 'shop' && <ShopScreen save={save} onBuy={buy} onBuyUnlock={buyGrimoire} onBack={() => setScreen('title')} onPlay={play} />}
       {screen === 'setup' && (
