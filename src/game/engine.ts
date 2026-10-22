@@ -13,8 +13,7 @@ import { recognize, type Pt } from './gesture';
 import { InputManager } from './input';
 import { defaultOptions, type GameOptions } from './options';
 import { clamp, type Vec } from './math';
-import { arenaPressure, IntensityTracker } from './music/mood';
-import type { MusicScene } from './music/score';
+import { arenaPressure, IntensityTracker, musicCue } from './music/mood';
 import { COLORS } from './palette';
 import type { RunResult } from './persistence';
 import { applyChoice, banishFromOffer, rerollOffer, rollOffer, skipLevelUp } from './levelup';
@@ -691,17 +690,11 @@ export class Game {
     if (!hurtPlayer(w, ARENA.wallDamage, { kind: 'wall', attack: solid === 'wall' ? w.map.def.wallName : solid })) audio.play('wall');
   }
 
-  /** Picks the soundtrack arrangement: layered by danger, a hush before the boss, its theme during the fight. */
+  /** Picks the soundtrack: the map's music layered by danger, its boss theme, the sting and the way down. */
   private updateMusic(dt: number): void {
     const w = this.world;
     if (this.phase === 'playing') this.intensity.update(arenaPressure(w), dt);
-    let scene: MusicScene;
-    if (this.phase === 'dying') scene = 'silent';
-    else if (this.phase === 'gameover') scene = 'calm';
-    else if (w.boss) scene = w.boss.enraged ? 'boss2' : 'boss1';
-    else if (w.bossWarned || w.portals.some((p) => p.kind === 'boss')) scene = 'warning';
-    else scene = (['run0', 'run1', 'run2'] as const)[this.intensity.level];
-    audio.setMusicScene(scene);
+    audio.setMusic(musicCue(w, this.phase, this.intensity.level));
   }
 
   private die(): void {

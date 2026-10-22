@@ -37,7 +37,7 @@ describe('soundtrack score', () => {
     expect(() => parseBar('D5:6 A4:2')).toThrow();
   });
 
-  it('fills every bar of both themes exactly, with one chord per melody bar', () => {
+  it('fills every bar of every theme exactly, with one chord per melody bar', () => {
     for (const theme of Object.values(THEMES)) {
       const p = prepareTheme(theme);
       expect(p.bars).toBe(theme.lead.length);
@@ -86,7 +86,7 @@ describe('soundtrack score', () => {
   it('defines a mix for every scene using known layers, with the boss scenes on the boss theme', () => {
     for (const [name, mix] of Object.entries(SCENES)) {
       for (const l of Object.keys(mix.layers)) expect(LAYERS).toContain(l);
-      expect(mix.theme).toBe(name.startsWith('boss') ? 'boss' : 'main');
+      expect(mix.part).toBe(name.startsWith('boss') ? 'boss' : 'run');
     }
     expect(Object.keys(SCENES.silent.layers)).toHaveLength(0);
     // Each run level adds to the one below it.

@@ -27,14 +27,14 @@ On Windows PowerShell with script execution disabled, `npm` itself is blocked (`
 - aiming from the current head, cooldown feedback, rejected scribbles and clicks
 - Escape, focus loss and resize handling
 - every sound sample loading, music start/mute/duck/slider behavior
-- the boss warning hushing the music, the boss theme crossfading in, the freeze and slow motion when the boss dies, and the main theme returning
+- the boss warning hushing the music, the Ruins' boss theme crossfading in, the freeze and slow motion when the boss dies, the victory sting and then the Hollows' music rising on the way down, the Hollows playing its own theme, and the development jukebox taking over and handing back
 - drawing an unlearned triangle, then learning the triangle and zigzag sigils from level-up cards and casting them with real strokes, the ward blocking a real hit, frost slowing a foe, and an evolution card turning Arcane Bolt into Arcane Lance
 - the boss's fall clearing the field and opening a way down (with an arrow while it's off-screen), and steering into it with a real key to reach Depth 2, the Mycelium Hollows, with its banner
-- the big map: the camera following the serpent and Steady camera centring it, the aim staying on the world point pressed while the view scrolls, steering into a pillar with a real key (a bounce, 8 damage, recorded as the pillar), the boss clearing marked half a minute early with an arrow at the edge of the view, the minimap turned off and on with real clicks (checked in canvas pixels), a screenshot of every landmark in both styles, and frame times while the view races across the whole map; then each deeper map's landmarks in both styles and frame times racing across it, ice on the Frozen Lake halving the turn rate, and brambles in the Hollows stinging and named in the recap
+- the big map: the camera following the serpent and Steady camera centring it, the aim staying on the world point pressed while the view scrolls, steering into a pillar with a real key (a bounce, 8 damage, recorded as the pillar), the boss clearing marked half a minute early with an arrow at the edge of the view, the minimap turned off and on with real clicks (checked in canvas pixels), a screenshot of every landmark in both styles, and frame times while the view races across the whole map; then each deeper map's landmarks in both styles, its own theme playing, and frame times racing across it, ice on the Frozen Lake halving the turn rate, and brambles in the Hollows stinging and named in the recap
 - the trail reading a real V's first leg as a line and the finished stroke as a V, a careful V casting as Perfect or Clean, and a real WASD circle around a brute showing the loop hint and then Constricting it
 - breakables: running into an urn smashes it for crystals, real Bolt strokes break a reliquary for a buff, the HUD chip counting down, Quickening speeding cooldowns by half, and a heart healing
 - an autopilot run with level-ups through death, foes spawning just outside the view (never on screen) and staying around the serpent, breakables giving at most 15% of the XP, music layers building as the arena fills, the death recap, the reward banked once, and an instant restart
-- the setup screen: the atlas showing the maps reached and the rest as silhouettes, locked and unlocked wizards, picking Frostcoil and a curse with real clicks, the run starting with them, and the curse multiplying the banked shards
+- the setup screen: the atlas showing the maps reached and the rest as silhouettes, the menu music following the start map, a reached map's theme played with a real click on Listen and stopped again, locked and unlocked wizards, picking Frostcoil and a curse with real clicks, the run starting with them, and the curse multiplying the banked shards
 - shop purchases and reload persistence
 - the options screen: toggles, sliders and rebinding set with real clicks and keys and saved, a key taken from another action, Esc cancelling a rebind, the run steering with the new key (and not the old one), 50% game speed advancing the run at half speed, and canvas pixels showing a struck foe not flashing white with reduced flashing and a charge lane and a vent's circle painted in hazard yellow with colorblind-safe warnings
 - the sigil practice room: the live reading while drawing, a V graded as Forked Lightning, a square drawn for the triangle explaining that it has 4 corners, and the tally of attempts
@@ -247,25 +247,38 @@ Frost works the same way in reverse: enemies inside a field run on a slower cloc
 
 ## Music
 
-The soundtrack is an original chiptune score, synthesized live with WebAudio (pulse-wave lead and arpeggio, triangle bass, noise drums), so it adds nothing to the download and reacts to the game:
+The soundtrack is an original chiptune score, synthesized live with WebAudio, so it adds nothing to the download and reacts to the game. Each map has its own music: a run theme, a boss theme, its own band of instruments, a victory sting and (below the Ruins) an ambient bed.
+
+| Map | Run theme | Boss theme | Band and ambience |
+| --- | --- | --- | --- |
+| Sunken Ruins | "Sigil of the Serpent": D minor, 132 BPM | "Ouroboros": 150 BPM, galloping bass | pulse-wave lead and arpeggio, triangle bass, noise drums |
+| Mycelium Hollows | "Glowcap Hollow": E Dorian, 120 BPM, swung | "Sporemaw": a lurching half-time, 138 BPM | soft chorused ocarina, bubbling arpeggio, woodblocks and claps; dripping caves |
+| Rimefrost Catacombs | "Rimefrost Bells": B minor in half-time, 140 BPM | "Rimecoil": a crypt-organ toccata, 150 BPM | celesta, glittering arpeggio, rim clicks, a tolling bell, a long dark room; wind and ice |
+| Ember Depths | "The Forge Below": C# Phrygian dominant, 152 BPM | "Pyrecoil": 168 BPM, the fastest | buzzing saw lead, distorted bass, an anvil on the backbeat, tom rolls; lava |
+
+Within a map, the music follows the run:
 
 | When | What plays |
 | --- | --- |
-| Title, shop, game over | **Calm** arrangement of the main theme ("Sigil of the Serpent", D minor, 132 BPM): bass, arpeggio and melody |
-| Early in a run | Driving bass, arpeggio, melody and hi-hats |
-| The arena fills up | Drums join, then a harmony line, busier hats and snare fills. Driven by enemy load (heavier enemies count more), a slow build over the first two minutes and low health, with hysteresis so layers don't flicker |
+| Title, shop, setup | The **calm** arrangement (bass, arpeggio and melody) of the map the next run starts on |
+| Early on a map | Driving bass, arpeggio, melody and hi-hats |
+| The arena fills up | Drums join, then a harmony line, busier hats and fills. Driven by enemy load (heavier enemies count more), a slow build over each map's first two minutes and low health, with hysteresis so layers don't flicker |
 | Boss warning | Melody and drums drop out |
-| Boss fight | The **"Ouroboros"** theme (150 BPM, galloping bass) crossfades in on the beat; it adds harmony when the boss is enraged |
-| Boss defeated | Back to the main theme |
-| Death | Silence |
+| Boss fight | The map's boss theme crossfades in on the beat; it adds harmony when the boss is enraged |
+| Boss defeated | The band stops for the map's two-bar victory sting |
+| The way down | The **next** map's music rises quietly, so you arrive to a theme you've heard begin |
+| Deeper loops | Each map plays a semitone higher per loop (up to two) |
+| Death | Silence; the calm arrangement on the game-over screen |
 
-Layer changes land on the next bar line, so they sound like part of the song.
+Layer changes land on the next bar line, and theme changes on the next beat, so they sound like part of the song.
 
+- **Listening:** the atlas on the setup screen names each reached map's theme; **Listen** plays it with the full band.
 - **Starting:** browsers only allow audio after a user gesture, so it starts on your first click or key press.
 - **Pausing:** it plays quieter while the game is paused and stops while the tab is hidden.
 - **Volume:** the title screen and pause menu have **Music** and **Effects** sliders (0–100%, saved). Music at 0% turns it off. Dragging Effects plays a short blip so you can hear the level.
 - **Quick mute:** **M** or the speaker button in the HUD mutes everything without moving the sliders.
-- **Where it lives:** the notes, chords and patterns are data in `src/game/music/score.ts`; the instruments are in `synth.ts`; `player.ts` schedules them and holds the layer balance (`LAYER_LEVEL`). The overall loudness at 100% is `MUSIC_MAX` in `src/game/audio.ts` (the default 55% matches the old "Pixel Kingdom" track's loudness), and the paused level is `MUSIC_DUCKED`.
+- **Where it lives:** each map's themes, band (voices, drum kit, echo, room) and per-layer trims are data in `src/game/music/score.ts`; the instruments are in `synth.ts` and the ambient beds in `ambience.ts`; `player.ts` schedules them and holds the shared layer balance (`LAYER_LEVEL`) and the ambience levels; `mood.ts` picks what plays (`musicCue`). The overall loudness at 100% is `MUSIC_MAX` in `src/game/audio.ts` (the default 55% matches the old "Pixel Kingdom" track's loudness), and the paused level is `MUSIC_DUCKED`. The design is in `docs/music-requirements.md`.
+- **Tuning:** open the dev server with `?jukebox` for a panel that plays any map's music in any arrangement and loop. `node scripts/music-mix.mjs` renders every map's music offline and compares each arrangement, each layer alone, each ambient bed and each sting with the Ruins.
 
 ## Sound effects
 
@@ -361,9 +374,9 @@ src/game/            framework-free game code (no React)
   effects.ts         capped particles, floating text, screen shake, hit-stop
   audio.ts           WebAudio context, volumes, sample loading, music scheduling
   sfx.ts             sound-effect samples and the synthesized fallback
-  music/             score (themes as data), synth instruments, player, intensity
+  music/             score (each map's themes and band as data), synth instruments, ambient beds, player, what plays when
 src/ui/              React screens, HUD and overlays
-scripts/             the end-to-end play-test, and the headless balance bot
+scripts/             the end-to-end play-test, the headless balance bot, and the music mix report
 ```
 
 The animation loop and all fast-changing state live in `Game` outside React. React gets phase changes, level-up offers, run results, and a HUD snapshot throttled to 20 Hz. The simulation runs at a fixed 120 Hz step, so movement, cooldowns and spawns don't depend on frame rate.

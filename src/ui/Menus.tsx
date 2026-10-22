@@ -9,6 +9,7 @@ import { MOVE_ACTIONS, primaryKeyLabel } from '../game/keys';
 import { MAP_ORDER, MAPS } from '../game/maps';
 import type { MapId } from '../game/maps/types';
 import { formatTime } from '../game/math';
+import { SOUNDTRACKS, THEMES } from '../game/music/score';
 import type { SaveData } from '../game/persistence';
 import { META_IDS, META_UPGRADES, metaMaxLevel, metaNextCost, type MetaId } from '../game/progression';
 import { isWizardUnlocked, playableWizard, WIZARD_IDS, WIZARDS, type WizardId } from '../game/wizards';
@@ -306,13 +307,18 @@ export function HowToPlay({
   );
 }
 
-/** Pick a wizard, any curses, the heat and where to start before a run; all are remembered. */
+/**
+ * Pick a wizard, any curses, the heat and where to start before a run; all are remembered. The
+ * atlas also plays any reached map's music.
+ */
 export function SetupScreen({
   save,
   onPickWizard,
   onToggleCurse,
   onSetHeat,
   onPickStart,
+  listening,
+  onListen,
   onBack,
   onPlay,
 }: {
@@ -321,6 +327,8 @@ export function SetupScreen({
   onToggleCurse(id: CurseId): void;
   onSetHeat(heat: number): void;
   onPickStart(map: MapId): void;
+  listening: MapId | null;
+  onListen(map: MapId | null): void;
   onBack(): void;
   onPlay(): void;
 }) {
@@ -416,6 +424,8 @@ export function SetupScreen({
               startable={starts.length > 1 && starts.includes(id)}
               chosen={start === id}
               onPick={() => onPickStart(id)}
+              listening={listening === id}
+              onListen={() => onListen(listening === id ? null : id)}
             />
           ))}
         </div>
@@ -466,7 +476,10 @@ function HeatPicker({ heat, unlocked, cleared, onSet }: { heat: number; unlocked
   );
 }
 
-/** One map of a run in the atlas: its picture, name and hazard tip once reached, else a silhouette; with a waystone, a start. */
+/**
+ * One map of a run in the atlas: its picture, name and hazard tip once reached, else a
+ * silhouette; once reached, its music to listen to; with a waystone, a start.
+ */
 function AtlasCard({
   id,
   depth,
@@ -474,6 +487,8 @@ function AtlasCard({
   startable,
   chosen,
   onPick,
+  listening,
+  onListen,
 }: {
   id: MapId;
   depth: number;
@@ -481,6 +496,8 @@ function AtlasCard({
   startable: boolean;
   chosen: boolean;
   onPick(): void;
+  listening: boolean;
+  onListen(): void;
 }) {
   const picture = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -493,10 +510,24 @@ function AtlasCard({
       <span className="atlas-depth">Depth {depth}</span>
       <span className="atlas-name">{known ? def.name : 'Undiscovered'}</span>
       <span className="atlas-tip">{known ? def.tip : 'Defeat the Archmage before it to find the way down'}</span>
-      {startable && (
-        <button className={`btn small${chosen ? ' on' : ''}`} data-start={id} aria-pressed={chosen} onClick={onPick}>
-          {chosen ? 'Starting here' : 'Start here'}
-        </button>
+      {known && (
+        <span className="atlas-theme">
+          <span aria-hidden="true">♪</span> {THEMES[SOUNDTRACKS[id].run].title}
+        </span>
+      )}
+      {(known || startable) && (
+        <div className="atlas-actions">
+          {known && (
+            <button className={`btn small${listening ? ' on' : ''}`} data-listen={id} aria-pressed={listening} onClick={onListen}>
+              {listening ? 'Stop' : 'Listen'}
+            </button>
+          )}
+          {startable && (
+            <button className={`btn small${chosen ? ' on' : ''}`} data-start={id} aria-pressed={chosen} onClick={onPick}>
+              {chosen ? 'Starting here' : 'Start here'}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
