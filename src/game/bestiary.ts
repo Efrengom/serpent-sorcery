@@ -50,6 +50,6 @@ export function bestiaryPages(): { title: string; map: MapId | null; beasts: Bea
     const def = MAPS[id];
     return { title: def.name, map: id as MapId | null, beasts: [...def.roster, def.boss] as BeastId[] };
   });
-  pages.push({ title: 'The Ascent', map: null, beasts: ['ascendant'] });
+  pages.push({ title: 'The End of the Descent', map: null, beasts: ['ascendant'] });
   return pages;
 }

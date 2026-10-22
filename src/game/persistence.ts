@@ -16,7 +16,7 @@ import {
 import { CURSE_IDS, type CurseId } from './curses';
 import { HEAT } from './config';
 import { UNLOCK_IDS, unlockBlocker, unlockDef, type UnlockId } from './grimoire';
-import { ACHIEVEMENT_IDS, ACHIEVEMENTS, newAchievements, type AchievementId } from './achievements';
+import { ACHIEVEMENT_IDS, ACHIEVEMENTS, newAchievements, RENAMED_ACHIEVEMENTS, type AchievementId } from './achievements';
 import { BEAST_IDS } from './bestiary';
 import { previousDay } from './daily';
 import { MAP_ORDER } from './maps';
@@ -185,7 +185,9 @@ export function sanitizeSave(input: unknown): SaveData {
       dailyPlays: num(records.dailyPlays, 0, 0, 1e6, true),
       dailyStreak: num(records.dailyStreak, 0, 0, 1e5, true),
     },
-    achievements: Array.isArray(o.achievements) ? ACHIEVEMENT_IDS.filter((id) => (o.achievements as unknown[]).includes(id)) : [],
+    achievements: Array.isArray(o.achievements)
+      ? ACHIEVEMENT_IDS.filter((id) => (o.achievements as unknown[]).some((v) => v === id || (typeof v === 'string' && RENAMED_ACHIEVEMENTS[v] === id)))
+      : [],
     grimoire: Array.isArray(o.grimoire) ? UNLOCK_IDS.filter((id) => (o.grimoire as unknown[]).includes(id)) : [],
     settings: {
       muted: typeof settings.muted === 'boolean' ? settings.muted : d.settings.muted,
