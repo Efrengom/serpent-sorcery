@@ -94,13 +94,52 @@ const ICONS = {
     rows: ['.kkkkk.', 'kwwwwwk', 'kwkwkwk', 'kwwwwwk', '.kwwwk.', '.kwkwk.', '..kkk..'],
     colors: { k: PX.ink, w: PX.hurt2 },
   },
+  // The Grimoire: a reroll's circling arrow, a banish's cross, four cards, a waystone and a primed burst.
+  // Three quarters of a ring turning clockwise, its arrowhead pointing down at the upper right.
+  reroll: {
+    rows: [
+      '....kkkkk.....',
+      '...kwwwwwk....',
+      '..kwyyyyywk...',
+      '.kwyykkkwykkk.',
+      'kwyyk.kwyywwwk',
+      'kwyk...kwyyyk.',
+      'kwyk....kwyk..',
+      'kwyk.....kk...',
+      'kwywk.........',
+      '.kwywkkk......',
+      '..kwywwwk.....',
+      '...kwyyyk.....',
+      '....kkkk......',
+    ],
+    colors: { k: PX.ink, y: PX.gold1, w: PX.gold3 },
+  },
+  banish: {
+    rows: ['kk.....kk', 'krk...krk', '.krk.krk.', '..krkrk..', '...krk...', '..krkrk..', '.krk.krk.', 'krk...krk', 'kk.....kk'],
+    colors: { k: PX.ink, r: PX.hurt1 },
+  },
+  cards: {
+    rows: ['kkkk.kkkk', 'kwpk.kwpk', 'kppk.kppk', 'kkkk.kkkk', '.........', 'kkkk.kkkk', 'kwpk.kwpk', 'kppk.kppk', 'kkkk.kkkk'],
+    colors: { k: PX.ink, w: PX.gold3, p: PX.gold1 },
+  },
+  waystone: {
+    rows: ['...kkk...', '..kpppk..', '.kpwwwpk.', '.kpw.wpk.', '.kpw.wpk.', '.kpw.wpk.', 'kkpwwwpkk', 'kmmmmmmmk', 'kkkkkkkkk'],
+    colors: { k: PX.ink, p: PX.portal2, w: PX.portal1, m: PX.golem3 },
+  },
+  burst: {
+    rows: ['....y....', '.y..y..y.', '..y.w.y..', '...www...', 'yywwwwwyy', '...www...', '..y.w.y..', '.y..y..y.', '....y....'],
+    colors: { y: PX.gold1, w: PX.gold3 },
+  },
 } satisfies Record<string, Bitmap>;
 
 export type IconName = keyof typeof ICONS;
 
 /** Crisp pixel icon rendered as SVG squares; `scale` is CSS pixels per icon pixel. */
 export function PixelIcon({ name, scale = 3, className }: { name: IconName; scale?: number; className?: string }) {
-  const icon: Bitmap = ICONS[name];
+  return <BitmapIcon icon={ICONS[name]} scale={scale} className={className} />;
+}
+
+function BitmapIcon({ icon, scale, className }: { icon: Bitmap; scale: number; className?: string }) {
   const w = Math.max(...icon.rows.map((r) => r.length));
   const h = icon.rows.length;
   const rects = [];
@@ -133,6 +172,16 @@ const UPGRADE_ICON: Record<string, IconName> = {
   'over-power': 'star',
   'over-vigor': 'heart',
   'over-focus': 'hourglass',
+  // the Grimoire
+  reroll1: 'reroll',
+  reroll2: 'reroll',
+  banish1: 'banish',
+  banish2: 'banish',
+  fourthCard: 'cards',
+  'way:hollows': 'waystone',
+  'way:catacombs': 'waystone',
+  'way:ember': 'waystone',
+  ultReady: 'burst',
   // permanent upgrades
   health: 'heart',
   damage: 'star',
@@ -147,9 +196,104 @@ export function UpgradeGlyph({ id, glyph }: { id: string; glyph: string }) {
   return <span className="card-glyph">{glyph}</span>;
 }
 
-/** A relic's icon in its own colour (the same shape in both art styles). */
+/** Mixes a hex colour toward white (t > 0) or black (t < 0). */
+function tint(hex: string, t: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const to = t > 0 ? 255 : 0;
+  const mix = (c: number) => Math.round(c + (to - c) * Math.abs(t));
+  return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
+}
+
+const RELIC_GRID = 16;
+const relicBitmaps = new Map<RelicId, Bitmap>();
+
+/**
+ * Relics whose shape is too fine to snap to the grid on its own, drawn by hand (16×16 like the rest).
+ * The Gambler's Die: a bone-white die showing three, lit on its upper-left and shaded lower-right.
+ * The Frenzied Heart: a red heart with a bright bolt zig-zagging across it.
+ */
+const RELIC_PIXELS: Partial<Record<RelicId, Bitmap>> = {
+  gamblersDie: {
+    rows: [
+      '................',
+      '................',
+      '...kkkkkkkkkk...',
+      '..kwwwwwwwwwck..',
+      '..kwppcccccccdk.',
+      '..kwppcccccccdk.',
+      '..kwcccccccccdk.',
+      '..kwcccppccccdk.',
+      '..kwcccppccccdk.',
+      '..kwcccccccccdk.',
+      '..kwccccccppcdk.',
+      '..kwccccccppcdk.',
+      '..kcddddddddddk.',
+      '...kkkkkkkkkkk..',
+      '................',
+      '................',
+    ],
+    colors: { k: PX.ink, w: '#ffffff', c: RELICS.gamblersDie.color, d: '#a89c86', p: PX.hurt0 },
+  },
+  frenziedHeart: {
+    rows: [
+      '................',
+      '................',
+      '..kkkk...kkkk...',
+      '.kwwwwk.kwwwwk..',
+      'kwccccwkwccccwk.',
+      'kwcccccwcbbccdk.',
+      'kwccccccbbcccdk.',
+      'kwccccbbbbbccdk.',
+      '.kwccccbbcccdk..',
+      '..kwccbbcccdk...',
+      '...kwbbcccdk....',
+      '....kwcccdk.....',
+      '.....kwcdk......',
+      '......kwk.......',
+      '.......k........',
+      '................',
+    ],
+    colors: { k: PX.ink, w: '#ff9a80', c: RELICS.frenziedHeart.color, d: '#a8281a', b: PX.gold3 },
+  },
+};
+
+/**
+ * A relic's vector shape snapped to a 16×16 grid: solid colour inside, lit on its upper-left
+ * edges and shaded on its lower-right, with an ink outline round it.
+ */
+function relicBitmap(id: RelicId): Bitmap {
+  const cached = RELIC_PIXELS[id] ?? relicBitmaps.get(id);
+  if (cached) return cached;
+  const G = RELIC_GRID;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = G;
+  const ctx = canvas.getContext('2d')!;
+  // One pixel of padding all round leaves room for the outline.
+  ctx.translate(1, 1);
+  ctx.scale((G - 2) / 24, (G - 2) / 24);
+  ctx.fill(new Path2D(RELICS[id].icon), 'evenodd');
+  const data = ctx.getImageData(0, 0, G, G).data;
+  const on = (x: number, y: number) => x >= 0 && y >= 0 && x < G && y < G && data[(y * G + x) * 4 + 3] >= 110;
+  const rows: string[] = [];
+  for (let y = 0; y < G; y++) {
+    let row = '';
+    for (let x = 0; x < G; x++) {
+      if (on(x, y)) row += !on(x - 1, y) || !on(x, y - 1) ? 'w' : !on(x + 1, y) || !on(x, y + 1) ? 'd' : 'c';
+      else row += on(x - 1, y) || on(x + 1, y) || on(x, y - 1) || on(x, y + 1) ? 'k' : '.';
+    }
+    rows.push(row);
+  }
+  const color = RELICS[id].color;
+  const bitmap = { rows, colors: { k: PX.ink, c: color, w: tint(color, 0.45), d: tint(color, -0.35) } };
+  relicBitmaps.set(id, bitmap);
+  return bitmap;
+}
+
+/** A relic's icon in its own colour: its vector shape, or in the pixel style that shape in pixels. */
 export function RelicIcon({ id, size = 24 }: { id: RelicId; size?: number }) {
+  const pixel = usePixelArt();
   const r = RELICS[id];
+  if (pixel) return <BitmapIcon icon={relicBitmap(id)} scale={Math.max(1, Math.round(size / RELIC_GRID))} className="relic-icon" />;
   return (
     <svg className="relic-icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ color: r.color }}>
       <path d={r.icon} fill="currentColor" fillRule="evenodd" />
