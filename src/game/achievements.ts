@@ -20,7 +20,7 @@ export interface AchievementDef {
   progress?(records: Records): string;
 }
 
-/** Time a win must beat for Swift Ascent: four Archmages at five minutes apiece and little to spare. */
+/** Time a win must beat for Swift Descent: four Archmages at five minutes apiece and little to spare. */
 const SWIFT_WIN = 26 * 60;
 
 export const ACHIEVEMENTS = {
@@ -55,14 +55,14 @@ export const ACHIEVEMENTS = {
     earned: (r) => WIZARD_IDS.every((id) => r.winners.includes(id)),
     progress: (r) => `${r.winners.length} / ${WIZARD_IDS.length}`,
   },
-  swiftAscent: {
-    name: 'Swift Ascent',
+  swiftDescent: {
+    name: 'Swift Descent',
     description: 'Win a run in under 26 minutes.',
     reward: 120,
     earned: (r) => r.fastestWin > 0 && r.fastestWin < SWIFT_WIN,
   },
   beyond: {
-    name: 'Beyond the Ascent',
+    name: 'Endless Descent',
     description: 'Play on after a win and reach Depth 6.',
     reward: 120,
     earned: (r) => r.wins >= 1 && r.deepest >= 6,
@@ -155,6 +155,9 @@ export const ACHIEVEMENTS = {
 
 export type AchievementId = keyof typeof ACHIEVEMENTS;
 export const ACHIEVEMENT_IDS = Object.keys(ACHIEVEMENTS) as AchievementId[];
+
+/** Achievements saved under an older id, and the id each goes by now (the serpent goes down, not up). */
+export const RENAMED_ACHIEVEMENTS: Record<string, AchievementId> = { swiftAscent: 'swiftDescent' };
 
 /** Achievements this run has just earned, given the records after it and those already held. */
 export function newAchievements(records: Records, run: RunResult, held: readonly AchievementId[]): AchievementId[] {

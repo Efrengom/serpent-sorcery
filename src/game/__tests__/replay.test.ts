@@ -73,6 +73,8 @@ describe('achievements', () => {
     expect(again.achievements).toEqual([]);
     expect(parseSave(JSON.stringify(again.save)).achievements).toEqual(['firstBlood']);
     expect(parseSave(JSON.stringify({ achievements: ['firstBlood', 'madeUp', 7] })).achievements).toEqual(['firstBlood']);
+    // Renamed since: a save that earned Swift Ascent keeps it as Swift Descent.
+    expect(parseSave(JSON.stringify({ achievements: ['swiftAscent'] })).achievements).toEqual(['swiftDescent']);
   });
 
   it('check feats within a run as well as lifetime records', () => {
