@@ -165,7 +165,7 @@ const state = () =>
 const audioState = () =>
   page.evaluate(() => {
     const a = window.__serpentAudio;
-    return { scene: a.musicScene, theme: a.musicTheme, playing: a.musicPlaying, time: +a.musicTime.toFixed(2) };
+    return { scene: a.musicScene, map: a.musicMap, theme: a.musicTheme, transpose: a.musicTranspose, playing: a.musicPlaying, time: +a.musicTime.toFixed(2) };
   });
 const readSave = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k) || 'null'), SAVE_KEY);
 const worldToScreen = (p) => page.evaluate((p) => window.__serpent.renderer.worldToScreen(p), p);
@@ -556,7 +556,15 @@ try {
   // ============================================================== Part A2: boss music, hit-stop
   {
     const a0 = await audioState();
-    check('run music plays the main theme', a0.theme === 'main' && /^run/.test(a0.scene) && a0.playing, a0);
+    check('run music plays the Ruins theme', a0.theme === 'ruins' && a0.map === 'ruins' && /^run/.test(a0.scene) && a0.playing, a0);
+    // The development jukebox plays any map's music over the game's, until released.
+    await page.evaluate(() => window.__serpentAudio.jukebox({ map: 'ember', loop: 1, scene: 'run2' }));
+    await sleep(700);
+    const jb = await audioState();
+    await page.evaluate(() => window.__serpentAudio.jukebox(null));
+    await sleep(700);
+    const jbOff = await audioState();
+    check('the jukebox plays a chosen map, loop and arrangement, then hands back to the game', jb.theme === 'ember' && jb.transpose === 1 && jb.scene === 'run2' && jbOff.theme === 'ruins' && /^run/.test(jbOff.scene), { jb, jbOff });
     // Make the snake untouchable (and unable to level up mid-test), then skip ahead to just
     // before the boss warning. Part B starts a fresh run afterwards.
     // Back to the start in the Rune Plaza, so the boss arrives in that clearing, in view.
@@ -569,7 +577,7 @@ try {
     });
     await sleep(900);
     const warn = await audioState();
-    check('music hushes when the boss warning sounds', warn.scene === 'warning' && warn.theme === 'main', warn);
+    check('music hushes when the boss warning sounds', warn.scene === 'warning' && warn.theme === 'ruins', warn);
     let bossUp = false;
     for (let i = 0; i < 48 && !bossUp; i++) {
       await sleep(250);
@@ -586,7 +594,7 @@ try {
     });
     await sleep(800);
     const fight = await audioState();
-    check('boss theme crossfades in when the boss appears', bossUp && fight.theme === 'boss' && /^boss/.test(fight.scene), { bossUp, fight });
+    check('the Ruins’ boss theme crossfades in when the boss appears', bossUp && fight.theme === 'ruinsBoss' && /^boss/.test(fight.scene), { bossUp, fight });
     await page.screenshot({ path: path.join(OUT, '07-boss-fight.png') });
 
     // Clear the field, leave the boss on 1 HP and record sim time against real time.
@@ -650,8 +658,16 @@ try {
     const after = rate(1400, 2200);
     check('killing the boss freezes the action for a moment', killed && freeze >= 350 && freeze <= 700, { killed, freezeMs: Math.round(freeze) });
     check('then plays out in slow motion before returning to full speed', slow !== null && slow < 0.5 && after !== null && after > 0.85, { slow, after });
-    const back = await audioState();
-    check('main theme returns after the boss falls', back.theme === 'main' && /^run/.test(back.scene), back);
+    // The band stops for the Ruins' victory sting; then the way down plays the Hollows' music.
+    const heard = [];
+    for (let i = 0; i < 30; i++) {
+      const a = await audioState();
+      const k = `${a.scene}:${a.theme}`;
+      if (heard.at(-1) !== k) heard.push(k);
+      if (k === 'calm:hollows') break;
+      await sleep(200);
+    }
+    check('after the boss falls, the Ruins’ sting plays, then the Hollows’ music rises on the way down', heard.includes('victory:ruins') && heard.at(-1) === 'calm:hollows', { heard });
     // A way down opens where the boss fell: off-screen it gets an arrow; steering into it with a real key descends.
     const way = await page.evaluate(() => {
       const g = window.__serpent;
@@ -702,6 +718,8 @@ try {
       { deeper, hud },
     );
     await page.screenshot({ path: path.join(OUT, '08-depth-2.png') });
+    const deepMusic = await audioState();
+    check('the Hollows plays its own theme, on its first loop', deepMusic.theme === 'hollows' && deepMusic.map === 'hollows' && deepMusic.transpose === 0 && /^run/.test(deepMusic.scene) && deepMusic.playing, deepMusic);
     const chip = await page.evaluate(() => [...document.querySelectorAll('.relic-chip')].map((c) => c.dataset.relic));
     check('a relic picked with a real click is carried down and shown on the HUD', !!deeper && deeper.relics.length === 1 && deeper.relics[0] === offer?.relics[1] && chip.join() === deeper.relics.join(), { relics: deeper?.relics, chip });
     const rec = await page.evaluate(() => window.__serpent.debug().world.recap.spells.bolt);
@@ -1127,6 +1145,7 @@ try {
       })
     ).map((id) => ({ id, tour: DEEP_TOURS[id]?.tour ?? [], lane: DEEP_TOURS[id]?.lane ?? null }));
     const deepTimes = {};
+    const deepThemes = {};
     for (const { id, tour, lane } of tours) {
       await page.evaluate(async (id) => {
         const { enterNextMap } = await import('/src/game/descent.ts');
@@ -1137,6 +1156,8 @@ try {
         w.fade = 0;
         w.banner = null;
       }, id);
+      await sleep(900);
+      deepThemes[id] = (await audioState()).theme;
       for (let pass = 0; pass < 2; pass++) {
         const pixel = await page.evaluate(() => document.querySelector('.app').classList.contains('pixel'));
         const name = pixel ? 'pixel' : 'classic';
@@ -1200,6 +1221,7 @@ try {
         await sleep(300);
       }
     }
+    check('every deeper map plays its own theme', Object.entries(deepThemes).every(([id, theme]) => theme === id), deepThemes);
     check(
       'every deeper map has a landmark tour, and frame times stay smooth racing across each, in both styles',
       tours.every((t) => t.tour.length >= 3 && t.lane) && Object.values(deepTimes).every((f) => f.p95 < 34 && f.max < 120),
@@ -1569,7 +1591,7 @@ try {
     check('game-over recap names the killing blow and shows each spell’s damage', !!recap.killedBy && /^Slain by /.test(recap.cause) &&
       recap.shown.join() === recap.expected.join() && recap.casts.every((c) => c > 0) && !!recap.quality, recap);
     const calm = await audioState();
-    check('music settles to the calm arrangement on the game-over screen', calm.scene === 'calm' && calm.theme === 'main', calm);
+    check('music settles to the calm arrangement of the map on the game-over screen', calm.scene === 'calm' && calm.theme === calm.map, calm);
   }
   check('reward banked exactly once', sv1?.records.totalRuns === 1 && Number(/\+(\d+)/.exec(overText ?? '')?.[1]) === sv1?.currency, {
     currency: sv1?.currency,
@@ -1741,6 +1763,24 @@ try {
     const heatShown = await page.$eval('.heat-level', (n) => n.textContent);
     const ultLine = await page.evaluate(() => [...document.querySelectorAll('.wizard-ult')].map((n) => n.textContent));
     check('heat rises only as far as unlocked, and a waystone picks the start; both are saved', set.heat === 2 && heatShown === '2' && set.startMap === 'catacombs', { heat: set.heat, heatShown, startMap: set.startMap });
+    await sleep(700);
+    const menuMusic = await audioState();
+    check('the menu music follows the start map: the Catacombs’ calm arrangement', menuMusic.theme === 'catacombs' && menuMusic.scene === 'calm', menuMusic);
+    // The atlas plays a reached map's music with a real click, and stops back to the start map's.
+    const themeLine = await page.$eval('.atlas-card[data-map="hollows"] .atlas-theme', (n) => n.textContent.trim());
+    await page.click('[data-listen="hollows"]');
+    await sleep(800);
+    const listen = await audioState();
+    const listenLabel = await page.$eval('[data-listen="hollows"]', (b) => b.textContent);
+    await page.click('[data-listen="hollows"]');
+    await sleep(800);
+    const listenOff = await audioState();
+    const unknownListen = await page.$('[data-listen="ember"]');
+    check(
+      'the atlas names each reached map’s theme and plays it with Listen, then Stop returns to the start map’s',
+      /Glowcap Hollow/.test(themeLine) && listen.theme === 'hollows' && listen.scene === 'run2' && listenLabel === 'Stop' && listenOff.theme === 'catacombs' && listenOff.scene === 'calm' && !unknownListen,
+      { themeLine, listen, listenLabel, listenOff, unknownListen: !!unknownListen },
+    );
     check('each unlocked wizard card names its ultimate', ultLine.some((t) => /Starfall/.test(t)) && ultLine.some((t) => /Absolute Zero/.test(t)), { ultLine });
     await page.screenshot({ path: path.join(OUT, '18-setup-heat.png') });
     await page.keyboard.press('Enter');
@@ -1794,6 +1834,8 @@ try {
       return { phase: window.__serpent.getPhase(), map: w.map.def.id, depth: w.depth, level: w.level, heat: w.heat, time: w.time, picked: Object.values(w.upgrades).reduce((a, b) => a + b, 0) + w.known.length - 3 + Object.keys(w.aspects).length };
     });
     check('Auto-pick finishes the draft: play starts in the Catacombs at level 25 and heat 2', run.phase === 'playing' && run.map === 'catacombs' && run.depth === 3 && run.level === 25 && run.heat === 2 && run.time < 1 && run.picked >= 15, run);
+    const startMusic = await audioState();
+    check('a waystone start plays the Catacombs’ theme from the first step', startMusic.theme === 'catacombs' && /^run/.test(startMusic.scene), startMusic);
 
     // The ultimate, from the real Space key, into a crowd.
     await page.evaluate(() => {

@@ -12,11 +12,15 @@ import { playableWizard, type WizardId } from '../game/wizards';
 import type { RunSetup } from '../game/world';
 import { PixelArtContext, pixelFloorUrl } from './art';
 import { GameView } from './GameView';
+import { Jukebox } from './Jukebox';
 import { HowToPlay, SetupScreen, ShopScreen, TitleScreen } from './Menus';
 import { BindingsContext, OptionsScreen } from './Options';
 import { PracticeScreen } from './Practice';
 
 type Screen = 'title' | 'howto' | 'shop' | 'setup' | 'options' | 'practice' | 'game';
+
+/** The development jukebox, shown with ?jukebox in the address. */
+const JUKEBOX = import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).has('jukebox');
 
 export function App() {
   const [save, setSave] = useState<SaveData>(() => loadSave());
@@ -34,11 +38,6 @@ export function App() {
     audio.setVolume(save.settings.volume);
     audio.setMusicVolume(save.settings.musicVolume);
   }, [save.settings.muted, save.settings.volume, save.settings.musicVolume]);
-
-  // Menus get the calm arrangement; during a run the game picks the music.
-  useEffect(() => {
-    if (screen !== 'game') audio.setMusicScene('calm');
-  }, [screen]);
 
   // Browsers only allow audio after a user gesture.
   useEffect(() => {
@@ -168,6 +167,19 @@ export function App() {
 
   const pixel = save.settings.pixelArt;
 
+  // A map being listened to in the atlas, on the setup screen.
+  const [listening, setListening] = useState<MapId | null>(null);
+  useEffect(() => {
+    if (screen !== 'setup') setListening(null);
+  }, [screen]);
+
+  // Menus get the calm arrangement of the map the next run starts on (or the full band of one
+  // being listened to); during a run the game picks the music.
+  useEffect(() => {
+    if (screen === 'game') return;
+    audio.setMusic(listening ? { map: listening, loop: 0, scene: 'run2' } : { map: startMap, loop: 0, scene: 'calm' });
+  }, [screen, startMap, listening]);
+
   const play = useCallback(() => {
     setGameKey((k) => k + 1);
     setScreen('game');
@@ -207,6 +219,8 @@ export function App() {
           onToggleCurse={toggleCurse}
           onSetHeat={setHeat}
           onPickStart={pickStart}
+          listening={listening}
+          onListen={setListening}
           onBack={() => setScreen('title')}
           onPlay={play}
         />
@@ -228,6 +242,7 @@ export function App() {
           onExit={setScreen}
         />
       )}
+      {JUKEBOX && <Jukebox />}
     </div>
     </BindingsContext.Provider>
     </PixelArtContext.Provider>

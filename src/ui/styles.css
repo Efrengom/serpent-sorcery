@@ -402,6 +402,52 @@ kbd {
   color: var(--ink-dim);
 }
 
+.atlas-theme {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ink-dim);
+}
+
+.atlas-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* The development jukebox (?jukebox): a small panel in the corner over everything. */
+.jukebox {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(560px, calc(100vw - 16px));
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-edge);
+  background: var(--panel);
+  font-size: 12px;
+}
+
+.jukebox-title {
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.jukebox-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.jukebox .btn.on {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
 .app.pixel .atlas-card {
   border-radius: 0;
   border: 2px solid var(--panel-edge);

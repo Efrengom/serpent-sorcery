@@ -1,5 +1,7 @@
+import type { MapId } from './maps/types';
+import type { MusicCue } from './music/mood';
 import { MusicPlayer } from './music/player';
-import type { LayerId, MusicScene, ThemeId } from './music/score';
+import { THEMES, type LayerId, type MusicScene, type ThemeId } from './music/score';
 import { pickupRate, playSynth, SFX_FILES, SFX_SAMPLES, type SampleLayer } from './sfx';
 import type { SfxName } from './world';
 
@@ -82,7 +84,9 @@ class AudioEngine {
   private musicGain: GainNode | null = null;
   private musicTimer: number | null = null;
   private musicOn = false;
-  private scene: MusicScene = 'calm';
+  private cue: MusicCue = { map: 'ruins', loop: 0, scene: 'calm' };
+  /** Set from the development jukebox: plays this instead of what the game asks for. */
+  private jukeboxCue: MusicCue | null = null;
   /** 0..1 from the Music slider; 0 means the music is off. */
   private musicLevel = 0.55;
   private ducked = false;
@@ -122,7 +126,7 @@ class AudioEngine {
       this.musicGain = ctx.createGain();
       this.musicGain.gain.value = 0;
       this.music.output.connect(musicGlue(ctx)).connect(this.musicGain).connect(this.limiter);
-      this.music.setScene(this.scene, ctx.currentTime);
+      this.applyCue();
       document.addEventListener('visibilitychange', () => {
         this.hidden = document.visibilityState === 'hidden';
         this.applyMusic();
@@ -172,10 +176,24 @@ class AudioEngine {
     this.applyMusic();
   }
 
-  /** Which arrangement plays: calm on menus, layered by danger in a run, the boss theme in a fight. */
-  setMusicScene(scene: MusicScene): void {
-    this.scene = scene;
-    if (this.music && this.ctx) this.music.setScene(scene, this.ctx.currentTime);
+  /**
+   * What plays: a map's music in an arrangement (calm on menus, layered by danger in a run, the
+   * map's boss theme in a fight). Called every frame; only a change does anything.
+   */
+  setMusic(cue: MusicCue): void {
+    this.cue = cue;
+    this.applyCue();
+  }
+
+  /** The development jukebox: plays a chosen map and arrangement until released with null. */
+  jukebox(cue: MusicCue | null): void {
+    this.jukeboxCue = cue;
+    this.applyCue();
+  }
+
+  private applyCue(): void {
+    const c = this.jukeboxCue ?? this.cue;
+    if (this.music && this.ctx) this.music.cue(c.map, c.loop, c.scene, this.ctx.currentTime);
   }
 
   // Music and sample state for the play-test.
@@ -192,11 +210,27 @@ class AudioEngine {
   }
 
   get musicTheme(): ThemeId {
-    return this.music?.theme ?? 'main';
+    return this.music?.theme ?? 'ruins';
+  }
+
+  get musicTitle(): string {
+    return THEMES[this.musicTheme].title;
+  }
+
+  get musicTranspose(): number {
+    return this.music?.transpose ?? 0;
   }
 
   get musicScene(): MusicScene {
-    return this.scene;
+    return (this.jukeboxCue ?? this.cue).scene;
+  }
+
+  get musicMap(): MapId {
+    return (this.jukeboxCue ?? this.cue).map;
+  }
+
+  get jukeboxOn(): boolean {
+    return this.jukeboxCue !== null;
   }
 
   get samplesLoaded(): number {
@@ -307,18 +341,30 @@ class AudioEngine {
   }
 
   /**
-   * Renders a stretch of the soundtrack offline at the default music volume. `solo` isolates
-   * one layer and `weighted` roughly models hearing (bass counts less) for balancing layers.
+   * Renders a stretch of the soundtrack offline at the default music volume. `map` and `loop`
+   * pick the music; `from` starts in another scene and switches to `scene` after a second (to
+   * hear a crossfade or the victory sting). `solo` isolates one layer, `ambience` keeps the bed
+   * in, leaves it out or renders it alone, and `weighted` roughly models hearing (bass counts
+   * less) for balancing.
    */
   async renderMusic(
     scene: MusicScene,
     seconds: number,
-    solo: LayerId | null = null,
-    weighted = false,
-  ): Promise<{ rms: number; peak: number; perSecond: number[] }> {
+    opts: {
+      map?: MapId;
+      loop?: number;
+      from?: MusicScene;
+      solo?: LayerId | null;
+      ambience?: 'with' | 'without' | 'only';
+      weighted?: boolean;
+    } = {},
+  ): Promise<{ rms: number; peak: number; perSecond: number[]; scheduled: number }> {
+    const { map = 'ruins', loop = 0, from, solo = null, ambience = 'without', weighted = false } = opts;
     const octx = new OfflineAudioContext(1, Math.ceil(44100 * seconds), 44100);
     const player = new MusicPlayer(octx);
     player.solo = solo;
+    player.ambienceOn = ambience !== 'without';
+    player.musicOn = ambience !== 'only';
     const vol = octx.createGain();
     vol.gain.value = 0.55 * MUSIC_MAX;
     player.output.connect(musicGlue(octx)).connect(vol);
@@ -335,13 +381,17 @@ class AudioEngine {
     } else {
       vol.connect(octx.destination);
     }
-    player.setScene(scene, 0);
+    player.cue(map, loop, from ?? scene, 0);
     player.start(0.05);
+    if (from) {
+      player.pump(1);
+      player.cue(map, loop, scene, 1);
+    }
     player.pump(seconds);
     const data = (await octx.startRendering()).getChannelData(0);
     const perSecond: number[] = [];
     for (let s = 0; s + 44100 <= data.length; s += 44100) perSecond.push(loudness(data.subarray(s, s + 44100)).rms);
-    return { ...loudness(data), perSecond };
+    return { ...loudness(data), perSecond, scheduled: player.scheduled };
   }
 }
 
