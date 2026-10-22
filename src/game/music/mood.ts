@@ -2,7 +2,25 @@ import type { EnemyKind } from '../config';
 import type { World } from '../world';
 
 /** How much each enemy on the field adds to the music's urgency. */
-const WEIGHT: Record<EnemyKind, number> = { chaser: 1, caster: 1.5, brute: 3, rival: 4, boss: 0 };
+const WEIGHT: Record<EnemyKind, number> = {
+  chaser: 1,
+  caster: 1.5,
+  brute: 3,
+  rival: 4,
+  boss: 0,
+  sporeling: 0.6,
+  puffcap: 1.6,
+  thornback: 3,
+  burrowViper: 4,
+  rattler: 1,
+  frostArcher: 1.7,
+  golem: 3.4,
+  wraith: 4,
+  imp: 0.8,
+  pyromancer: 1.6,
+  magmaBrute: 3.2,
+  salamander: 4,
+};
 
 /**
  * Roughly 0 (empty arena) to 1+ (swarmed): enemy load, a slow build over the first two minutes

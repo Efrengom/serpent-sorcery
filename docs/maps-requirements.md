@@ -1,6 +1,6 @@
 # Large themed maps: requirements
 
-Status: decisions settled on 2026-10-21 (see section 16). Phase 1 is built (section 15 lists what differs from this plan); phases 2–5 are not. Numbers are starting points for tuning, and each is meant to live in `config.ts` or the map data, like today's balance values.
+Status: decisions settled on 2026-10-21 (see section 16). All five phases are built (section 15 lists what differs from this plan). Numbers are starting points for tuning, and each is meant to live in `config.ts` or the map data, like today's balance values.
 
 ## 1. Goal
 
@@ -401,13 +401,47 @@ Each phase is one PR that ships something playable:
    - **Not built yet:** the dev URL shortcut (R7) waits for a second map; the play-test places the serpent with its debug hooks instead.
    - **S4 is measured differently:** there's no old arena to compare with, so the play-test checks that over 90% of foes stay within 1.5 views of the serpent during the autopilot run.
 2. **Breakables, health and buffs** (medium). Covers breakables, drop tables, refills, pickups, the six buffs, HUD chips and the recap additions, all on the Ruins.
+
+   **Built.** Where it differs from this plan:
+   - **Small slots** aren't hand-placed: each map scatters its own (140 on the Ruins) from a fixed seed, mostly along the stonework and never near the start. The 24 reliquary slots are hand-placed, flush against walls or in open ground so no gap can trap the serpent.
+   - **Constrict** also counts breakables inside a loop, so a loop round a reliquary crushes it.
+   - **Reduced flashing** turns off breakable hit flashes and holds pickup halos steady; the pickup burst is ordinary particles.
+   - **Lifetime breakables smashed** waits for Phase 5's records.
+   - **Drops were tuned down** to keep within B5: urns give 2–3 XP (planned 3–5) and reliquaries 8 (planned 10). The first play-test measured 19.5% of XP from breakables in one run and 8% in another.
+   - **B5** is measured in the play-test's autopilot run: the XP in crystals that breakables dropped, against all the XP earned.
 3. **Descent and the Ember Depths** (large). Covers:
    - the descent portal and map transitions
    - the Ember Depths as a real map: lava, eruption vents, its four foes and Pyrecoil
 
-   For now it's the second map.
+   For now it's the second map (Phase 4 moved it to fourth).
+
+   **Built.** Where it differs from this plan:
+   - **The Ember Depths** is 7200×4000: a lava river runs north to south from the Lava Falls, crossed by three bridges, with the Caldera (the start), the Forge and the Obsidian Spires as its landmarks, three lava pools and 12 eruption vents. Its five clearings are the Caldera, the Forge Yard north of the Forge, two west courts and one beside the Spires: placed so every dry spot is within 1900 path units of one. Its small and large breakables are geodes and braziers.
+   - **The way down** opens where the boss fell, unless that's in stone or lava (a boss can die in lava): then it opens on the nearest dry, open ground. It has an edge arrow while off-screen, a minimap marker, and no breakable refills while it's open.
+   - **The dev shortcut** is `?depth=N` (dev builds only). The map follows from the depth, since the order is fixed.
+   - **Clearing reach** (L3) is measured from dry ground: nobody waits for a boss standing in lava.
+   - **Chunk prefetch on arrival:** the new map's chunks are built in its first frames, behind the fade, rather than during it.
+   - **Hazard kills** are counted apart from spells in the recap ("4 foes fell to lava and fire").
 4. **Mycelium Hollows and Rimefrost Catacombs** (large). Two new themes, brambles, spore vents, ice and icicles, eight foes and two bosses. The final four-map order is set here.
+
+   **Built.** Where it differs from this plan:
+   - **The order** is Ruins, Hollows, Catacombs, Ember Depths, as planned. The Hollows is 7600×4200 (the Glowcap Ring where you arrive, the Spore Grotto, the Heartroot, the Fallen Giant, the Bramble Thicket); the Catacombs 8000×4400 (the Bell Court, the Ossuary, the Crypt of Kings, the Frozen Lake). Both have five clearings, two of them drawn in from the corners so the strip behind a walled landmark stays in reach.
+   - **Hazard cells** in the grid: `~` lava, `%` brambles, `=` ice, plus placed circles. Ice is harmless, so the "dry paths round every hazard" rule only counts lava and brambles; any hazard still keeps out of clearings, the start and vents.
+   - **Vents** make each map's own burst: eruptions (Ember), spore puffs (Hollows, radius 100, 10 damage) and falling icicles (Catacombs, radius 60, 15 damage), all with a 1 s circle.
+   - **Every foe paths round stinging ground**, natives included, since they share one flow field; natives just aren't hurt when they cross it. Spawns avoid it too.
+   - **Burrow Viper** dives within 440 units, can't be hit or bite while underground, erupts under a circle marked 0.9 s ahead, and stays up (and open to hits) for 1.2 s. It's a single body, not a segmented serpent.
+   - **Bone Rattler** collapses when a Bolt (or Lance) or Lightning deals the last hit, rises after 3 s at half health, and any hit on the pile (Nova, Frost and Constrict included) finishes it. A collapse isn't counted as a kill.
+   - **Frost Archer's icicle** stops at stone and at the serpent like other shots; "piercing" wasn't needed.
+   - **Wraith** ignores the flow field and drifts straight at the serpent through interior stone (never the boundary), taking 40% less damage while inside it.
+   - **Sporemaw**: spore fan, a burrowing charge (underground down its telegraphed lane, erupting under a circle at the end), summons Sporelings and Puffcaps, volley. **Rimecoil**: icicle fan (its lines show through the wind-up), rings of ice laid round the serpent rather than the clearing, summons Bone Rattlers and Frost Archers, charges.
+   - **Wall names** come from each map: "the ruin walls", "the root walls", "the catacomb walls", "the basalt cliffs".
 5. **Polish** (small to medium). The map atlas and records, a balance pass across all four maps, and optionally per-map music variations.
+
+   **Built.** Where it differs from this plan:
+   - **The atlas** is a row on the setup screen: each map's picture (its layout in minimap colours, with landmarks and the start marked), its depth, name and hazard tip. A map not yet reached is a dark silhouette marked "Undiscovered". The row's heading shows lifetime containers smashed.
+   - **Records** add the deepest depth (also on the title screen), the maps reached and lifetime containers smashed, banked with the run's reward. The save version stays 1; old saves load with the first map known.
+   - **Balance pass:** `scripts/balance.ts` has a bot play each map for four minutes at the same depth and level, and reports damage taken per minute by kind, deaths, kills and the breakables' share of XP. Before tuning, the Catacombs took 52 per minute (Frost Archer icicles) and the Ember Depths 81 (Pyromancer fireballs and their burning ground) against 30 on the Ruins. After, over six seeds (three swung too much with the bot's occasional deaths): Ruins 45, Hollows 29, Catacombs 46, Ember Depths 43, and breakables at 4–10% of XP on every map (B5). The Hollows is the gentlest on purpose, as the first new roster. Changes: Pyromancer burning ground 2.5 s → 1.6 s (radius 56 → 46), fireball 12 → 11, every 3.4 s → 3.8 s; Frost Archer icicle 13 → 11 damage, 560 → 420 speed, line 0.8 s → 0.9 s, every 3.6 s → 4.6 s; Puffcap spores 10 → 7 damage, drifting 7 s (other shots last 6 s; at 8 damage the Hollows took 41 a minute, with deaths); Rimecoil's icicles 14 → 12 damage, 620 → 520 speed.
+   - **Per-map music** wasn't built (it was optional); every map plays the same score.
 
 ## 16. Decisions
 

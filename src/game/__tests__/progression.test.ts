@@ -120,6 +120,30 @@ describe('rewards and persistence', () => {
     expect(next.newBestTime).toBe(false);
   });
 
+  it('records the deepest depth, the maps reached (for the atlas) and containers smashed', () => {
+    const fresh = defaultSave().records;
+    expect([fresh.deepest, fresh.maps, fresh.breakables]).toEqual([1, ['ruins'], 0]);
+    const run = { runId: 'deep-1', time: 700, kills: 300, level: 20, bossKills: 2, reward: 0, depth: 3, maps: ['ruins', 'hollows', 'catacombs'] as const, breakables: 40 };
+    const first = commitRunResult(defaultSave(), { ...run, maps: [...run.maps] }).save.records;
+    expect(first.deepest).toBe(3);
+    expect(first.maps).toEqual(['ruins', 'hollows', 'catacombs']);
+    expect(first.breakables).toBe(40);
+    // A shallower run adds what it smashed but never forgets a deeper map.
+    const next = commitRunResult({ ...defaultSave(), records: first }, { ...run, runId: 'deep-2', depth: 1, maps: ['ruins'], breakables: 5 }).save.records;
+    expect(next.deepest).toBe(3);
+    expect(next.maps).toEqual(['ruins', 'hollows', 'catacombs']);
+    expect(next.breakables).toBe(45);
+  });
+
+  it('cleans the new records on load: old saves get defaults, junk is dropped, maps stay in run order', () => {
+    const old = parseSave(JSON.stringify({ records: { bestTime: 100, totalRuns: 4 } }));
+    expect([old.records.deepest, old.records.maps, old.records.breakables]).toEqual([1, ['ruins'], 0]);
+    const odd = parseSave(JSON.stringify({ records: { deepest: -3, maps: ['ember', 'moon', 4, 'hollows'], breakables: 'lots' } }));
+    expect(odd.records.deepest).toBe(1);
+    expect(odd.records.maps).toEqual(['ruins', 'hollows', 'ember']);
+    expect(odd.records.breakables).toBe(0);
+  });
+
   it('buys capped permanent upgrades only when affordable', () => {
     let save = { ...defaultSave(), currency: 1000 };
     for (let i = 0; i < 10; i++) save = buyMeta(save, 'pickup') ?? save;

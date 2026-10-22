@@ -33,6 +33,57 @@ export const CAMERA = {
   snapDistance: 600,
 };
 
+/**
+ * Breakable containers around a map: small ones (urns) shatter when the head touches them or a
+ * spell hits them; large ones (reliquaries) are solid, harmless to bump, and take spells to break.
+ */
+export const BREAKABLES = {
+  small: {
+    radius: 14,
+    /** XP in the crystals it always drops (inclusive range). */
+    xp: [2, 3] as const,
+    /** Chance of a small heal, doubled below `lowHealth`; chance of a buff. */
+    heal: 0.12,
+    buff: 0.03,
+    /** Seconds before a broken slot can refill. */
+    refill: 60,
+  },
+  large: {
+    radius: 28,
+    /** About three Arcane Bolts at depth 1, more each depth. */
+    hp: 40,
+    hpPerDepth: 0.35,
+    xp: 8,
+    /** Chance of a heal (a large one below `lowHealth`); it always drops one buff. */
+    heal: 0.3,
+    refill: 120,
+  },
+  /** Share of small slots filled at the start of a run (all large ones are). */
+  startFill: 0.7,
+  /** Health share below which heals are likelier (small) or bigger (large). */
+  lowHealth: 0.35,
+  /** Broken slots only refill this far (view diagonals) from the serpent. */
+  refillViews: 1,
+};
+
+/** Health pickups. */
+export const PICKUPS = {
+  smallHeal: 20,
+  /** A large heal restores this share of max health. */
+  largeHeal: 0.35,
+};
+
+/** Buffs dropped by breakables: timed ones last this many seconds of game time. */
+export const BUFFS = {
+  quickening: { duration: 15, cooldownRate: 1.5, weight: 25 },
+  empower: { duration: 15, damage: 1.4, weight: 25 },
+  swiftscale: { duration: 12, speed: 1.2, weight: 15 },
+  /** Blocks the next hit from a foe or a burst; lasts until used, at most this long. */
+  stoneskin: { duration: 30, weight: 15 },
+  lodestone: { weight: 10 },
+  shardCache: { shards: 5, perDepth: 2, weight: 10 },
+};
+
 /** Solid lookup: cell size, and how far around a cell its solids are listed (the longest exact query). */
 export const TERRAIN = {
   indexCell: 200,
@@ -47,6 +98,8 @@ export const NAV = {
   /** Paths prefer open ground: cells closer than `hugClearance` to a solid cost extra. */
   hugClearance: 60,
   hugCost: 2,
+  /** Lava and brambles cost this much more to cross, so foes go round when they can. */
+  harmCost: 6,
   /** Seconds between flow-field refreshes, and between each foe's line-of-sight checks. */
   refresh: 0.25,
   sightInterval: 0.2,
@@ -307,7 +360,28 @@ export const GESTURE = {
   trailFade: 0.45,
 };
 
-export type EnemyKind = 'chaser' | 'caster' | 'brute' | 'rival' | 'boss';
+/**
+ * Every kind of foe. Each map fields four (a swarmer, a shooter, a heavy and a special) plus its
+ * boss; the newer kinds are an older one's behaviour with one twist (see ARCHETYPE in enemies.ts).
+ */
+export type EnemyKind =
+  | 'chaser'
+  | 'caster'
+  | 'brute'
+  | 'rival'
+  | 'boss'
+  | 'sporeling'
+  | 'puffcap'
+  | 'thornback'
+  | 'burrowViper'
+  | 'rattler'
+  | 'frostArcher'
+  | 'golem'
+  | 'wraith'
+  | 'imp'
+  | 'pyromancer'
+  | 'magmaBrute'
+  | 'salamander';
 
 export const ENEMIES = {
   chaser: { radius: 13, hp: 12, speed: 72, contact: 10, xp: 2, score: 1 },
@@ -391,6 +465,357 @@ export const ENEMIES = {
     /** HP multiplier added per previous boss defeated/spawned. */
     hpPerIndex: 0.8,
   },
+  // ---- The Mycelium Hollows
+  /** Sporeling: tiny, comes in packs, and hops toward the serpent in short bursts. */
+  sporeling: {
+    radius: 9,
+    hp: 7,
+    speed: 78,
+    contact: 7,
+    xp: 1,
+    score: 1,
+    /** How many arrive together. */
+    pack: [4, 6] as const,
+    /** One hop every `hop` seconds: fast for `burst` of it, nearly still for the rest. */
+    hop: 0.7,
+    burst: 0.45,
+    fast: 2.0,
+    slow: 0.15,
+  },
+  /** Puffcap: roots itself, swells, then puffs a slow fan of long-lived spores. */
+  puffcap: {
+    radius: 15,
+    hp: 26,
+    speed: 34,
+    contact: 8,
+    xp: 3,
+    score: 2,
+    preferredRange: 360,
+    fireInterval: 4.0,
+    firstShotDelay: 2.0,
+    telegraph: 0.9,
+    shots: 3,
+    /** Radians between the spores of a fan. */
+    spread: 0.32,
+    shotSpeed: 115,
+    shotRadius: 10,
+    shotDamage: 7,
+    /** Spores drift on longer than other shots (6 s). */
+    shotLife: 7,
+  },
+  /** Thornback: a brute whose charge leaves a trail of brambles. */
+  thornback: {
+    radius: 22,
+    hp: 75,
+    speed: 42,
+    contact: 12,
+    xp: 7,
+    score: 4,
+    chargeRange: 340,
+    telegraph: 1.0,
+    chargeSpeed: 480,
+    chargeTime: 0.55,
+    recover: 1.1,
+    chargeDamage: 18,
+    chargeCooldown: 3.8,
+    trailLife: 3,
+    trailRadius: 24,
+    trailSpacing: 26,
+  },
+  /** Burrow Viper: dives, travels underground as a mound (it can't be hit), and erupts under where the serpent is heading. */
+  burrowViper: {
+    radius: 13,
+    hp: 70,
+    speed: 88,
+    contact: 12,
+    xp: 9,
+    score: 6,
+    diveRange: 440,
+    /** The eruption's circle is marked this long before it comes up. */
+    telegraph: 0.9,
+    /** Aims where the head will be this many seconds on. */
+    lead: 0.9,
+    eruptRadius: 70,
+    eruptDamage: 16,
+    /** Seconds above ground (and open to hits) after erupting. */
+    surfaced: 1.2,
+    diveCooldown: 4.5,
+  },
+  // ---- The Rimefrost Catacombs
+  /** Bone Rattler: struck down by a single bolt or arc, it collapses into a pile that rises again unless finished. */
+  rattler: {
+    radius: 12,
+    hp: 14,
+    speed: 66,
+    contact: 9,
+    xp: 2,
+    score: 1,
+    /** Seconds as a pile before it rises, and the share of its health it rises with. */
+    riseTime: 3,
+    riseHealth: 0.5,
+  },
+  /** Frost Archer: keeps well back, draws a line, then looses a fast icicle down it (stone stops it). */
+  frostArcher: {
+    radius: 13,
+    hp: 22,
+    speed: 56,
+    contact: 8,
+    xp: 3,
+    score: 2,
+    preferredRange: 420,
+    fireInterval: 4.6,
+    firstShotDelay: 1.8,
+    telegraph: 0.9,
+    shotSpeed: 420,
+    shotRadius: 6,
+    shotDamage: 11,
+  },
+  /** Crypt Golem: slow, never charges; slams the ground around it, leaving ice. */
+  golem: {
+    radius: 26,
+    hp: 110,
+    speed: 30,
+    contact: 12,
+    xp: 9,
+    score: 4,
+    slamRange: 150,
+    telegraph: 1.1,
+    slamRadius: 120,
+    slamDamage: 18,
+    iceLife: 4,
+    recover: 1.0,
+    slamCooldown: 3.5,
+  },
+  /** Wraith: drifts through stone (taking less harm while inside it) and lunges. */
+  wraith: {
+    radius: 14,
+    hp: 60,
+    speed: 70,
+    contact: 12,
+    xp: 8,
+    score: 6,
+    lungeRange: 280,
+    telegraph: 0.8,
+    lungeSpeed: 520,
+    lungeTime: 0.4,
+    recover: 0.7,
+    lungeCooldown: 3.2,
+    /** Damage taken while inside stone. */
+    phaseArmor: 0.6,
+  },
+  // ---- The Ember Depths
+  /** Cinder Imp: fast and fragile; crouches, then leaps the last stretch. */
+  imp: {
+    radius: 10,
+    hp: 8,
+    speed: 98,
+    contact: 8,
+    xp: 2,
+    score: 1,
+    leapRange: 170,
+    telegraph: 0.6,
+    leapSpeed: 430,
+    leapTime: 0.35,
+    recover: 0.5,
+    leapCooldown: 2.4,
+  },
+  /** Pyromancer: keeps its distance and lobs fireballs onto a marked circle; they arc over stone. */
+  pyromancer: {
+    radius: 14,
+    hp: 24,
+    speed: 58,
+    contact: 8,
+    xp: 3,
+    score: 2,
+    preferredRange: 340,
+    fireInterval: 3.8,
+    firstShotDelay: 1.8,
+    /** The fireball's circle is marked this long before it lands. */
+    telegraph: 1.0,
+    /** Aims where the head will be this many seconds on. */
+    lead: 0.5,
+    blastRadius: 62,
+    blastDamage: 11,
+    /** It leaves burning ground behind. */
+    burnTime: 1.6,
+    burnRadius: 46,
+  },
+  /** Magma Brute: a brute whose charge leaves a trail of lava. */
+  magmaBrute: {
+    radius: 23,
+    hp: 80,
+    speed: 40,
+    contact: 12,
+    xp: 8,
+    score: 4,
+    chargeRange: 340,
+    telegraph: 1.0,
+    chargeSpeed: 500,
+    chargeTime: 0.55,
+    recover: 1.1,
+    chargeDamage: 20,
+    chargeCooldown: 3.8,
+    trailLife: 3,
+    trailRadius: 26,
+    trailSpacing: 26,
+  },
+  /** Salamander: a rival-style serpent at home in lava, which spits a short cone of flame. */
+  salamander: {
+    radius: 13,
+    hp: 95,
+    speed: 116,
+    turnRate: 2.6,
+    contact: 14,
+    xp: 10,
+    score: 6,
+    segments: 8,
+    segmentRadius: 10,
+    segmentSpacing: 13,
+    flameRange: 180,
+    /** Half-angle of the cone, in radians. */
+    flameAngle: 0.5,
+    telegraph: 0.8,
+    flameTime: 0.45,
+    flameDamage: 14,
+    flameCooldown: 4.2,
+  },
+};
+
+/** The behaviour each kind is built on; the newer kinds add one twist to it. */
+export const ARCHETYPE: Record<EnemyKind, 'chaser' | 'caster' | 'brute' | 'rival' | 'boss'> = {
+  chaser: 'chaser',
+  caster: 'caster',
+  brute: 'brute',
+  rival: 'rival',
+  boss: 'boss',
+  sporeling: 'chaser',
+  puffcap: 'caster',
+  thornback: 'brute',
+  burrowViper: 'chaser',
+  rattler: 'chaser',
+  frostArcher: 'caster',
+  golem: 'brute',
+  wraith: 'chaser',
+  imp: 'chaser',
+  pyromancer: 'caster',
+  magmaBrute: 'brute',
+  salamander: 'rival',
+};
+
+/** Each map's boss: Ouroboros's body and AI, with its own name, look and two moves of its own. */
+export type BossId = 'ouroboros' | 'sporemaw' | 'rimecoil' | 'pyrecoil';
+export type BossMove = 'slither' | 'volley' | 'charge' | 'summon' | 'meteors' | 'spores' | 'burrow' | 'icicles' | 'iceRing';
+export const BOSSES: Record<
+  BossId,
+  {
+    name: string;
+    /** Its name in short, and the line under "is enraged!" at half health. */
+    short: string;
+    enraged: string;
+    /** The warning banner a few seconds before it arrives, and the line under its name when it does. */
+    warning: [string, string];
+    arrival: string;
+    moves: BossMove[];
+    /** What its summon brings, and what it adds once enraged. */
+    summon: [EnemyKind, EnemyKind];
+    /** Its charge leaves burning ground. */
+    fireTrail: boolean;
+  }
+> = {
+  sporemaw: {
+    name: 'Sporemaw, the Fungal Archmage',
+    short: 'Sporemaw',
+    enraged: 'Thicker spores, deeper burrows',
+    warning: ['The ground trembles…', 'Sporemaw stirs beneath the hollows'],
+    arrival: 'It burrows under where you are going — keep moving',
+    moves: ['spores', 'burrow', 'summon', 'volley', 'burrow'],
+    summon: ['sporeling', 'puffcap'],
+    fireTrail: false,
+  },
+  rimecoil: {
+    name: 'Rimecoil, the Frost Archmage',
+    short: 'Rimecoil',
+    enraged: 'More icicles, wider ice',
+    warning: ['A bitter cold settles…', 'Rimecoil uncoils from the ice'],
+    arrival: 'Its icicles fly down the lines it draws',
+    moves: ['icicles', 'charge', 'summon', 'iceRing', 'charge'],
+    summon: ['rattler', 'frostArcher'],
+    fireTrail: false,
+  },
+  ouroboros: {
+    name: 'Archmage Ouroboros',
+    short: 'Ouroboros',
+    enraged: 'Faster volleys, wider rings',
+    warning: ['A rival Archmage approaches!', 'Ouroboros slithers out of the ruins'],
+    arrival: 'Only its head can bite — strike anywhere',
+    moves: ['volley', 'charge', 'summon', 'volley', 'charge'],
+    summon: ['chaser', 'caster'],
+    fireTrail: false,
+  },
+  pyrecoil: {
+    name: 'Pyrecoil, the Ember Archmage',
+    short: 'Pyrecoil',
+    enraged: 'More meteors, a hotter trail',
+    warning: ['The ground grows hot…', 'Pyrecoil rises from the magma'],
+    arrival: 'Meteors fall where you are heading — keep moving',
+    moves: ['meteors', 'charge', 'summon', 'volley', 'charge'],
+    summon: ['imp', 'pyromancer'],
+    fireTrail: true,
+  },
+};
+
+/** Pyrecoil's meteor rain: circles marked around where the serpent is heading, landing one after another. */
+export const METEORS = {
+  count: 5,
+  radius: 70,
+  damage: 16,
+  /** Each lands this long after it is marked, plus a stagger per meteor. */
+  delay: 1.0,
+  stagger: 0.15,
+  /** Spread around the point the serpent will reach in `lead` seconds. */
+  spread: 220,
+  lead: 0.8,
+  /** Each leaves a patch of burning ground. */
+  burnRadius: 50,
+  burnTime: 2,
+};
+
+/** Sporemaw's spore fan and burrowing charge, and Rimecoil's icicles and rings of ice. */
+export const BOSS_MOVES = {
+  spores: { count: 7, countEnraged: 10, arc: 1.4, speed: 125, damage: 11, radius: 11, life: 6 },
+  /** It dives at the start of the charge and erupts at its end, where a circle is marked. */
+  burrow: { radius: 110, damage: 22 },
+  /** The fan's lines show through the wind-up; then an icicle flies down each. */
+  icicles: { count: 5, countEnraged: 7, step: 0.2, speed: 520, damage: 12, radius: 7 },
+  /** Patches of ice laid in rings round the serpent. */
+  iceRing: { rings: [260, 430] as const, patch: 70, life: 7 },
+};
+
+/** Lava, brambles, ice, burning ground, vents and other hazards. */
+export const HAZARDS = {
+  /** Lava, brambles and burning ground hurt on touch, through the normal invulnerability. */
+  lava: { damage: 6 },
+  bramble: { damage: 5 },
+  fire: { damage: 5 },
+  /** Ice halves the head's turn rate, so turns are wider. */
+  ice: { turn: 0.5 },
+  /** Foes not at home in it burn this much per tick. */
+  burn: { damage: 5, tick: 0.5 },
+  /** Eruption vents go off every few seconds, only near the view (S5). */
+  vent: { radius: 90, damage: 14, telegraph: 1.0, interval: [5, 8] as const, activeViews: 1 },
+  spores: { radius: 100, damage: 10, telegraph: 1.0, interval: [4, 7] as const, activeViews: 1 },
+  icicle: { radius: 60, damage: 15, telegraph: 1.0, interval: [3, 6] as const, activeViews: 1 },
+  /** Burning ground left by a boss's charge. */
+  fireTrail: { life: 2.5, radius: 34, spacing: 30 },
+};
+
+/** The way down after a boss falls. */
+export const DESCENT = {
+  /** Entering this close to the portal descends; after `pullAfter` seconds it pulls you in. */
+  radius: 70,
+  pullAfter: 15,
+  /** Seconds of fade from black on the new map. */
+  fade: 0.6,
 };
 
 export const DIRECTOR = {
@@ -408,18 +833,18 @@ export const DIRECTOR = {
   capMax: 110,
   earlyCapBase: 3,
   earlyCapPerSec: 0.5,
-  /** Unlock times and weights for each enemy type. */
-  casterStart: 40,
-  casterRamp: 80,
-  casterWeight: 0.35,
-  bruteStart: 100,
-  bruteRamp: 100,
-  bruteWeight: 0.22,
-  rivalStart: 180,
-  rivalRamp: 120,
-  rivalWeight: 0.12,
-  /** Seconds between rival snake allowance increases. */
-  rivalCapInterval: 120,
+  /**
+   * A map's four foes (swarmer, shooter, heavy, special) unlock this many seconds after the
+   * serpent arrives: slowly on the first map, faster on later ones (R4). Each then ramps up to
+   * its weight over `slotRamp` seconds.
+   */
+  slotStart: { first: [0, 40, 100, 180], later: [0, 20, 45, 90] },
+  slotRamp: [1, 80, 100, 120],
+  slotWeight: [1, 0.35, 0.22, 0.12],
+  /** Ramps start from at least this share of their weight. */
+  slotFloor: [1, 0.25, 0.3, 0.4],
+  /** The special (often a serpent) is capped: one, then one more every this many seconds. */
+  specialCapInterval: 120,
   bossTime: 300,
   bossInterval: 300,
   bossWarning: 4,
@@ -432,10 +857,8 @@ export const DIRECTOR = {
   maxSpeedBonus: 0.35,
 };
 
-/** Each boss defeated opens a deeper, harder depth (endless). */
+/** Each boss defeated opens the way to the next map, one depth deeper and harder (endless). */
 export const DEPTH = {
-  /** Distinct arena looks: the ruins, then the Ember Depths for every depth after. */
-  areas: 2,
   hpPerDepth: 0.35,
   damagePerDepth: 0.2,
   spawnPerDepth: 0.15,

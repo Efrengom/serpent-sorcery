@@ -1,6 +1,6 @@
 # Serpent Sorcery
 
-A top-down action roguelite for desktop browsers. One hand steers a wizard snake that never stops moving; the other hand draws magic sigils with the mouse to cast spells. Survive as long as you can on the Sunken Ruins, a temple complex several screens across, where the camera follows the serpent and every pillar, wall and fallen statue hurts to run into. Your snake grows longer and stronger, learns new sigils and evolves its spells, and the ruins send ever nastier foes, including a rival Archmage serpent at 5:00. Defeat it and the floor cracks open into ever deeper, harder depths. Before each run you pick a wizard and, if you dare, curses that raise the reward.
+A top-down action roguelite for desktop browsers. One hand steers a wizard snake that never stops moving; the other hand draws magic sigils with the mouse to cast spells. Survive as long as you can across four maps, each several screens across, where the camera follows the serpent and every pillar, wall and fallen statue hurts to run into. Your snake grows longer and stronger, learns new sigils and evolves its spells, and each map sends ever nastier foes of its own, including a rival Archmage serpent at 5:00. Defeat it and a way down opens to the next map: from the Sunken Ruins to the Mycelium Hollows, the Rimefrost Catacombs and the Ember Depths, then round again, deeper and harder. Before each run you pick a wizard and, if you dare, curses that raise the reward.
 
 ## Setup
 
@@ -9,10 +9,11 @@ Requires Node 18+.
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap, spells, depth, clean casts, Constrict, options, practice, maps, terrain, camera, navigation)
+npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap, spells, depth, clean casts, Constrict, options, practice, maps, terrain, camera, navigation, breakables, buffs, descent, hazards, every map's foes and bosses, records)
 npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
-npm run playtest   # ~5 min end-to-end play-test in a headless Edge/Chrome
+npm run playtest   # ~6 min end-to-end play-test in a headless Edge/Chrome
+npx vite-node scripts/balance.ts   # a bot plays every map headlessly; damage taken by kind, per map
 ```
 
 On Windows PowerShell with script execution disabled, `npm` itself is blocked (`npm.ps1 cannot be loaded`). Use `npm.cmd` instead (for example `npm.cmd run dev`), or run the commands from Command Prompt or Git Bash.
@@ -28,13 +29,14 @@ On Windows PowerShell with script execution disabled, `npm` itself is blocked (`
 - every sound sample loading, music start/mute/duck/slider behavior
 - the boss warning hushing the music, the boss theme crossfading in, the freeze and slow motion when the boss dies, and the main theme returning
 - drawing an unlearned triangle, then learning the triangle and zigzag sigils from level-up cards and casting them with real strokes, the ward blocking a real hit, frost slowing a foe, and an evolution card turning Arcane Bolt into Arcane Lance
-- descending to Depth 2 (the Ember Depths) after the boss falls
-- the big map: the camera following the serpent and Steady camera centring it, the aim staying on the world point pressed while the view scrolls, steering into a pillar with a real key (a bounce, 8 damage, recorded as the pillar), the boss clearing marked half a minute early with an arrow at the edge of the view, the minimap turned off and on with real clicks (checked in canvas pixels), a screenshot of every landmark in both styles, and frame times while the view races across the whole map
+- the boss's fall clearing the field and opening a way down (with an arrow while it's off-screen), and steering into it with a real key to reach Depth 2, the Mycelium Hollows, with its banner
+- the big map: the camera following the serpent and Steady camera centring it, the aim staying on the world point pressed while the view scrolls, steering into a pillar with a real key (a bounce, 8 damage, recorded as the pillar), the boss clearing marked half a minute early with an arrow at the edge of the view, the minimap turned off and on with real clicks (checked in canvas pixels), a screenshot of every landmark in both styles, and frame times while the view races across the whole map; then each deeper map's landmarks in both styles and frame times racing across it, ice on the Frozen Lake halving the turn rate, and brambles in the Hollows stinging and named in the recap
 - the trail reading a real V's first leg as a line and the finished stroke as a V, a careful V casting as Perfect or Clean, and a real WASD circle around a brute showing the loop hint and then Constricting it
-- an autopilot run with level-ups through death, foes spawning just outside the view (never on screen) and staying around the serpent, music layers building as the arena fills, the death recap, the reward banked once, and an instant restart
-- the setup screen: locked and unlocked wizards, picking Frostcoil and a curse with real clicks, the run starting with them, and the curse multiplying the banked shards
+- breakables: running into an urn smashes it for crystals, real Bolt strokes break a reliquary for a buff, the HUD chip counting down, Quickening speeding cooldowns by half, and a heart healing
+- an autopilot run with level-ups through death, foes spawning just outside the view (never on screen) and staying around the serpent, breakables giving at most 15% of the XP, music layers building as the arena fills, the death recap, the reward banked once, and an instant restart
+- the setup screen: the atlas showing the maps reached and the rest as silhouettes, locked and unlocked wizards, picking Frostcoil and a curse with real clicks, the run starting with them, and the curse multiplying the banked shards
 - shop purchases and reload persistence
-- the options screen: toggles, sliders and rebinding set with real clicks and keys and saved, a key taken from another action, Esc cancelling a rebind, the run steering with the new key (and not the old one), 50% game speed advancing the run at half speed, and canvas pixels showing a struck foe not flashing white with reduced flashing and a charge lane painted in hazard yellow with colorblind-safe warnings
+- the options screen: toggles, sliders and rebinding set with real clicks and keys and saved, a key taken from another action, Esc cancelling a rebind, the run steering with the new key (and not the old one), 50% game speed advancing the run at half speed, and canvas pixels showing a struck foe not flashing white with reduced flashing and a charge lane and a vent's circle painted in hazard yellow with colorblind-safe warnings
 - the sigil practice room: the live reading while drawing, a V graded as Forked Lightning, a square drawn for the triangle explaining that it has 4 corners, and the tally of attempts
 - a 400-action random keyboard/mouse fuzz asserting that permanent upgrades only change through a "Learn" click
 
@@ -73,19 +75,33 @@ Each wizard starts a run knowing three sigils. Drawing one you haven't learned s
 
 Each spell has its own cooldown. An unrecognized stroke shows "Sigil unclear" and costs nothing. A recognized spell that is still recharging shows "… recharging 1.2s" and shakes its HUD card. Tiny drags and clicks are ignored silently.
 
-## The map
+## The maps
 
-Runs are played on the **Sunken Ruins**, an old temple complex 6400×3600 world units: about four views across and four and a half down. The view shows the same amount of the world as the old one-screen arena (800 units tall, as wide as the window allows up to 1600), so foes and spell ranges look the same. The camera follows the head, looking 120 units ahead of it and easing after it over a quarter of a second, and stops at the map's edges.
+A run goes through four maps in order, one per Archmage: the **Sunken Ruins**, the **Mycelium Hollows**, the **Rimefrost Catacombs** and the **Ember Depths**, then round again, one depth deeper each time. They rise in what they ask of you: stone only, then stinging brambles and spore vents, then sliding ice, then lava and lobbed fire. The setup screen's atlas shows the maps you've reached; the rest are silhouettes.
+
+| Map | Size | Landmarks | Hazards | Foes | Archmage |
+| --- | --- | --- | --- | --- | --- |
+| Sunken Ruins | 6400×3600 | Rune Plaza, Colonnade, Collapsed Hall, Fallen Colossus, Broken Gate | stone only | Chaser, Caster, Brute, rival serpent | Ouroboros |
+| Mycelium Hollows | 7600×4200 | Glowcap Ring, Spore Grotto, Heartroot, Fallen Giant, Bramble Thicket | brambles, spore vents | Sporeling, Puffcap, Thornback, Burrow Viper | Sporemaw |
+| Rimefrost Catacombs | 8000×4400 | Bell Court, Ossuary, Crypt of Kings, Frozen Lake | ice, falling icicles | Bone Rattler, Frost Archer, Crypt Golem, Wraith | Rimecoil |
+| Ember Depths | 7200×4000 | Caldera, Lava Falls, Forge, Obsidian Spires | lava, eruption vents | Cinder Imp, Pyromancer, Magma Brute, Salamander | Pyrecoil |
+
+The **Sunken Ruins** is an old temple complex 6400×3600 world units: about four views across and four and a half down. The view shows the same amount of the world as the old one-screen arena (800 units tall, as wide as the window allows up to 1600), so foes and spell ranges look the same. The camera follows the head, looking 120 units ahead of it and easing after it over a quarter of a second, and stops at the map's edges.
 
 - **Landmarks** to steer by, marked on the minimap: the **Rune Plaza** in the middle (where every run starts) ringed by eight pillars, **The Colonnade** along the north, **The Collapsed Hall** to the west, **The Fallen Colossus** to the east and **The Broken Gate** across the south. Open courts in the four corners and the plaza are the boss clearings.
 - **Stone hurts.** Running into anything solid (the boundary wall, a hall wall, a pillar, a toppled column, a statue, the colossus) bounces the serpent off at a clear angle, locks steering for 0.2 s and costs 8 health, like the old arena walls. The Ward doesn't block it. The death recap names what you hit ("a broken pillar").
 - **Stone gives cover.** Walls and pillars stop enemy shots, Arcane Bolts and Arcane Lance beams. Forked Lightning arcs over them.
 - **Foes find their way.** A flow field (40-unit cells, refreshed four times a second) leads them around walls to the serpent; with a clear line they come straight at you. Casters need a clear shot before they fire. A brute that charges into stone staggers 1.5× longer, so baiting one into a pillar is worth it.
 - **Fair fights on a big map.** Foes spawn in a ring just outside the view, on open floor they can walk from, and never on screen. No foe starts an attack until it is on screen, so every telegraph is seen. Foes left far behind, or stuck out of sight, are brought back to the ring so the fight stays around you.
-- **The boss** arrives in the clearing nearest you. Half a minute before, that clearing is marked on the ground and on the minimap, with an arrow at the edge of the view while it's off-screen; once the boss is out, the arrow points at it. Each depth reuses the ruins' layout for now, in the Ember Depths' look below the first.
+- **The boss** arrives in the clearing nearest you. Half a minute before, that clearing is marked on the ground and on the minimap, with an arrow at the edge of the view while it's off-screen; once the boss is out, the arrow points at it.
+- **The way down.** When the Archmage falls, every other foe falls with it, every crystal flies to you, spawning stops and a way down opens where it fell (or on the nearest dry ground, if it fell in lava), with an arrow at the edge of the view. Steer into it, or after 15 s it pulls you in. The next map fades in with a banner naming its depth and a one-line tip; your level, upgrades and length carry over. Its foes unlock faster than the first map's (0, 20, 45 and 90 s after you arrive).
+- **Breakables.** Containers never hurt. About 140 clay **urns** stand mostly along the stonework: run into one or hit it with any spell and it shatters into 2–3 XP of crystals, sometimes a heart (+20 health; twice as likely below 35% health) or, rarely, a buff. 24 gilded **reliquaries** stand against walls and by the landmarks: they're solid (you bump off them unhurt, foes can't pass and enemy shots stop at them) and take about three Bolts at depth 1, more deeper down. Each drops 8 XP, always a buff, and often a heart (a big one, +35% max health, when you're low). Bolts pass through urns without being used up. Bolt, Lance, Nova, Ward pulses, Frost Fields and Constrict all break them; Lightning only seeks foes, and foes never break anything. Most urns and every reliquary are there at the start; a broken slot refills after 60 s (urn) or 120 s (reliquary), once you're well away from it. Hearts wait on the ground while your health is full.
+- **Buffs** show as chips under the health bar, counting down in game time: **Quickening** (cooldowns recover 50% faster, 15 s), **Empower** (+40% spell damage, on top of clean casts, 15 s), **Swiftscale** (+20% speed and turning, so the turning circle stays the same, 12 s) and **Stoneskin** (blocks the next hit from a foe, up to 30 s; stone still hurts). **Lodestone** pulls in every crystal on the map, and a **Shard Cache** adds 5 Arcane Shards (+2 per depth) to the run's reward, multiplied by curses. Picking up a buff you already have restarts it. The game-over recap counts what you smashed, health from pickups and buffs collected.
 - **Varied per run:** a few optional clusters of statues, fallen columns and pillars come and go, and pillars sit a little differently each time.
+- **Hazards.** Ground you touch always stings, even through the Ward and Stoneskin: **lava** (6), **brambles** (5) and **burning ground** (5) that some attacks leave. **Ice** never hurts but halves your turn rate, so turns are wider. Each map's **vents** (eruptions, spore puffs, falling icicles) go off under a circle that fills for a second first, only near the view; those are attacks, so the Ward and Stoneskin block them, and they hurt foes too. Foes path round stinging ground, but a map's own foes (and every boss) are at home in it; knocking others into it burns them. Every hazard has a pattern and outline, not just a colour, and colorblind-safe warnings stripe every circle.
+- **New foes** each add one twist to an old one: Sporelings hop in packs; Puffcaps root and swell, then puff a fan of slow spores; Thornbacks charge and leave brambles; Burrow Vipers dive (they can't be hit underground) and erupt under where you're heading; Bone Rattlers struck down by a bolt or arc collapse and rise again in 3 s unless you hit the pile; Frost Archers draw a line, then loose an icicle down it; Crypt Golems slam a ring round themselves and leave ice; Wraiths drift through stone (taking less damage inside it) and lunge; Cinder Imps crouch and leap; Pyromancers lob fireballs over stone onto marked circles; Magma Brutes charge and leave lava; Salamanders breathe a cone of flame. Each Archmage keeps Ouroboros's body and swaps two moves: Sporemaw fans spores and burrows down its lane to erupt at the end, Rimecoil looses icicles down lines it draws and lays rings of ice round you, Pyrecoil rains meteors and leaves a trail of fire.
 
-Maps are data in `src/game/maps/`: a text grid (one character per 200×200 cell: `#` wall, `.` floor, `b` boss clearing, `S` start, digits for landmarks) plus freely placed pieces. `validate.ts` checks the layout rules for every seed in a unit test: corridors at least 220 wide (the serpent turns in about 86), no narrow pockets, all floor reachable from the start, 3 to 5 clearings at least 1000×700 within 1900 units of everywhere, and a clear start. The full plan for more maps is in [docs/maps-requirements.md](docs/maps-requirements.md).
+Maps are data in `src/game/maps/`: a text grid (one character per 200×200 cell: `#` wall, `.` floor, `b` boss clearing, `S` start, digits for landmarks, `~` lava, `%` brambles, `=` ice) plus freely placed pieces, hazards, vents and breakable slots. `validate.ts` checks the layout rules for every map and 50 seeds in a unit test: corridors at least 220 wide (the serpent turns in about 86), no narrow pockets, all floor reachable from the start (and all dry floor without crossing lava or brambles), 3 to 5 clearings at least 1000×700 within 1900 units of all dry ground, hazards clear of stone, clearings, vents and the start, and a clear start. The full plan for more maps is in [docs/maps-requirements.md](docs/maps-requirements.md).
 
 ## Options
 
@@ -174,7 +190,7 @@ Optional handicaps toggled on the same screen. Each adds to the run's shard mult
 
 ## Depths and elites
 
-The run never ends on its own. Each Archmage defeated takes you one **depth** deeper (shown next to the kill count). The first descent turns the map into the **Ember Depths**: scorched red stone, ash and glowing lava cracks, in both art styles. Every depth adds 35% enemy health, 20% damage, 15% spawn rate and room for 12 more foes, and the boss keeps returning stronger.
+The run never ends on its own. Each Archmage defeated takes you one **depth** deeper (shown next to the kill count), onto the next map. Every depth adds 35% enemy health, 20% damage, 15% spawn rate and room for 12 more foes, and the boss keeps returning stronger.
 
 From Depth 2, spawns can be **elites** (10% at Depth 2, +5% per depth, up to 35%): bigger, 1.6× health, 2.5× experience, a crown marker and one modifier:
 
@@ -182,7 +198,7 @@ From Depth 2, spawns can be **elites** (10% at Depth 2, +5% per depth, up to 35%
 - **Swift**: lives on a 1.45× faster clock, so it moves, winds up and attacks faster.
 - **Splitting**: bursts into two smaller fragments when it dies.
 
-Frost works the same way in reverse: enemies inside a field run on a slower clock, which slows their attack wind-ups too. The game-over recap also counts hits the ward blocked, elites slain and the depth reached.
+Frost works the same way in reverse: enemies inside a field run on a slower clock, which slows their attack wind-ups too. The game-over recap also counts hits the ward blocked, elites slain, the depth and map reached, and foes that fell to lava and fire.
 
 ## Music
 
@@ -245,9 +261,12 @@ The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite raster
 - `DIRECTOR`: spawn rate curve, alive cap, enemy-type unlock times, boss timing, difficulty scaling over time
 - `PROGRESSION`: XP curve, passive survival XP, crystal cap
 - `REWARDS`: Arcane Shards per 10 s survived, per kill, per level and per boss
+- `BREAKABLES`, `PICKUPS`, `BUFFS`: urn and reliquary health, drops and refill times, heal sizes, and each buff's strength, length and drop weight
+- `HAZARDS`, `DESCENT`: lava, bramble and fire damage, ice's turn rate, each kind of vent, burning trails, and the way down
+- `BOSSES`, `METEORS`, `BOSS_MOVES`: each Archmage's name, banners, moves and summons, and their themed attacks; `ARCHETYPE`: which older foe each new one is built on
 - `ARENA`: damage and bounce from walls and every other solid; `CAMERA`: view size, look-ahead and easing; `NAV`: flow-field cells, the spawn ring, the off-screen attack margin, when stragglers are brought back, and how early the boss clearing is marked
 
-The Sunken Ruins' layout is `src/game/maps/ruins.ts`.
+Each map's layout is in `src/game/maps/` (`ruins.ts`, `hollows.ts`, `catacombs.ts`, `ember.ts`), and their order in `maps/index.ts`. After changing foes or hazards, `npx vite-node scripts/balance.ts` has a bot play every map at the same depth and level and prints the damage taken per minute by kind (melee, shots, bursts, vents, lava, fire, brambles, stone), deaths, kills and the share of XP from breakables. Measured over six seeds (`npx vite-node scripts/balance.ts 240 6`), the last pass brought the four maps to 29–46 per minute, the Hollows the gentlest; it trimmed the Pyromancer's burning ground (2.5 s → 1.6 s), the Frost Archer's icicle (13 → 11 damage, 560 → 420 speed, a 0.9 s line) and the Puffcap's spores (10 → 7 damage, drifting 7 s).
 
 Run upgrades (stack sizes and per-level effects), the level-up offer (when new sigils and evolutions appear) and permanent upgrades (costs and caps) are in **`src/game/progression.ts`**. Wizards are in **`src/game/wizards.ts`** and curses in **`src/game/curses.ts`**.
 
@@ -258,18 +277,25 @@ src/game/            framework-free game code (no React)
   config.ts          balance values
   engine.ts          Game class: fixed-timestep loop, phases, gesture → spell, events to React
   snake.ts           player movement, path trail for body segments, steering that bends U-turns away from stone
-  maps/              map data (the Sunken Ruins), building a run's layout from a seed, the layout validator
+  maps/              the four maps as data, their order, building a run's layout from a seed, the layout validator
   terrain.ts         distances to solids, bounces, pushing bodies out, ray casts, line of sight
   camera.ts          the view following the serpent around the map
   nav.ts             the flow field foes follow to the serpent
   heap.ts, hash.ts   a min-heap for path searches; position-keyed randomness for seamless floors
+  breakables.ts      urns and reliquaries, their drops, pickups, and buffs
+  descent.ts         the way down after a boss, and moving the run to the next map
+  hazards.ts         lava, brambles, ice, burning trails, vents and telegraphed blasts
+  hazardDraw.ts      the classic look of hazards, blasts and the way down
+  telegraph.ts       what both renderers need to preview attacks: lanes, aim lines, blasts in flight
+  atlas.ts           the setup screen's map pictures
+  icons.ts           pickup and buff icons, shared by the canvas, pixel sprites and HUD
   input.ts           keyboard (following the key bindings) + pointer capture, clears on blur/resize/pause
   keys.ts            key bindings: defaults, rebinding, validation, key labels
   options.ts         comfort and accessibility options: shake, flashing, warnings, minimap, camera, game speed
   gesture.ts         sigil recognizer, and the per-sigil explanations for practice
   practice.ts        the practice room's verdicts, fitted shapes and measurements
   spells.ts          all five spells and their evolutions, frost and swift time scaling, aim logic
-  enemies.ts         spawn director and spawn ring, boss clearings, depth scaling, elites, AI for chasers/casters/brutes/rivals/boss, line of sight, stragglers
+  enemies.ts         spawn director and spawn ring, boss clearings, depth scaling, elites, AI for each archetype and its twists (packs, burrowing, collapsing, phasing, lobbing, slams), every boss's moves, line of sight, stragglers
   combat.ts          damage, deaths, crystals, contacts, enemy shots
   progression.ts     XP curve, run upgrades, rewards, permanent upgrades
   persistence.ts     validated localStorage save, award-once commit
@@ -286,10 +312,11 @@ src/game/            framework-free game code (no React)
   sfx.ts             sound-effect samples and the synthesized fallback
   music/             score (themes as data), synth instruments, player, intensity
 src/ui/              React screens, HUD and overlays
+scripts/             the end-to-end play-test, and the headless balance bot
 ```
 
 The animation loop and all fast-changing state live in `Game` outside React. React gets phase changes, level-up offers, run results, and a HUD snapshot throttled to 20 Hz. The simulation runs at a fixed 120 Hz step, so movement, cooldowns and spawns don't depend on frame rate.
 
 ## Saves
 
-Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, records (best time, level, kills, run count, lifetime bosses defeated), mute/volume, the chosen wizard and curses, and the options (shake, reduced flashing, safe warnings, minimap, steady camera, game speed, key bindings). Saved bindings are cleaned on load: unknown keys, duplicates and a stray Esc are dropped. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.
+Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, records (best time, level, kills, run count, lifetime bosses defeated, deepest depth, maps reached for the atlas, lifetime containers smashed), mute/volume, the chosen wizard and curses, and the options (shake, reduced flashing, safe warnings, minimap, steady camera, game speed, key bindings). Saved bindings are cleaned on load: unknown keys, duplicates and a stray Esc are dropped. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.

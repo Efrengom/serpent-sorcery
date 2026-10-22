@@ -1,4 +1,4 @@
-import { SNAKE } from '../config';
+import { BREAKABLES, SNAKE } from '../config';
 import { MinHeap, NEIGHBOURS } from '../heap';
 import { clearanceAt, solidDistance } from '../terrain';
 import type { MapLayout } from './types';
@@ -23,6 +23,9 @@ export const LAYOUT_RULES = {
   /** Path distance from any turning space to the nearest clearing's middle. */
   clearingReach: 1900,
   openShare: 0.55,
+  /** Breakable slots per map (B3). */
+  smallSlots: { min: 120, max: 160 },
+  largeSlots: { min: 20, max: 28 },
 };
 
 export interface LayoutReport {
@@ -66,6 +69,34 @@ export function validateLayout(map: MapLayout): LayoutReport {
       for (let x = c.x0; x <= c.x1 && !blocked; x += 20) if (clearanceAt(index, x, y) < 0) blocked = true;
     }
     if (blocked) issues.push(`a solid stands in the clearing at (${c.x0}, ${c.y0})`);
+  }
+
+  // Hazards (any kind): none at the start, in a clearing or on a vent; vents stand clear of stone and hazards.
+  const hz = map.hazardIndex;
+  /** Only stinging ground (lava, brambles) has to leave dry paths round it; ice is fine to cross. */
+  const harm = map.harmIndex;
+  const wet = (x: number, y: number, pad = 0) => !!hz && clearanceAt(hz, x, y) < pad;
+  // (Exact: the index only measures up to its margin.)
+  if (map.hazards.some((h) => solidDistance(h, map.start.x, map.start.y) < R.startClearance)) issues.push('a hazard is too close to the start');
+  for (const c of map.clearings) {
+    let lava = false;
+    for (let y = c.y0; y <= c.y1 && !lava; y += 20) for (let x = c.x0; x <= c.x1 && !lava; x += 20) lava = wet(x, y);
+    if (lava) issues.push(`a hazard runs into the clearing at (${c.x0}, ${c.y0})`);
+  }
+  for (const v of map.vents) {
+    if (clearanceAt(index, v.x, v.y) < 120 || wet(v.x, v.y, 120)) issues.push(`the vent at (${v.x}, ${v.y}) is too close to stone or a hazard`);
+    if (map.clearings.some((c) => v.x > c.x0 && v.x < c.x1 && v.y > c.y0 && v.y < c.y1)) issues.push(`the vent at (${v.x}, ${v.y}) is in a boss clearing`);
+  }
+
+  // Breakable slots: enough of each, none in stone, no reliquary in a boss clearing.
+  const small = map.slots.filter((s) => s.size === 'small');
+  const large = map.slots.filter((s) => s.size === 'large');
+  if (small.length < R.smallSlots.min || small.length > R.smallSlots.max) issues.push(`${small.length} small breakable slots (want ${R.smallSlots.min}–${R.smallSlots.max})`);
+  if (large.length < R.largeSlots.min || large.length > R.largeSlots.max) issues.push(`${large.length} large breakable slots (want ${R.largeSlots.min}–${R.largeSlots.max})`);
+  for (const s of map.slots) {
+    const r = s.size === 'large' ? BREAKABLES.large.radius : BREAKABLES.small.radius;
+    if (clearanceAt(index, s.x, s.y) < r - 0.5) issues.push(`a ${s.size} breakable at (${s.x | 0}, ${s.y | 0}) overlaps stone`);
+    if (s.size === 'large' && map.clearings.some((c) => s.x > c.x0 && s.x < c.x1 && s.y > c.y0 && s.y < c.y1)) issues.push(`a reliquary at (${s.x}, ${s.y}) stands in a boss clearing`);
   }
 
   // Fine grid of clearance samples across the play area.
@@ -131,6 +162,23 @@ export function validateLayout(map: MapLayout): LayoutReport {
     if (fits(i) && fromStart[i] === Infinity) pockets++;
   }
   if (pockets > 0) issues.push(`${pockets} cells of floor can't be reached from the start`);
+  // ...and clear paths go round every stinging hazard: all dry floor is reachable without crossing it.
+  if (harm) {
+    const dry = (i: number) => fits(i) && clearanceAt(harm, bounds.minX + ((i % cols) + 0.5) * cell, bounds.minY + (Math.floor(i / cols) + 0.5) * cell) >= SNAKE.headRadius;
+    const overDry = paths([cellOf(map.start.x, map.start.y)], dry);
+    let cut = 0;
+    for (let i = 0; i < n; i++) if (dry(i) && overDry[i] === Infinity) cut++;
+    if (cut > 0) issues.push(`${cut} cells of dry floor can only be reached by crossing lava or brambles`);
+  }
+  if (hz) {
+    let overlap = 0;
+    for (let i = 0; i < n; i++) {
+      const x = bounds.minX + ((i % cols) + 0.5) * cell;
+      const y = bounds.minY + (Math.floor(i / cols) + 0.5) * cell;
+      if (clear[i] < 0 && clearanceAt(hz, x, y) < 0) overlap++;
+    }
+    if (overlap > 0) issues.push(`a hazard overlaps stone in ${overlap} cells`);
+  }
   // ...turning space is one connected region...
   const turningSources: number[] = [];
   for (let i = 0; i < n; i++) if (turning(i)) turningSources.push(i);
@@ -153,7 +201,7 @@ export function validateLayout(map: MapLayout): LayoutReport {
   }
   if (slits > 0) issues.push(`${slits} cells are more than ${R.reach} from turning space (worst ${worst.d | 0} at ${worst.x | 0}, ${worst.y | 0}): a corridor or pocket is too narrow`);
 
-  // Boss clearings are never far away (measured to the nearest edge of one).
+  // Boss clearings are never far away (measured to the nearest edge of one, from dry ground: nobody waits for a boss in lava).
   const clearingCells: number[] = [];
   for (const c of map.clearings) {
     for (let y = c.y0 + cell / 2; y < c.y1; y += cell) for (let x = c.x0 + cell / 2; x < c.x1; x += cell) clearingCells.push(cellOf(x, y));
@@ -162,6 +210,7 @@ export function validateLayout(map: MapLayout): LayoutReport {
   let farthest = 0;
   let far = { x: 0, y: 0 };
   for (const i of turningSources) {
+    if (harm && clearanceAt(harm, bounds.minX + ((i % cols) + 0.5) * cell, bounds.minY + (Math.floor(i / cols) + 0.5) * cell) < 0) continue;
     if (toClearing[i] > farthest) {
       farthest = toClearing[i];
       far = { x: bounds.minX + ((i % cols) + 0.5) * cell, y: bounds.minY + (Math.floor(i / cols) + 0.5) * cell };

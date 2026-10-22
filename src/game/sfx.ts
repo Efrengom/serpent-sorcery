@@ -90,6 +90,50 @@ export const SFX_SAMPLES: Record<SfxName, SampleLayer[]> = {
     { files: ['lowFrequency_explosion_001'], gain: 0.24, rate: [0.6, 0.6] },
     { files: ['impactBell_heavy_001'], gain: 0.24, rate: [0.7, 0.7], delay: 0.3 },
   ],
+  // Breakables and what they drop.
+  smash: [
+    { files: ['impactMining_002', 'impactMining_004'], gain: 0.22, rate: [1.3, 1.5], maxDur: 0.3 },
+    { files: range('impactGlass_light', 0, 2), gain: 0.12, rate: [0.55, 0.7], delay: 0.01 },
+  ],
+  smashBig: [
+    { files: range('impactPlate_medium', 0, 2), gain: 0.3, rate: [0.7, 0.8] },
+    { files: ['impactGlass_heavy_000', 'impactGlass_heavy_001'], gain: 0.16, rate: [0.8, 0.9], delay: 0.03 },
+    { files: ['creak1'], gain: 0.2, rate: [1.2, 1.3], delay: 0.06, maxDur: 0.4 },
+  ],
+  bump: [{ files: range('impactSoft_medium', 0, 4), gain: 0.16, rate: [0.6, 0.7] }],
+  heal: [
+    { files: ['confirmation_002'], gain: 0.16, rate: [1.1, 1.1] },
+    { files: ['glass_004'], gain: 0.1, rate: [1.4, 1.5], delay: 0.04 },
+  ],
+  buff: [
+    { files: ['forceField_001'], gain: 0.26, rate: [1.15, 1.25] },
+    { files: ['impactBell_heavy_003'], gain: 0.1, rate: [1.9, 2], delay: 0.05 },
+  ],
+  buffEnd: [{ files: ['forceField_004'], gain: 0.12, rate: [0.6, 0.65], maxDur: 0.5 }],
+  // Hazards: eruptions, meteors and fireballs landing, and a salamander's flame.
+  erupt: [
+    { files: ['lowFrequency_explosion_000'], gain: 0.12, rate: [1.1, 1.3] },
+    { files: ['explosionCrunch_004'], gain: 0.07, rate: [1.2, 1.4], delay: 0.02 },
+  ],
+  flame: [{ files: ['forceField_002'], gain: 0.16, rate: [0.5, 0.6], maxDur: 0.5 }],
+  // The Hollows and the Catacombs: spore puffs, icicles, burrowing, a golem's slam and bones rattling.
+  spores: [
+    { files: ['slime_000'], gain: 0.2, rate: [0.7, 0.9], maxDur: 0.5 },
+    { files: ['impactSoft_heavy_001'], gain: 0.12, rate: [1.1, 1.3], delay: 0.03 },
+  ],
+  icicle: [
+    { files: range('impactGlass_light', 0, 2), gain: 0.2, rate: [1.3, 1.6] },
+    { files: ['glass_004', 'glass_006'], gain: 0.1, rate: [1.0, 1.2], delay: 0.02, maxDur: 0.4 },
+  ],
+  burrow: [
+    { files: ['impactMining_000', 'impactMining_002'], gain: 0.2, rate: [0.5, 0.6], maxDur: 0.4 },
+    { files: ['lowFrequency_explosion_001'], gain: 0.08, rate: [1.4, 1.6], delay: 0.04 },
+  ],
+  slam: [
+    { files: range('impactPunch_heavy', 0, 2), gain: 0.28, rate: [0.5, 0.6] },
+    { files: ['impactGlass_heavy_000', 'impactGlass_heavy_001'], gain: 0.12, rate: [0.9, 1.0], delay: 0.03 },
+  ],
+  rattle: [{ files: range('impactPlate_medium', 0, 2), gain: 0.16, rate: [1.6, 1.9], maxDur: 0.25 }],
 };
 
 export const SFX_FILES: string[] = [...new Set(Object.values(SFX_SAMPLES).flatMap((ls) => ls.flatMap((l) => l.files)))];
@@ -251,6 +295,50 @@ export function playSynth(
     case 'descend':
       tone(90, 45, 1.2, 'sawtooth', 0.25);
       hiss(1.0, 0.31, 500, 'lowpass');
+      break;
+    case 'smash':
+      hiss(0.12, 0.2, 2400, 'bandpass');
+      tone(420, 180, 0.08, 'square', 0.06);
+      break;
+    case 'smashBig':
+      hiss(0.3, 0.3, 900, 'lowpass');
+      tone(160, 70, 0.25, 'square', 0.12);
+      break;
+    case 'bump':
+      tone(140, 90, 0.1, 'sine', 0.14);
+      break;
+    case 'heal':
+      [660, 880, 1320].forEach((f, i) => tone(f, f, 0.14, 'sine', 0.1, i * 0.05));
+      break;
+    case 'buff':
+      [523, 659, 784, 1047].forEach((f, i) => tone(f, f * 1.01, 0.18, 'triangle', 0.12, i * 0.04));
+      break;
+    case 'buffEnd':
+      tone(520, 260, 0.3, 'sine', 0.08);
+      break;
+    case 'erupt':
+      tone(80, 40, 0.4, 'sawtooth', 0.14);
+      hiss(0.35, 0.22, 800, 'lowpass');
+      break;
+    case 'flame':
+      hiss(0.4, 0.16, 1200, 'bandpass');
+      break;
+    case 'spores':
+      hiss(0.3, 0.14, 600, 'lowpass');
+      break;
+    case 'icicle':
+      tone(1800, 2600, 0.12, 'triangle', 0.08);
+      break;
+    case 'burrow':
+      hiss(0.35, 0.2, 400, 'lowpass');
+      tone(90, 50, 0.3, 'sine', 0.12);
+      break;
+    case 'slam':
+      tone(70, 35, 0.4, 'square', 0.14);
+      hiss(0.25, 0.2, 700, 'lowpass');
+      break;
+    case 'rattle':
+      tone(900, 700, 0.08, 'square', 0.06);
       break;
   }
 }

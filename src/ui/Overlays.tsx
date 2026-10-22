@@ -1,11 +1,11 @@
 import { useCallback, useContext, useEffect, useState, type ComponentProps, type CSSProperties } from 'react';
-import { SPELL_IDS, SPELLS } from '../game/config';
+import { SPELL_IDS, SPELLS, type SpellId } from '../game/config';
 import { MOVE_ACTIONS, primaryKeyLabel } from '../game/keys';
 import { formatTime } from '../game/math';
 import type { GameOptions } from '../game/options';
 import type { CommitOutcome, RunResult } from '../game/persistence';
 import type { UpgradeChoice } from '../game/progression';
-import { describeHurt, worstHurt, type DamageSource, type RunRecap } from '../game/recap';
+import { describeHurt, worstHurt, type RunRecap } from '../game/recap';
 import { CoilIcon, Shard, UpgradeGlyph } from './art';
 import { BindingsContext, KeyHint, OptionsPanel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
@@ -124,7 +124,7 @@ export function PauseMenu({
     <div className="overlay">
       <div className="overlay-inner">
         <h2 className="overlay-title">Paused</h2>
-        <p className="overlay-sub">The ruins hold their breath.</p>
+        <p className="overlay-sub">The depths hold their breath.</p>
         <div className="menu-buttons">
           <button className="btn primary" onClick={onResume} autoFocus>
             Resume <KeyHint action="pause" />
@@ -160,8 +160,9 @@ export function PauseMenu({
 
 /** What ended the run, and how much each spell contributed. */
 function RunRecapView({ recap }: { recap: RunRecap }) {
-  const used: DamageSource[] = SPELL_IDS.filter((id) => recap.spells[id].casts > 0);
-  const rows: DamageSource[] = used.length > 0 ? used : SPELL_IDS.slice(0, 3);
+  // Damage from lava, vents and the like isn't yours, so it gets a line below rather than a row.
+  const used: (SpellId | 'constrict')[] = SPELL_IDS.filter((id) => recap.spells[id].casts > 0);
+  const rows: (SpellId | 'constrict')[] = used.length > 0 ? used : SPELL_IDS.slice(0, 3);
   if (recap.spells.constrict.casts > 0) rows.push('constrict');
   const total = rows.reduce((sum, id) => sum + recap.spells[id].damage, 0);
   const worst = worstHurt(recap);
@@ -170,7 +171,12 @@ function RunRecapView({ recap }: { recap: RunRecap }) {
   const extras = [
     sigils > 0 && `Sigils: ${perfect} perfect · ${clean} clean of ${sigils}`,
     recap.blocked > 0 && `Ward blocked ${recap.blocked} ${recap.blocked === 1 ? 'hit' : 'hits'}`,
+    recap.depth > 1 && `Reached Depth ${recap.depth}: the ${recap.map}`,
     recap.elitesSlain > 0 && `${recap.elitesSlain} ${recap.elitesSlain === 1 ? 'elite' : 'elites'} slain`,
+    recap.breakables > 0 && `${recap.breakables} ${recap.breakables === 1 ? 'container' : 'containers'} smashed`,
+    recap.spells.hazard.kills > 0 && `${recap.spells.hazard.kills} ${recap.spells.hazard.kills === 1 ? 'foe' : 'foes'} fell to lava and fire`,
+    recap.healed > 0 && `${Math.round(recap.healed)} health from pickups`,
+    recap.buffs > 0 && `${recap.buffs} ${recap.buffs === 1 ? 'buff' : 'buffs'} collected`,
   ].filter(Boolean);
   return (
     <div className="recap">

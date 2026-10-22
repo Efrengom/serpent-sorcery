@@ -349,6 +349,85 @@ kbd {
   color: var(--ink);
 }
 
+/* The atlas: the four maps of a run on the setup screen, a silhouette until reached. */
+.atlas {
+  max-width: 1100px;
+  margin: 14px auto 0;
+}
+
+.atlas-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.atlas-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-edge);
+  background: rgba(14, 8, 28, 0.6);
+}
+
+.atlas-map {
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+
+.atlas-depth {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.atlas-name {
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.atlas-tip {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #ddd0f5;
+}
+
+.atlas-card.unknown .atlas-name,
+.atlas-card.unknown .atlas-tip {
+  color: var(--ink-dim);
+}
+
+.app.pixel .atlas-card {
+  border-radius: 0;
+  border: 2px solid var(--panel-edge);
+  box-shadow: 0 0 0 2px var(--px-ink);
+}
+
+.app.pixel .atlas-map {
+  border-radius: 0;
+  image-rendering: pixelated;
+}
+
+/* The maps of a run, under the three cards. */
+.howto-maps {
+  max-width: 1100px;
+  margin: 18px auto 0;
+}
+
+.map-list {
+  margin: 0;
+  padding-left: 1.4em;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 6px 24px;
+  color: #ddd0f5;
+}
+
 .muted {
   color: var(--ink-dim) !important;
   font-size: 0.9rem;
@@ -889,6 +968,66 @@ kbd {
 
 .boss-bar.enraged .boss-track {
   box-shadow: 0 0 14px rgba(255, 60, 90, 0.8);
+}
+
+/* Timed buffs from breakables: an icon in a ring that empties as the buff runs out. */
+.buff-chips {
+  position: absolute;
+  top: 80px;
+  left: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 40vw;
+}
+
+.buff-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 3px;
+  border-radius: 999px;
+  border: 1px solid var(--buff);
+  background: rgba(14, 8, 28, 0.82);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+  text-shadow: 0 1px 2px #000;
+}
+
+.buff-ring {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: conic-gradient(var(--buff) var(--left), rgba(255, 255, 255, 0.12) 0);
+}
+
+.buff-ring svg {
+  width: 20px;
+  height: 20px;
+  padding: 3px;
+  border-radius: 50%;
+  background: #140a24;
+  fill: var(--buff);
+}
+
+.buff-left {
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.app.pixel .buff-chip {
+  border-radius: 0;
+  border: 2px solid var(--buff);
+  box-shadow: 0 0 0 2px var(--px-ink);
+}
+
+.app.pixel .buff-ring,
+.app.pixel .buff-ring svg {
+  border-radius: 0;
+  shape-rendering: crispEdges;
 }
 
 .boss-incoming {

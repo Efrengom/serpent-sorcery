@@ -5,10 +5,14 @@ import { clearanceAt } from './terrain';
 import { WIZARDS } from './wizards';
 import type { World } from './world';
 
-/** Minimap colours per area: the ruins, then the Ember Depths. */
+const HAZARD_RGB = { lava: '#d8461c', bramble: '#9a3aa8', ice: '#a8d8f0' } as const;
+
+/** Minimap colours per area: the ruins, the Ember Depths, the Mycelium Hollows, the Rimefrost Catacombs. */
 const STYLE = [
   { floor: '#1d1233', stone: '#4f3f78', edge: '#9a88cc', frame: '#0d0718', landmark: '#e4d8ff' },
   { floor: '#24100b', stone: '#6a3a26', edge: '#c87a4e', frame: '#120504', landmark: '#ffd8b0' },
+  { floor: '#0c1c1e', stone: '#2e5a52', edge: '#5fd8c0', frame: '#061012', landmark: '#ffc8f0' },
+  { floor: '#101a2c', stone: '#3e5878', edge: '#a8d0f0', frame: '#070c18', landmark: '#e8f4ff' },
 ];
 
 /** Width in CSS pixels; the height follows the map's shape. */
@@ -43,10 +47,13 @@ export class Minimap {
     const g = c.getContext('2d')!;
     const img = g.createImageData(mw, mh);
     const [floor, stone, edge] = [this.style.floor, this.style.stone, this.style.edge].map(hexRgb);
+    // Hazard ground in its own colour: lava, brambles, ice.
+    const zones = (['lava', 'bramble', 'ice'] as const).flatMap((k) => (map.zones[k] ? [{ index: map.zones[k]!, rgb: hexRgb(HAZARD_RGB[k]) }] : []));
     for (let v = 0; v < mh; v++) {
       for (let u = 0; u < mw; u++) {
         const d = clearanceAt(map.index, (u + 0.5) * per, (v + 0.5) * per);
-        const [r, gg, b] = d >= 0 ? floor : d > -per ? edge : stone;
+        const wet = zones.find((z) => clearanceAt(z.index, (u + 0.5) * per, (v + 0.5) * per) < 0);
+        const [r, gg, b] = wet ? wet.rgb : d >= 0 ? floor : d > -per ? edge : stone;
         const i = (v * mw + u) * 4;
         img.data[i] = r;
         img.data[i + 1] = gg;
@@ -102,10 +109,19 @@ export class Minimap {
     ctx.lineWidth = 1;
     ctx.strokeRect(Math.round(px(view.x0)) + 0.5, Math.round(py(view.y0)) + 0.5, Math.round((view.x1 - view.x0) * k), Math.round((view.y1 - view.y0) * k));
 
+    // Reliquaries: small gold pips.
+    ctx.fillStyle = '#e8c87a';
+    for (const b of world.breakables) {
+      if (b.size !== 'large') continue;
+      const s = this.pixel ? 2 : 2.5;
+      ctx.fillRect(this.pixel ? Math.round(px(b.x) / 2) * 2 - 1 : px(b.x) - s / 2, this.pixel ? Math.round(py(b.y) / 2) * 2 - 1 : py(b.y) - s / 2, s, s);
+    }
     for (const e of world.enemies) {
       if (e.dead || !e.elite) continue;
       this.dot(ctx, px(e.x), py(e.y), 1.5, e.elite === 'shielded' ? COLORS.eliteShield : e.elite === 'swift' ? COLORS.eliteSwift : COLORS.eliteSplit);
     }
+    // The way down, once the boss has fallen.
+    if (world.descent) this.dot(ctx, px(world.descent.x), py(world.descent.y), 4, COLORS.nova);
     const boss = world.boss ?? world.portals.find((p) => p.kind === 'boss');
     if (boss) this.dot(ctx, px(boss.x), py(boss.y), 4, '#ff6a8a');
     const s = world.snake;
@@ -134,3 +150,6 @@ export class Minimap {
     ctx.fill();
   }
 }
+
+/** The minimap's colours, shared with the atlas on the setup screen. */
+export { STYLE as MINIMAP_STYLE, HAZARD_RGB as MINIMAP_HAZARDS };

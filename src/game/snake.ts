@@ -175,6 +175,10 @@ export class Snake {
   y = 0;
   heading = 0;
   steerLock = 0;
+  /** Speed and turn-rate multiplier (Swiftscale); both scale, so the turning circle stays the same. */
+  speedMult = 1;
+  /** Scales the turn rate on its own: ice halves it, so turns are wider. */
+  turnMult = 1;
   /** Smoothly approaches `segmentTarget` so growth is visible rather than instant. */
   segmentCount: number = SNAKE.startSegments;
   segmentTarget: number = SNAKE.startSegments;
@@ -209,11 +213,12 @@ export class Snake {
     if (this.steerLock > 0) {
       this.steerLock -= dt;
     } else if (dirX !== 0 || dirY !== 0) {
-      this.heading = steerOnMap(map, this.heading, Math.atan2(dirY, dirX), SNAKE.turnRate * dt, this.x, this.y);
+      this.heading = steerOnMap(map, this.heading, Math.atan2(dirY, dirX), SNAKE.turnRate * this.speedMult * this.turnMult * dt, this.x, this.y);
     }
-    this.x += Math.cos(this.heading) * SNAKE.speed * dt;
-    this.y += Math.sin(this.heading) * SNAKE.speed * dt;
-    const hit = map ? (bounceOffSolids(map.index, this, SNAKE.headRadius)?.name ?? null) : bounceOffWalls(this, SNAKE.headRadius) ? 'wall' : null;
+    this.x += Math.cos(this.heading) * SNAKE.speed * this.speedMult * dt;
+    this.y += Math.sin(this.heading) * SNAKE.speed * this.speedMult * dt;
+    // The map's index holds only its solids (lava has an index of its own).
+    const hit = map ? ((bounceOffSolids(map.index, this, SNAKE.headRadius)?.name as SolidName | undefined) ?? null) : bounceOffWalls(this, SNAKE.headRadius) ? 'wall' : null;
     if (hit) this.steerLock = ARENA.wallSteerLock;
     this.trail.record(this.x, this.y);
     if (this.segmentCount < this.segmentTarget) {

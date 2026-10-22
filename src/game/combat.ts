@@ -1,4 +1,5 @@
-import { DEPTH, ELITE, ENEMIES, EVOLUTIONS, HIT_STOP, PROGRESSION, SNAKE, SPELLS } from './config';
+import { ARCHETYPE, BUFFS, ELITE, ENEMIES, EVOLUTIONS, HIT_STOP, PROGRESSION, SNAKE, SPELLS, type EnemyKind } from './config';
+import { beginDescent } from './descent';
 import { addShake, burst, floater, hitStop } from './effects';
 import { spawnEnemy } from './enemies';
 import { clamp, dist2, TAU } from './math';
@@ -41,10 +42,23 @@ export function damageEnemy(
   hitX = e.x,
   hitY = e.y,
 ): void {
-  if (e.dead) return;
-  if (e.kind === 'brute' && e.state === 'recover') amount *= ENEMIES.brute.stunnedVulnerability;
+  // Nothing reaches a foe under the floor.
+  if (e.dead || e.hidden) return;
+  if (e.pile > 0) {
+    // A Bone Rattler's pile of bones: any hit finishes it for good.
+    world.recap.spells[spell].kills++;
+    burst(world, e.x, e.y, '#e8e0d0', 12, 220, { kind: 'shard', size: 3, life: 0.45 });
+    world.sfx('rattle');
+    killEnemy(world, e);
+    return;
+  }
+  if (ARCHETYPE[e.kind] === 'brute' && e.state === 'recover') amount *= ENEMIES.brute.stunnedVulnerability;
+  // A Wraith inside stone is harder to hurt.
+  if (e.kind === 'wraith' && clearanceAt(world.map.index, e.x, e.y) < 0) amount *= ENEMIES.wraith.phaseArmor;
   // Glacier: frozen-field foes are brittle.
   if (world.evolved.frost && e.chill > 0) amount *= EVOLUTIONS.frost.brittle;
+  // Empower (a buff) strengthens every spell, on top of a clean cast's bonus.
+  if (world.buffs.empower > 0 && spell !== 'constrict' && spell !== 'hazard') amount *= BUFFS.empower.damage;
   const stats = world.recap.spells[spell];
   if (e.shield > 0) {
     // A shielded elite's barrier soaks damage (and knockback) until it breaks.
@@ -62,10 +76,13 @@ export function damageEnemy(
     if (amount <= 0) return;
   }
   stats.damage += Math.min(amount, Math.max(0, e.hp));
-  if (e.hp > 0 && e.hp - amount <= 0) stats.kills++;
+  // Struck down by a single bolt or arc, a Bone Rattler only collapses; it counts once it stays down.
+  const collapses = e.kind === 'rattler' && (spell === 'bolt' || spell === 'lightning');
+  if (e.hp > 0 && e.hp - amount <= 0 && !collapses) stats.kills++;
   e.hp -= amount;
   e.flash = 0.12;
-  const knockScale = e.kind === 'boss' ? 0.05 : e.kind === 'brute' ? 0.4 : e.kind === 'rival' ? 0.3 : 1;
+  const arch = ARCHETYPE[e.kind];
+  const knockScale = arch === 'boss' ? 0.05 : arch === 'brute' ? 0.4 : arch === 'rival' ? 0.3 : 1;
   e.kx += knockX * knockScale;
   e.ky += knockY * knockScale;
   burst(world, hitX, hitY, color, 5, 180, { size: 2.5, life: 0.3 });
@@ -76,7 +93,22 @@ export function damageEnemy(
     damageNumber: true,
   });
   world.sfx('hit');
-  if (e.hp <= 0) killEnemy(world, e);
+  if (e.hp <= 0) {
+    if (collapses) collapse(world, e);
+    else killEnemy(world, e);
+  }
+}
+
+/** A Bone Rattler falls into a harmless pile of bones that rises again unless it's hit (or crushed, frozen or blasted). */
+function collapse(world: World, e: Enemy): void {
+  e.hp = 0;
+  e.pile = ENEMIES.rattler.riseTime;
+  e.state = 'move';
+  e.stateTime = 0;
+  e.kx = e.ky = 0;
+  e.shield = 0;
+  burst(world, e.x, e.y, '#e8e0d0', 10, 180, { kind: 'shard', size: 2.5, life: 0.4 });
+  world.sfx('rattle');
 }
 
 export function killEnemy(world: World, e: Enemy): void {
@@ -84,8 +116,7 @@ export function killEnemy(world: World, e: Enemy): void {
   e.dead = true;
   world.kills++;
   const isBoss = e.kind === 'boss';
-  const bodyColor =
-    e.kind === 'chaser' ? '#ff4f7b' : e.kind === 'caster' ? '#ff6ad5' : e.kind === 'brute' ? '#ffb070' : '#ff3d5e';
+  const bodyColor = KILL_COLORS[e.kind];
   burst(world, e.x, e.y, bodyColor, isBoss ? 60 : 14, isBoss ? 420 : 240, { size: isBoss ? 5 : 3.5, life: 0.6 });
   burst(world, e.x, e.y, '#ffffff', isBoss ? 20 : 4, 160, { kind: 'glow', size: isBoss ? 14 : 7, life: 0.35 });
   for (const s of e.segments) burst(world, s.x, s.y, bodyColor, 3, 160, { size: 3, life: 0.5 });
@@ -95,33 +126,51 @@ export function killEnemy(world: World, e: Enemy): void {
   if (isBoss) {
     world.bossKills++;
     world.boss = null;
-    descend(world);
+    beginDescent(world, e.x, e.y);
     addShake(world, 0.8);
     hitStop(world, HIT_STOP.bossKill, true);
     world.slowMo = HIT_STOP.bossSlowMo;
     world.sfx('bossDie');
   } else {
-    const heavy = e.kind === 'brute' || e.kind === 'rival';
+    const heavy = HEAVY[e.kind] === true;
     addShake(world, heavy ? 0.12 : 0.04);
     if (heavy) hitStop(world, HIT_STOP.heavyKill);
     world.sfx('kill');
   }
 }
 
-/**
- * Defeating the boss opens the next depth: the arena turns into the Ember Depths after the
- * first, and every depth is harder with more elites (see enemies.ts).
- */
-function descend(world: World): void {
-  world.depth++;
-  world.recap.depth = Math.max(world.recap.depth, world.depth);
-  const firstTime = world.area === 0;
-  world.area = Math.min(DEPTH.areas - 1, world.depth - 1);
-  world.banner = firstTime
-    ? { text: 'The Archmage falls!', sub: `The floor cracks open: Depth ${world.depth}, the Ember Depths`, t: 0, max: 3.6, color: COLORS.nova }
-    : { text: 'The Archmage falls!', sub: `Deeper still: Depth ${world.depth}`, t: 0, max: 3.4, color: COLORS.nova };
-  world.sfx('descend');
-}
+/** Foes whose death shakes the screen a little more, with a moment of hit-stop. */
+const HEAVY: Partial<Record<EnemyKind, true>> = {
+  brute: true,
+  rival: true,
+  thornback: true,
+  burrowViper: true,
+  golem: true,
+  wraith: true,
+  magmaBrute: true,
+  salamander: true,
+};
+
+/** The colour a foe bursts into when it dies. */
+const KILL_COLORS: Record<EnemyKind, string> = {
+  chaser: '#ff4f7b',
+  caster: '#ff6ad5',
+  brute: '#ffb070',
+  rival: '#ff3d5e',
+  boss: '#ff3d5e',
+  sporeling: '#e86ad8',
+  puffcap: '#ff7ae0',
+  thornback: '#c45ad8',
+  burrowViper: '#d89a5a',
+  rattler: '#e8e0d0',
+  frostArcher: '#9fd8ff',
+  golem: '#b8d8f0',
+  wraith: '#c8e8ff',
+  imp: '#ff8a3c',
+  pyromancer: '#ffb347',
+  magmaBrute: '#ff6a2a',
+  salamander: '#ff5a2a',
+};
 
 /** A splitting elite bursts into two smaller copies of itself. */
 function splitEnemy(world: World, e: Enemy): void {
@@ -186,6 +235,16 @@ export function hurtPlayer(world: World, amount: number, source: HurtSource): bo
     addShake(world, 0.2);
     floater(world, world.snake.x, world.snake.y - 30, 'Blocked', COLORS.ward, { size: 18, life: 0.7 });
     world.sfx('wardHit');
+    return false;
+  }
+  if (world.buffs.stoneskin > 0 && source.kind !== 'wall') {
+    // Stoneskin (a buff) takes one hit from a foe, then it's gone.
+    world.buffs.stoneskin = 0;
+    world.invuln = SPELLS.ward.absorbInvuln;
+    world.recap.blocked++;
+    addShake(world, 0.2);
+    floater(world, world.snake.x, world.snake.y - 30, 'Stoneskin', '#d8c8b0', { size: 18, life: 0.7 });
+    world.sfx('shieldHit');
     return false;
   }
   const dmg = Math.max(1, Math.round(amount));
@@ -268,15 +327,14 @@ export function updateShots(world: World, dt: number): void {
     p.life -= dt;
     p.spin += dt * 6;
     let remove = p.life <= 0;
-    // Walls, pillars and every other solid stop hostile shots: cover works.
-    if (clearanceAt(world.map.index, p.x, p.y) < p.r * 0.5) {
+    // Walls, pillars, reliquaries and every other solid stop hostile shots: cover works.
+    if (clearanceAt(world.map.index, p.x, p.y) < p.r * 0.5 || world.breakables.some((b) => b.size === 'large' && dist2(b.x, b.y, p.x, p.y) < b.r * b.r)) {
       burst(world, p.x, p.y, COLORS.hostile, 5, 120, { size: 2.5, life: 0.25 });
       remove = true;
     } else {
       const rr = SNAKE.hitRadius + p.r * 0.75;
       if (dist2(p.x, p.y, s.x, s.y) < rr * rr) {
-        const source: HurtSource = { kind: p.source, attack: p.source === 'boss' ? 'volley' : 'shot' };
-        if (hurtPlayer(world, p.damage, source) || world.invuln > 0) {
+        if (hurtPlayer(world, p.damage, p.source) || world.invuln > 0) {
           burst(world, p.x, p.y, COLORS.hostile, 8, 160, { size: 3, life: 0.3 });
           remove = true;
         }
@@ -292,23 +350,36 @@ export function updateShots(world: World, dt: number): void {
 export function contactDamage(e: Enemy): number {
   if (e.state === 'attack') {
     if (e.kind === 'brute') return ENEMIES.brute.chargeDamage * e.damageMult;
+    if (e.kind === 'magmaBrute') return ENEMIES.magmaBrute.chargeDamage * e.damageMult;
+    if (e.kind === 'thornback') return ENEMIES.thornback.chargeDamage * e.damageMult;
+    if (e.kind === 'wraith') return e.contact * 1.4;
     if (e.kind === 'boss') return ENEMIES.boss.chargeDamage * e.damageMult;
     if (e.kind === 'rival') return e.contact * 1.4;
+    if (e.kind === 'imp') return e.contact * 1.3;
   }
   return e.contact;
 }
 
+/** Who hurt the serpent, for the recap. Bosses other than Ouroboros go by their own name. */
+export function sourceKind(e: Enemy): HurtSource['kind'] {
+  return e.kind === 'boss' && e.bossId !== 'ouroboros' ? e.bossId : e.kind;
+}
+
 function contactSource(e: Enemy): HurtSource {
-  if (e.state === 'attack' && (e.kind === 'brute' || e.kind === 'boss')) return { kind: e.kind, attack: 'charge' };
-  if (e.state === 'attack' && e.kind === 'rival') return { kind: e.kind, attack: 'lunge' };
-  return { kind: e.kind, attack: 'bite' };
+  const kind = sourceKind(e);
+  if (e.state === 'attack' && (e.kind === 'brute' || e.kind === 'magmaBrute' || e.kind === 'thornback' || e.kind === 'boss')) return { kind, attack: 'charge' };
+  if (e.state === 'attack' && (e.kind === 'rival' || e.kind === 'wraith')) return { kind, attack: 'lunge' };
+  if (e.state === 'attack' && e.kind === 'salamander') return { kind, attack: 'flame' };
+  if (e.state === 'attack' && e.kind === 'imp') return { kind, attack: 'leap' };
+  return { kind, attack: 'bite' };
 }
 
 /** Enemy heads biting the player's head. Body segments are harmless ("only heads bite"). */
 export function updateContacts(world: World): void {
   const s = world.snake;
   for (const e of world.enemies) {
-    if (e.dead) continue;
+    // Nothing bites from under the floor, and a pile of bones is harmless.
+    if (e.dead || e.hidden || e.pile > 0) continue;
     const rr = SNAKE.hitRadius + e.r * 0.8;
     if (dist2(e.x, e.y, s.x, s.y) < rr * rr) {
       if (hurtPlayer(world, contactDamage(e), contactSource(e))) {

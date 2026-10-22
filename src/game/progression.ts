@@ -408,6 +408,8 @@ export interface RunSummary {
   bossKills: number;
   /** Bonus from curses chosen before the run (1 = none). */
   shardMult?: number;
+  /** Shards picked up from Shard Caches during the run (multiplied by curses too). */
+  bonusShards?: number;
 }
 
 /** The most curses can multiply a run's shards by. */
@@ -422,7 +424,8 @@ export function computeReward(run: RunSummary): number {
       (Math.floor(t / 10) * REWARDS.perTenSeconds +
         Math.max(0, run.kills) * REWARDS.perKill +
         Math.max(0, run.level - 1) * REWARDS.perLevel +
-        Math.max(0, run.bossKills) * REWARDS.perBoss) *
+        Math.max(0, run.bossKills) * REWARDS.perBoss +
+        Math.max(0, Number.isFinite(run.bonusShards) ? run.bonusShards! : 0)) *
         mult,
     ),
   );

@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { clampCamera, createCamera, inView, updateCamera } from '../camera';
 import { ARENA, CAMERA, ENEMIES, SNAKE, SPELLS } from '../config';
 import { buildLayout, validateLayout } from '../maps';
+import { CATACOMBS } from '../maps/catacombs';
+import { EMBER } from '../maps/ember';
+import { HOLLOWS } from '../maps/hollows';
 import { wallRects } from '../maps/layout';
 import { RUINS } from '../maps/ruins';
 import type { MapDef, Solid, SolidName } from '../maps/types';
@@ -155,6 +158,82 @@ describe('the Sunken Ruins layout', () => {
       const key = hurtKey({ kind: 'wall', attack: name });
       expect(describeHurt(key), name).not.toBe(key);
     }
+  });
+});
+
+describe('the Ember Depths layout', () => {
+  it('meets every layout rule for 50 seeds, lava and vents included', { timeout: 60_000 }, () => {
+    for (let seed = 1; seed <= 50; seed++) {
+      const report = validateLayout(buildLayout(EMBER, seed));
+      expect(report.issues, `seed ${seed}`).toEqual([]);
+    }
+  });
+
+  it('is bigger than the Ruins, with its landmarks, a lava river and vents', () => {
+    const map = buildLayout(EMBER, 7);
+    expect(map.width).toBe(7200);
+    expect(map.height).toBe(4000);
+    expect(map.width).toBeLessThanOrEqual(8000);
+    expect(map.height).toBeLessThanOrEqual(4400);
+    expect(map.clearings.length).toBeGreaterThanOrEqual(3);
+    expect(map.landmarks.map((l) => l.kind).sort()).toEqual(['caldera', 'falls', 'forge', 'spires']);
+    expect(map.hazards.length).toBeGreaterThan(3);
+    expect(map.hazardIndex).not.toBeNull();
+    expect(map.vents.length).toBeGreaterThanOrEqual(8);
+    // The river cuts the map in two, but the bridges keep both halves on dry ground.
+    expect(clearanceAt(map.hazardIndex!, 3500, 2000)).toBeLessThan(0);
+    expect(clearanceAt(map.hazardIndex!, 3500, 1200)).toBeGreaterThan(0);
+  });
+
+  it('names every solid and hazard in the death recap', () => {
+    for (const name of ['basalt', 'spire', 'ridge', 'anvil', 'lava', 'fire'] as const) {
+      const key = hurtKey({ kind: 'wall', attack: name });
+      expect(describeHurt(key), name).not.toBe(key);
+    }
+    expect(describeHurt(hurtKey({ kind: 'hazard', attack: 'vent' }))).toBe('an eruption vent');
+  });
+});
+
+describe('the Mycelium Hollows and the Rimefrost Catacombs', () => {
+  it('meet every layout rule for 50 seeds, brambles, ice and vents included', { timeout: 120_000 }, () => {
+    for (const def of [HOLLOWS, CATACOMBS]) {
+      for (let seed = 1; seed <= 50; seed++) {
+        const report = validateLayout(buildLayout(def, seed));
+        expect(report.issues, `${def.id} seed ${seed}`).toEqual([]);
+      }
+    }
+  });
+
+  it('are 4 to 5 views each way, with their landmarks, hazards and vents', () => {
+    const hollows = buildLayout(HOLLOWS, 3);
+    expect([hollows.width, hollows.height]).toEqual([7600, 4200]);
+    expect(hollows.landmarks.map((l) => l.kind).sort()).toEqual(['fallen', 'glowring', 'grotto', 'heartroot', 'thicket']);
+    expect(hollows.zones.bramble).toBeDefined();
+    expect(hollows.zones.lava).toBeUndefined();
+    expect(hollows.harmIndex).not.toBeNull();
+    expect(hollows.vents.length).toBeGreaterThanOrEqual(8);
+
+    const crypts = buildLayout(CATACOMBS, 3);
+    expect([crypts.width, crypts.height]).toEqual([8000, 4400]);
+    expect(crypts.landmarks.map((l) => l.kind).sort()).toEqual(['bellcourt', 'kings', 'lake', 'ossuary']);
+    // Ice is all the Catacombs have, and it doesn't sting.
+    expect(crypts.zones.ice).toBeDefined();
+    expect(crypts.harmIndex).toBeNull();
+    expect(clearanceAt(crypts.zones.ice!, 6700, 2300)).toBeLessThan(0);
+    for (const map of [hollows, crypts]) {
+      expect(map.width / CAMERA.maxViewWidth).toBeGreaterThanOrEqual(4);
+      expect(map.height / CAMERA.viewHeight).toBeGreaterThanOrEqual(4.5);
+      expect(map.width).toBeLessThanOrEqual(8000);
+    }
+  });
+
+  it('name every solid, wall, hazard and vent in the death recap', () => {
+    for (const name of ['stalk', 'heartroot', 'root', 'cap', 'icePillar', 'sarcophagus', 'roots', 'crypt', 'cliff', 'bramble'] as const) {
+      const key = hurtKey({ kind: 'wall', attack: name });
+      expect(describeHurt(key), name).not.toBe(key);
+    }
+    expect(describeHurt(hurtKey({ kind: 'hazard', attack: 'spores' }))).toBe('a spore vent');
+    expect(describeHurt(hurtKey({ kind: 'hazard', attack: 'icicle' }))).toBe('falling icicles');
   });
 });
 
