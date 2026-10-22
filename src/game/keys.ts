@@ -4,8 +4,8 @@
  * menus, so it fills the pause action's first slot and can't be bound to anything else.
  */
 
-export type KeyAction = 'up' | 'down' | 'left' | 'right' | 'pause' | 'mute' | 'art';
-export const KEY_ACTIONS: KeyAction[] = ['up', 'down', 'left', 'right', 'pause', 'mute', 'art'];
+export type KeyAction = 'up' | 'down' | 'left' | 'right' | 'ultimate' | 'pause' | 'mute' | 'art';
+export const KEY_ACTIONS: KeyAction[] = ['up', 'down', 'left', 'right', 'ultimate', 'pause', 'mute', 'art'];
 export const MOVE_ACTIONS = ['up', 'down', 'left', 'right'] as const;
 export type MoveAction = (typeof MOVE_ACTIONS)[number];
 
@@ -14,6 +14,7 @@ export const KEY_ACTION_NAMES: Record<KeyAction, string> = {
   down: 'Steer down',
   left: 'Steer left',
   right: 'Steer right',
+  ultimate: 'Cast ultimate',
   pause: 'Pause',
   mute: 'Mute sound',
   art: 'Switch art style',
@@ -29,6 +30,7 @@ export const DEFAULT_BINDINGS: KeyBindings = {
   down: ['KeyS', 'ArrowDown'],
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
+  ultimate: ['Space', 'KeyQ'],
   pause: [RESERVED_KEY, null],
   mute: ['KeyM', null],
   art: ['KeyP', null],

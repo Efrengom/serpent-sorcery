@@ -6,6 +6,7 @@ import type { BreakableLook, Hazard, Rect } from '../maps/types';
 import { angleDiff, clamp, mulberry32, TAU, type Vec } from '../math';
 import type { ViewOptions } from '../options';
 import type { PlayArea } from '../snake';
+import { stormAngle, ULTIMATES } from '../ultimates';
 import { WIZARDS } from '../wizards';
 import type { Blast, BuffId, Enemy, GestureView, GroundFx, World } from '../world';
 import { BUFF_INFO, HEAL_COLOR } from '../breakables';
@@ -1231,6 +1232,54 @@ export function drawNovas(ctx: CanvasRenderingContext2D, world: World): void {
       for (let d = R - 5; d <= R - 3; d++) ticks.push(Math.round(x + Math.cos(a) * d), Math.round(y + Math.sin(a) * d));
     }
     if (fade > 0.4) pixels(ctx, ticks, PX.gold3);
+  }
+}
+
+/** The ultimates in pixels: cast waves, Bastion's gilded body, Maelstrom's storm ring, Starfall's stars and their marks. */
+export function drawUltimatePixel(ctx: CanvasRenderingContext2D, world: World, t: number, quiet = false): void {
+  for (const r of world.ultRings) {
+    const k = r.t / r.life;
+    const R = (r.r * (1 - (1 - k) * (1 - k))) / P;
+    const keep = (X: number, Y: number) => bayer(X, Y) < (1 - k) * (quiet ? 0.5 : 0.9);
+    pixels(ctx, circlePixels(r.x / P, r.y / P, R, keep), r.color);
+    pixels(ctx, circlePixels(r.x / P, r.y / P, R - 1, keep), PX.white);
+  }
+  const u = world.ult;
+  const s = world.snake;
+  if (u.active > 0 && u.id === 'bastion') {
+    const fade = Math.min(1, u.active / 0.8);
+    const on = quiet ? 0.5 : 0.45 + 0.25 * Math.sin(t * 9);
+    const keep = (X: number, Y: number) => bayer(X, Y) < on * fade;
+    const gold = ULTIMATES.bastion.color;
+    pixels(ctx, circlePixels(s.x / P, s.y / P, (SNAKE.headRadius * 1.9) / P, keep), gold);
+    for (let i = 0; i < s.segments.length; i += 2) pixels(ctx, circlePixels(s.segments[i].x / P, s.segments[i].y / P, 7, keep), gold);
+  }
+  if (u.active > 0 && u.id === 'maelstrom') {
+    const R = ULTIMATES.maelstrom.radius / P;
+    const fade = Math.min(1, u.active / 0.8, u.t / 0.3);
+    const spin = stormAngle(t);
+    const out: number[] = [];
+    for (let i = 0; i < 7; i++) {
+      const a0 = spin + (i / 7) * TAU;
+      for (let j = 0; j < 14; j++) {
+        const a = a0 + (j / 14) * 0.55;
+        const X = Math.round(s.x / P + Math.cos(a) * R);
+        const Y = Math.round(s.y / P + Math.sin(a) * R);
+        if (bayer(X, Y) < 0.8 * fade) out.push(X, Y);
+      }
+    }
+    pixels(ctx, out, ULTIMATES.maelstrom.color);
+  }
+  const gold = ULTIMATES.starfall.color;
+  for (const st of world.stars) {
+    const k = Math.min(1, st.t / st.fall);
+    pixels(ctx, circlePixels(st.x / P, st.y / P, (st.r * (1.3 - 0.3 * k)) / P, (X, Y) => (X + Y) % 4 < 2 && bayer(X, Y) < 0.4 + 0.5 * k), gold);
+    const x = Math.round((st.x + 160 * (1 - k)) / P);
+    const y = Math.round((st.y - 520 * (1 - k)) / P);
+    pixels(ctx, linePixels(x + 19, y - 62, x, y, (i) => i % 2 === 0), '#fff3c4');
+    px(ctx, x - 2, y, gold, 5, 1);
+    px(ctx, x, y - 2, gold, 1, 5);
+    px(ctx, x - 1, y - 1, PX.white, 3, 3);
   }
 }
 

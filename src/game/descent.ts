@@ -6,6 +6,8 @@ import { placeVents } from './hazards';
 import { buildLayout, mapArea, mapForIndex, mapSeed } from './maps';
 import { clamp, dist, TAU, type Vec } from './math';
 import { createFlowField, refreshFlowField } from './nav';
+import { offerRelics, RELIC_TUNING, takeRelic, type RelicId } from './relics';
+import { refreshStats } from './world';
 import { COLORS } from './palette';
 import { clearanceAt, pushOut } from './terrain';
 import type { World } from './world';
@@ -59,14 +61,36 @@ function portalSpot(world: World, x: number, y: number): Vec {
   return { x: clamp(at.x, b.minX + 60, b.maxX - 60), y: clamp(at.y, b.minY + 60, b.maxY - 60) };
 }
 
-/** Per step while the way down is open: crystals keep flying in, and the portal takes the serpent. */
+/**
+ * Per step while the way down is open: crystals keep flying in, and the portal takes the serpent.
+ * On the threshold the run is offered relics (R1); the engine waits for the choice, then calls
+ * leaveForNextMap. With nothing left to offer it goes straight down.
+ */
 export function updateDescent(world: World, dt: number): void {
   const d = world.descent;
-  if (!d) return;
+  if (!d || world.relicOffer) return;
   d.t += dt;
   for (const c of world.crystals) c.magnet = true;
   const s = world.snake;
-  if (dist(s.x, s.y, d.x, d.y) <= DESCENT.radius || d.t >= DESCENT.pullAfter) enterNextMap(world);
+  if (dist(s.x, s.y, d.x, d.y) <= DESCENT.radius || d.t >= DESCENT.pullAfter) {
+    const offer = offerRelics(world, world.rng);
+    if (offer.length > 0) {
+      world.relicOffer = offer;
+      world.banner = null;
+    } else enterNextMap(world);
+  }
+}
+
+/** Takes the chosen relic (or, leaving them, heals instead) and goes down to the next map. */
+export function leaveForNextMap(world: World, relic: RelicId | null): void {
+  if (relic && world.relicOffer?.includes(relic)) {
+    takeRelic(world, relic);
+    refreshStats(world);
+  } else {
+    world.hp = Math.min(world.stats.maxHp, world.hp + world.stats.maxHp * RELIC_TUNING.leaveHeal);
+  }
+  world.relicOffer = null;
+  enterNextMap(world);
 }
 
 /**
@@ -93,6 +117,9 @@ export function enterNextMap(world: World): void {
   world.blasts.length = 0;
   world.groundFx.length = 0;
   world.constricts.length = 0;
+  world.shatters.length = 0;
+  world.stars.length = 0;
+  world.relicState.sacrificed = false;
   world.coil = null;
   world.boss = null;
 

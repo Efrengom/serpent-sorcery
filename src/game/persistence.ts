@@ -14,11 +14,14 @@ import {
   type RunSummary,
 } from './progression';
 import { CURSE_IDS, type CurseId } from './curses';
+import { HEAT } from './config';
+import { UNLOCK_IDS, unlockBlocker, unlockDef, type UnlockId } from './grimoire';
 import { MAP_ORDER } from './maps';
 import type { MapId } from './maps/types';
 import { sanitizeBindings, type KeyBindings } from './keys';
 import { clampSpeed, defaultOptions, type GameOptions } from './options';
 import type { RunRecap } from './recap';
+import type { RelicId } from './relics';
 import { WIZARD_IDS, type WizardId } from './wizards';
 
 export const SAVE_KEY = 'serpent-sorcery-save-v1';
@@ -41,7 +44,12 @@ export interface SaveData {
     maps: MapId[];
     /** Lifetime urns, reliquaries and the like smashed. */
     breakables: number;
+    /** Highest heat unlocked (0 = none yet), and the highest at which the loop was reached (-1 = never). */
+    heatUnlocked: number;
+    heatCleared: number;
   };
+  /** Grimoire unlocks bought (M1). */
+  grimoire: UnlockId[];
   settings: {
     muted: boolean;
     volume: number;
@@ -52,6 +60,9 @@ export interface SaveData {
     /** Run setup, kept between runs. A locked wizard falls back to the Arcanist at run start. */
     wizard: WizardId;
     curses: CurseId[];
+    /** Heat chosen for the next run, and the map it starts on (a waystone's; the first otherwise). */
+    heat: number;
+    startMap: MapId;
     /** Screen-shake strength, 0 (off) to 1 (full). */
     shake: number;
     reduceFlashing: boolean;
@@ -72,8 +83,9 @@ export function defaultSave(): SaveData {
     version: SAVE_VERSION,
     currency: 0,
     meta: emptyMetaLevels(),
-    records: { bestTime: 0, bestKills: 0, bestLevel: 0, totalRuns: 0, bossKills: 0, deepest: 1, maps: ['ruins'], breakables: 0 },
-    settings: { muted: false, volume: 0.7, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [], ...defaultOptions() },
+    records: { bestTime: 0, bestKills: 0, bestLevel: 0, totalRuns: 0, bossKills: 0, deepest: 1, maps: ['ruins'], breakables: 0, heatUnlocked: 0, heatCleared: -1 },
+    grimoire: [],
+    settings: { muted: false, volume: 0.7, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [], heat: 0, startMap: 'ruins', ...defaultOptions() },
     lastRunId: '',
   };
 }
@@ -110,7 +122,10 @@ export function sanitizeSave(input: unknown): SaveData {
       // The first map is always known; saves from before the atlas start with just it.
       maps: Array.isArray(records.maps) ? MAP_ORDER.filter((id) => id === 'ruins' || (records.maps as unknown[]).includes(id)) : ['ruins'],
       breakables: num(records.breakables, 0, 0, 1e9, true),
+      heatUnlocked: num(records.heatUnlocked, 0, 0, HEAT.max, true),
+      heatCleared: num(records.heatCleared, -1, -1, HEAT.max, true),
     },
+    grimoire: Array.isArray(o.grimoire) ? UNLOCK_IDS.filter((id) => (o.grimoire as unknown[]).includes(id)) : [],
     settings: {
       muted: typeof settings.muted === 'boolean' ? settings.muted : d.settings.muted,
       volume: num(settings.volume, d.settings.volume, 0, 1),
@@ -121,6 +136,8 @@ export function sanitizeSave(input: unknown): SaveData {
       curses: Array.isArray(settings.curses)
         ? CURSE_IDS.filter((id) => (settings.curses as unknown[]).includes(id))
         : d.settings.curses,
+      heat: num(settings.heat, 0, 0, HEAT.max, true),
+      startMap: MAP_ORDER.includes(settings.startMap as MapId) ? (settings.startMap as MapId) : d.settings.startMap,
       shake: num(settings.shake, d.settings.shake, 0, 1),
       reduceFlashing: typeof settings.reduceFlashing === 'boolean' ? settings.reduceFlashing : d.settings.reduceFlashing,
       safeWarnings: typeof settings.safeWarnings === 'boolean' ? settings.safeWarnings : d.settings.safeWarnings,
@@ -191,6 +208,8 @@ export interface RunResult extends RunSummary {
   depth?: number;
   maps?: MapId[];
   breakables?: number;
+  /** Relics carried at the end (for the game-over screen; not saved). */
+  relics?: RelicId[];
 }
 
 export interface CommitOutcome {
@@ -221,10 +240,29 @@ export function commitRunResult(save: SaveData, run: RunResult): CommitOutcome {
         deepest: Math.max(save.records.deepest, Math.floor(run.depth ?? 1)),
         maps: MAP_ORDER.filter((id) => save.records.maps.includes(id) || (run.maps ?? []).includes(id)),
         breakables: save.records.breakables + Math.max(0, Math.floor(run.breakables ?? 0)),
+        ...heatRecords(save.records, run),
       },
       lastRunId: run.runId,
     },
   };
+}
+
+/** Reaching the loop at heat h clears it and unlocks h + 1 (M3). */
+function heatRecords(records: SaveData['records'], run: RunResult): Pick<SaveData['records'], 'heatUnlocked' | 'heatCleared'> {
+  const heat = Math.max(0, Math.floor(run.heat ?? 0));
+  if ((run.depth ?? 1) < HEAT.clearDepth) return { heatUnlocked: records.heatUnlocked, heatCleared: records.heatCleared };
+  return {
+    heatUnlocked: Math.min(HEAT.max, Math.max(records.heatUnlocked, heat + 1)),
+    heatCleared: Math.max(records.heatCleared, heat),
+  };
+}
+
+/** Buys a Grimoire unlock, or returns null if it's owned, blocked or too dear. */
+export function buyUnlock(save: SaveData, id: UnlockId): SaveData | null {
+  if (!UNLOCK_IDS.includes(id) || unlockBlocker(id, save.grimoire, save.records.maps)) return null;
+  const cost = unlockDef(id).cost;
+  if (save.currency < cost) return null;
+  return { ...save, currency: save.currency - cost, grimoire: [...save.grimoire, id] };
 }
 
 export function buyMeta(save: SaveData, id: MetaId): SaveData | null {

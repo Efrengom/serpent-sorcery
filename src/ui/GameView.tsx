@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { audio } from '../game/audio';
-import { Game, type HudSnapshot, type Phase } from '../game/engine';
+import { Game, type HudSnapshot, type LevelUpOffer, type Phase, type RelicOffer } from '../game/engine';
+import type { RelicId } from '../game/relics';
 import type { CommitOutcome, RunResult } from '../game/persistence';
 import type { GameOptions } from '../game/options';
 import type { MetaLevels, UpgradeChoice } from '../game/progression';
 import type { RunSetup } from '../game/world';
 import { Hud } from './Hud';
-import { GameOverPanel, LevelUpPanel, PauseMenu } from './Overlays';
+import { GameOverPanel, LevelUpPanel, PauseMenu, RelicPanel } from './Overlays';
 import type { VolumeControls } from './VolumeControls';
 
 interface Props {
@@ -47,7 +48,8 @@ export function GameView({
   const gameRef = useRef<Game | null>(null);
   const [phase, setPhase] = useState<Phase>('playing');
   const [hud, setHud] = useState<HudSnapshot | null>(null);
-  const [levelUp, setLevelUp] = useState<{ level: number; choices: UpgradeChoice[] } | null>(null);
+  const [levelUp, setLevelUp] = useState<LevelUpOffer | null>(null);
+  const [relicOffer, setRelicOffer] = useState<RelicOffer | null>(null);
   const [over, setOver] = useState<{ result: RunResult; outcome: CommitOutcome } | null>(null);
 
   // Keep latest callbacks/props reachable from the long-lived Game without re-creating it.
@@ -62,7 +64,8 @@ export function GameView({
       latest.current.meta,
       {
         onPhase: setPhase,
-        onLevelUp: (level, choices) => setLevelUp({ level, choices }),
+        onLevelUp: setLevelUp,
+        onRelicOffer: setRelicOffer,
         onGameOver: (result) => {
           const outcome = latest.current.onCommitRun(result);
           setOver({ result, outcome });
@@ -105,10 +108,25 @@ export function GameView({
     setLevelUp(null);
     gameRef.current?.chooseUpgrade(c);
   }, []);
+  const chooseRelic = useCallback((r: RelicId | null) => {
+    setRelicOffer(null);
+    gameRef.current?.chooseRelic(r);
+  }, []);
+  const reroll = useCallback(() => gameRef.current?.rerollLevelUp(), []);
+  const autoDraft = useCallback(() => {
+    setLevelUp(null);
+    gameRef.current?.autoDraft();
+  }, []);
+  const banish = useCallback((c: UpgradeChoice) => gameRef.current?.banishChoice(c), []);
+  const skip = useCallback(() => {
+    setLevelUp(null);
+    gameRef.current?.skipLevelUp();
+  }, []);
 
   const restart = useCallback(() => {
     setOver(null);
     setLevelUp(null);
+    setRelicOffer(null);
     gameRef.current?.restart(latest.current.meta, latest.current.setup);
   }, []);
 
@@ -120,10 +138,12 @@ export function GameView({
         muted={muted}
         onPause={() => gameRef.current?.pause()}
         onToggleMute={onToggleMute}
+        onUltimate={() => gameRef.current?.castUltimate()}
       />
       {phase === 'paused' && (
         <PauseMenu
           pixelArt={pixelArt}
+          relics={hud?.relics ?? []}
           onResume={() => gameRef.current?.resume()}
           onEndRun={() => gameRef.current?.endRun()}
           onToggleArt={onToggleArt}
@@ -132,8 +152,9 @@ export function GameView({
           volume={volume}
         />
       )}
+      {phase === 'relic' && relicOffer && <RelicPanel offer={relicOffer} onChoose={chooseRelic} />}
       {phase === 'levelup' && levelUp && (
-        <LevelUpPanel level={levelUp.level} choices={levelUp.choices} onChoose={choose} />
+        <LevelUpPanel offer={levelUp} onChoose={choose} onReroll={reroll} onBanish={banish} onSkip={skip} onAutoDraft={autoDraft} />
       )}
       {phase === 'gameover' && over && (
         <GameOverPanel

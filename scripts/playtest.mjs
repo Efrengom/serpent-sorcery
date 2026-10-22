@@ -7,8 +7,9 @@
 // sigils, spell evolution, live sigil reading and clean casts, Constrict, descending after the
 // boss, the big map (camera, pillars, spawning off-screen, the boss clearing, minimap, frame
 // times), level-ups, death and its recap, rewards, restart, the shop, the wizard and curse setup
-// screen, the options (comfort settings, key rebinding, game speed), the sigil practice room, and
-// save persistence.
+// screen, gameplay depth (relics on the way down, the Grimoire, heat, a waystone start and its
+// draft, reroll, banish and skip, the ultimate), the options (comfort settings, key rebinding,
+// game speed), the sigil practice room, and save persistence.
 //
 //   npm run playtest                       # ~5 minutes
 //   AUTOPILOT_SECONDS=60 npm run playtest  # shorter autopilot run
@@ -672,15 +673,27 @@ try {
       if (d) w.snake.reset(d.x - 260, d.y + 40, -Math.PI / 2);
     }, way);
     await setKeys(new Set(['KeyD']));
+    // On the threshold the way down offers three relics, led by the next map's own.
+    let offer = null;
+    for (let i = 0; i < 20 && !offer; i++) {
+      await sleep(100);
+      offer = await page.evaluate(() =>
+        window.__serpent.getPhase() === 'relic' ? { relics: [...document.querySelectorAll('.upgrade-card.relic')].map((c) => c.dataset.relic), sub: document.querySelector('.relic-offer .overlay-sub')?.textContent } : null,
+      );
+    }
+    await setKeys(new Set());
+    check('stepping into the way down offers three relics, led by the Hollows’ own', !!offer && offer.relics.length === 3 && offer.relics[0] === 'thornhide' && /Depth 2: Mycelium Hollows/.test(offer.sub ?? ''), { offer });
+    await page.screenshot({ path: path.join(OUT, '08a-relics.png') });
+    await sleep(600);
+    if (offer) await page.click(`.upgrade-card.relic[data-relic="${offer.relics[1]}"]`);
     let deeper = null;
     for (let i = 0; i < 20 && !deeper; i++) {
       await sleep(100);
       deeper = await page.evaluate(() => {
         const w = window.__serpent.debug().world;
-        return w.depth > 1 ? { depth: w.depth, map: w.map.def.id, area: w.area, banner: w.banner?.text ?? null } : null;
+        return w.depth > 1 ? { depth: w.depth, map: w.map.def.id, area: w.area, banner: w.banner?.text ?? null, relics: [...w.relics] } : null;
       });
     }
-    await setKeys(new Set());
     await sleep(700);
     const hud = await page.evaluate(() => `${document.querySelector('.kills')?.textContent ?? ''} / ${document.querySelector('.map-name')?.textContent ?? ''}`);
     check(
@@ -689,6 +702,8 @@ try {
       { deeper, hud },
     );
     await page.screenshot({ path: path.join(OUT, '08-depth-2.png') });
+    const chip = await page.evaluate(() => [...document.querySelectorAll('.relic-chip')].map((c) => c.dataset.relic));
+    check('a relic picked with a real click is carried down and shown on the HUD', !!deeper && deeper.relics.length === 1 && deeper.relics[0] === offer?.relics[1] && chip.join() === deeper.relics.join(), { relics: deeper?.relics, chip });
     const rec = await page.evaluate(() => window.__serpent.debug().world.recap.spells.bolt);
     check('the recap credits the boss kill to Arcane Bolt', rec.kills >= 1 && rec.casts >= 1, rec);
   }
@@ -1331,7 +1346,7 @@ try {
   const runSnapshot = () =>
     page.evaluate(() => {
       const w = window.__serpent.debug().world;
-      return { up: { ...w.upgrades }, stats: { ...w.stats }, hp: w.hp, known: [...w.known], evolved: { ...w.evolved } };
+      return { up: { ...w.upgrades }, stats: { ...w.stats }, hp: w.hp, known: [...w.known], evolved: { ...w.evolved }, aspects: { ...w.aspects }, duos: [...w.duos], over: { ...w.overcharge } };
     });
   const spellOf = { 'Arcane Bolt!': 'line', 'Forked Lightning!': 'vee', 'Arcane Nova!': 'circle', 'Arcane Lance!': 'line', 'Tempest!': 'vee', 'Supernova!': 'circle' };
   const LEARN_BY_NAME = { 'Arcane Ward': 'ward', 'Frost Field': 'frost' };
@@ -1353,18 +1368,26 @@ try {
       await sleep(520);
       // Prefer Split Bolt when offered so its visible effect gets exercised; otherwise rotate.
       const names = await page.evaluate(() => [...document.querySelectorAll('.upgrade-card .card-name')].map((n) => n.textContent));
+      const kinds = await page.evaluate(() => [...document.querySelectorAll('.upgrade-card')].map((c) => c.dataset.card));
       const split = names.indexOf('Split Bolt');
       const i = split >= 0 ? split : pickIndex++ % names.length;
       const name = names[i];
       log.picks.push(name);
       const before = await runSnapshot();
-      await page.keyboard.press(['Digit1', 'Digit2', 'Digit3'][i]);
+      await page.keyboard.press(['Digit1', 'Digit2', 'Digit3', 'Digit4'][i]);
       await sleep(80);
       const after = await runSnapshot();
+      const card = kinds[i] ?? '';
       // The chosen card must raise exactly its own upgrade and change the derived stats.
       const id = UPGRADE_BY_NAME[name];
       const othersSame = Object.keys(before.up).every((k) => k === id || after.up[k] === before.up[k]);
-      const applied = id
+      const applied = card.startsWith('aspect-')
+        ? Object.values(after.aspects).includes(card.slice(7)) && !Object.values(before.aspects).includes(card.slice(7))
+        : card.startsWith('duo-')
+          ? after.duos.includes(card.slice(4)) && !before.duos.includes(card.slice(4))
+          : card.startsWith('over-')
+            ? after.over[card.slice(5)] === before.over[card.slice(5)] + 1
+            : id
         ? after.up[id] === before.up[id] + 1 && othersSame && JSON.stringify(after.stats) !== JSON.stringify(before.stats)
         : LEARN_BY_NAME[name]
           ? after.known.includes(LEARN_BY_NAME[name]) && !before.known.includes(LEARN_BY_NAME[name])
@@ -1668,6 +1691,167 @@ try {
     check('the curse multiplies the shards the run banks', /×1\.30 from curses/.test(over ?? '') && after - before === gained, { over, before, after });
     await clickButton('Title');
     await sleep(300);
+  }
+
+  // ============================================================== Part H: gameplay depth
+  {
+    // Shards to spend, the Catacombs reached and heat unlocked, as if after many runs.
+    await page.evaluate((k) => {
+      const sv = JSON.parse(localStorage.getItem(k));
+      sv.currency = 5000;
+      sv.records.maps = ['ruins', 'hollows', 'catacombs'];
+      sv.records.heatUnlocked = 2;
+      sv.settings.wizard = 'arcanist';
+      sv.settings.curses = [];
+      localStorage.setItem(k, JSON.stringify(sv));
+    }, SAVE_KEY);
+    await page.reload({ waitUntil: 'networkidle0' });
+
+    // The Grimoire, with real clicks.
+    await clickButton('Permanent Upgrades');
+    await sleep(250);
+    await page.click('[data-tab="grimoire"]');
+    await sleep(200);
+    for (const id of ['relic:echoStone', 'way:catacombs', 'reroll1']) {
+      await page.click(`[data-unlock="${id}"] button`);
+      await sleep(150);
+    }
+    await page.screenshot({ path: path.join(OUT, '17-grimoire.png') });
+    const g = await readSave();
+    const echo = await page.$eval('[data-unlock="relic:echoStone"] button', (b) => ({ text: b.textContent, disabled: b.disabled }));
+    check(
+      'the Grimoire sells unlocks with real clicks, each once, for its price',
+      g.grimoire.join() === 'relic:echoStone,way:catacombs,reroll1' && g.currency === 5000 - 250 - 450 - 120 && echo.text === 'Learned' && echo.disabled,
+      { grimoire: g.grimoire, currency: g.currency, echo },
+    );
+    await page.keyboard.press('Escape');
+    await sleep(250);
+
+    // Setup: heat only as high as unlocked, and the Catacombs as the start.
+    await clickButton('Wizard');
+    await sleep(250);
+    for (let i = 0; i < 3; i++) {
+      const more = await page.$('[aria-label="More heat"]:not([disabled])');
+      if (more) await more.click();
+      await sleep(80);
+    }
+    await page.click('[data-start="catacombs"]');
+    await sleep(150);
+    const set = (await readSave()).settings;
+    const heatShown = await page.$eval('.heat-level', (n) => n.textContent);
+    const ultLine = await page.evaluate(() => [...document.querySelectorAll('.wizard-ult')].map((n) => n.textContent));
+    check('heat rises only as far as unlocked, and a waystone picks the start; both are saved', set.heat === 2 && heatShown === '2' && set.startMap === 'catacombs', { heat: set.heat, heatShown, startMap: set.startMap });
+    check('each unlocked wizard card names its ultimate', ultLine.some((t) => /Starfall/.test(t)) && ultLine.some((t) => /Absolute Zero/.test(t)), { ultLine });
+    await page.screenshot({ path: path.join(OUT, '18-setup-heat.png') });
+    await page.keyboard.press('Enter');
+    await sleep(800);
+
+    // A waystone start catches up: a relic for each map skipped (the Catacombs' own first), then a draft.
+    const relic1 = await page.evaluate(() => ({
+      phase: window.__serpent.getPhase(),
+      relics: [...document.querySelectorAll('.upgrade-card.relic')].map((c) => c.dataset.relic),
+      eyebrow: document.querySelector('.relic-offer .eyebrow')?.textContent,
+    }));
+    check('a waystone start offers a relic for each map skipped, the Catacombs’ own first', relic1.phase === 'relic' && relic1.relics.length === 3 && relic1.relics[0] === 'rimewalker' && /relic 1 of 2/.test(relic1.eyebrow ?? ''), relic1);
+    await page.click('.upgrade-card.relic[data-relic="rimewalker"]');
+    await sleep(800);
+    await page.keyboard.press('Digit1');
+    await sleep(800);
+    const offerIds = () => page.evaluate(() => [...document.querySelectorAll('.levelup .upgrade-card')].map((c) => c.dataset.card));
+    const tools = () =>
+      page.evaluate(() => {
+        const w = window.__serpent.debug().world;
+        return { phase: window.__serpent.getPhase(), rerolls: w.rerolls, banishes: w.banishes, banished: [...w.banished], relics: [...w.relics], hp: w.hp, eyebrow: document.querySelector('.levelup .eyebrow')?.textContent };
+      });
+    const d0 = await tools();
+    check('then it drafts the level-ups through the usual panel', d0.phase === 'levelup' && /Waystone draft · 1 of 24/.test(d0.eyebrow ?? '') && d0.relics.length === 2 && d0.relics[0] === 'rimewalker', d0);
+    await page.screenshot({ path: path.join(OUT, '19-draft.png') });
+
+    // Reroll, banish and skip on a real offer.
+    const c0 = await offerIds();
+    await page.click('[data-tool="reroll"]');
+    await sleep(550);
+    const c1 = await offerIds();
+    const d1 = await tools();
+    check('Reroll draws a fresh offer and spends one of three rerolls', d1.rerolls === d0.rerolls - 1 && d0.rerolls === 3 && c1.length === 3 && c1.join() !== c0.join(), { c0, c1, rerolls: [d0.rerolls, d1.rerolls] });
+    await page.click('[data-tool="banish"]');
+    await sleep(80);
+    const gone = c1[1];
+    await page.click(`.levelup .upgrade-card[data-card="${gone}"]`);
+    await sleep(550);
+    const c2 = await offerIds();
+    const d2 = await tools();
+    check('Banish takes a card out of the run and puts a new one in its place', d2.banishes === d1.banishes - 1 && d2.banished.includes(gone) && !c2.includes(gone) && c2[0] === c1[0] && c2.length === 3, { gone, c1, c2, banished: d2.banished });
+    await page.evaluate(() => (window.__serpent.debug().world.hp = 40));
+    await page.keyboard.press('KeyX');
+    await sleep(550);
+    const d3 = await tools();
+    check('Skip takes no card, heals a little, and moves on to the next draft pick', d3.hp > 40 && /2 of 24/.test(d3.eyebrow ?? ''), { hp: d3.hp, eyebrow: d3.eyebrow });
+    await page.click('[data-tool="auto"]');
+    await sleep(500);
+    const run = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { phase: window.__serpent.getPhase(), map: w.map.def.id, depth: w.depth, level: w.level, heat: w.heat, time: w.time, picked: Object.values(w.upgrades).reduce((a, b) => a + b, 0) + w.known.length - 3 + Object.keys(w.aspects).length };
+    });
+    check('Auto-pick finishes the draft: play starts in the Catacombs at level 25 and heat 2', run.phase === 'playing' && run.map === 'catacombs' && run.depth === 3 && run.level === 25 && run.heat === 2 && run.time < 1 && run.picked >= 15, run);
+
+    // The ultimate, from the real Space key, into a crowd.
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.ult.cooldown = 0;
+      w.invuln = 30;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        w.portals.push({ x: w.snake.x + Math.cos(a) * 260, y: w.snake.y + Math.sin(a) * 200, kind: 'brute', t: 0, duration: 0.01 });
+      }
+    });
+    await sleep(300);
+    await page.keyboard.press('Space');
+    await sleep(900);
+    await page.screenshot({ path: path.join(OUT, '20-starfall.png') });
+    const u1 = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { active: w.ult.active, casts: w.recap.spells.ultimate.casts, stars: w.stars.length + (36 - w.ult.left), hud: document.querySelector('.ult-card .ult-state')?.textContent };
+    });
+    check('Space casts the ultimate: Starfall rains on the crowd and the HUD card says so', u1.active > 0 && u1.casts === 1 && u1.stars > 5 && /Unleashed/.test(u1.hud ?? ''), u1);
+    await sleep(3000);
+    const u2 = await page.evaluate(async () => {
+      const { ultimateCooldown } = await import('/src/game/ultimates.ts');
+      const w = window.__serpent.debug().world;
+      return { damage: Math.round(w.recap.spells.ultimate.damage), cooldown: w.ult.cooldown, full: ultimateCooldown(w), hud: document.querySelector('.ult-card .ult-state')?.textContent };
+    });
+    await page.keyboard.press('Space');
+    await sleep(100);
+    const denied = await page.evaluate(() => window.__serpent.debug().world.floaters.map((f) => f.text).filter((t) => /recharging/.test(t)));
+    // The drafted build may have Quickened Runes, which shortens the cooldown (to no less than 45 s).
+    check('Starfall hurts the foes, then the ultimate recharges and says so when pressed early', u2.damage > 500 && u2.full >= 45 && u2.cooldown > u2.full - 6 && /^\d+s$/.test(u2.hud ?? '') && denied.some((t) => /Starfall recharging/.test(t)), { ...u2, denied });
+    await page.evaluate(() => (window.__serpent.debug().world.ult.cooldown = 0));
+    await sleep(250);
+    await page.click('.ult-card');
+    await sleep(150);
+    const clicked = await page.evaluate(() => window.__serpent.debug().world.recap.spells.ultimate.casts);
+    check('clicking the HUD card casts the ultimate too', clicked === 2, { casts: clicked });
+    await page.keyboard.press('Escape');
+    await sleep(150);
+    const pauseRelics = await page.evaluate(() => [...document.querySelectorAll('.relic-list li')].map((l) => l.dataset.relic));
+    check('the pause menu lists the relics carried', pauseRelics.length === 2 && pauseRelics[0] === 'rimewalker', { pauseRelics });
+    await clickButton('End run');
+    await sleep(900);
+    const recap = await page.evaluate(() => ({
+      ult: document.querySelector('.recap-row[data-source="ultimate"] .recap-name')?.textContent ?? null,
+      relics: document.querySelectorAll('.recap-relics .relic-icon').length,
+      shards: document.querySelector('.reward-total')?.textContent ?? '',
+    }));
+    check('the recap gives the ultimate its own row, shows the relics carried and the heat bonus', /Starfall/.test(recap.ult ?? '') && recap.relics === 2 && /×1\.30 from heat 2/.test(recap.shards), recap);
+    await page.screenshot({ path: path.join(OUT, '21-depth-recap.png') });
+    // Back to a plain first-map start for the parts after this.
+    await page.evaluate((k) => {
+      const sv = JSON.parse(localStorage.getItem(k));
+      sv.settings.startMap = 'ruins';
+      sv.settings.heat = 0;
+      localStorage.setItem(k, JSON.stringify(sv));
+    }, SAVE_KEY);
+    await page.reload({ waitUntil: 'networkidle0' });
   }
 
   // ============================================================== Part F: options

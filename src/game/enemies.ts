@@ -1,6 +1,6 @@
 import { pushOutOfBreakables } from './breakables';
 import { inView, viewRect } from './camera';
-import { ARCHETYPE, BOSS_MOVES, BOSSES, DEPTH, DIRECTOR, EFFECTS, ELITE, ENEMIES, HAZARDS, METEORS, NAV, SNAKE, type EnemyKind } from './config';
+import { ARCHETYPE, BOSS_MOVES, BOSSES, DEPTH, DIRECTOR, EFFECTS, ELITE, ENEMIES, HAZARDS, HEAT, METEORS, NAV, SNAKE, type EnemyKind } from './config';
 import { hurtPlayer, sourceKind } from './combat';
 import { addGroundFx, burnFoe, spawnBlast } from './hazards';
 import type { HurtSource } from './recap';
@@ -15,33 +15,53 @@ import type { EliteKind, Enemy, EnemyShot, GroundKind, World } from './world';
 
 // ---------------------------------------------------------------- Scaling
 
-export function difficulty(t: number, depth = 1) {
+/** Seconds since the serpent arrived on the map it's on: foes scale with this, not the run's length (C1). */
+export function mapClock(world: World): number {
+  return world.time - world.mapStart;
+}
+
+/** How much a depth multiplies foe health: the step between maps grows a little each time. */
+export function depthHp(depth: number): number {
+  const d = depth - 1;
+  return 1 + DEPTH.hpPerDepth * d + DEPTH.hpPerDepthSq * d * d;
+}
+
+/** How much tougher foes are `m` seconds after arriving on a map, at a depth and heat. */
+export function difficulty(m: number, depth = 1, heat = 0) {
   const d = depth - 1;
   return {
-    hp: (1 + t * DIRECTOR.hpLinear + (t / DIRECTOR.hpQuadDivisor) ** 2) * (1 + DEPTH.hpPerDepth * d),
-    damage: (1 + t * DIRECTOR.damagePerSec) * (1 + DEPTH.damagePerDepth * d),
-    speed: 1 + Math.min(DIRECTOR.maxSpeedBonus, t * DIRECTOR.speedPerSec),
+    hp: (1 + m * DIRECTOR.hpLinear + (m / DIRECTOR.hpQuadDivisor) ** 2) * depthHp(depth) * (1 + HEAT.hp * heat),
+    damage: (1 + m * DIRECTOR.damagePerSec) * (1 + DEPTH.damagePerDepth * d) * (1 + HEAT.damage * heat),
+    speed: 1 + Math.min(DIRECTOR.maxSpeedBonus, m * DIRECTOR.speedPerSec + DEPTH.speedPerDepth * d),
   };
 }
 
-export function spawnRate(t: number, depth = 1): number {
-  return (DIRECTOR.rateBase + DIRECTOR.rateLinear * t + DIRECTOR.rateQuad * t * t) * (1 + DEPTH.spawnPerDepth * (depth - 1));
+export function spawnRate(m: number, depth = 1): number {
+  return (DIRECTOR.rateBase + DIRECTOR.rateLinear * m + DIRECTOR.rateQuad * m * m) * (1 + DEPTH.spawnPerDepth * (depth - 1));
 }
 
-export function aliveCap(t: number, depth = 1): number {
+/** Foes alive at once. Only the first map eases in with a few; later ones open at the full cap. */
+export function aliveCap(m: number, depth = 1): number {
+  const extra = DEPTH.capPerDepth * (depth - 1);
   return Math.floor(
     Math.min(
-      DIRECTOR.capMax + DEPTH.capPerDepth * (depth - 1),
-      DIRECTOR.capBase + DIRECTOR.capPerSec * t + DEPTH.capPerDepth * (depth - 1),
-      DIRECTOR.earlyCapBase + DIRECTOR.earlyCapPerSec * t,
+      DIRECTOR.capMax + extra,
+      DIRECTOR.capBase + DIRECTOR.capPerSec * m + extra,
+      depth <= 1 ? DIRECTOR.earlyCapBase + DIRECTOR.earlyCapPerSec * m : Infinity,
     ),
   );
 }
 
-/** Chance that a new spawn is elite: none in depth 1 unless cursed, then rising each depth. */
-export function eliteChance(depth: number, cursed: boolean): number {
+/** A boss's health: more for each one before it, more each depth, and more with heat. */
+export function bossHp(bossIndex: number, depth: number, heat = 0): number {
+  const b = ENEMIES.boss;
+  return b.hp * (1 + b.hpPerIndex * Math.max(0, bossIndex - 1)) * (1 + DEPTH.bossHpPerDepth * (depth - 1)) * (1 + HEAT.hp * heat);
+}
+
+/** Chance that a new spawn is elite: none in depth 1 unless cursed, then rising each depth; heat adds more. */
+export function eliteChance(depth: number, cursed: boolean, heat = 0): number {
   const base = depth >= 2 ? ELITE.baseChance + ELITE.chancePerDepth * (depth - 2) : cursed ? ELITE.cursedChance : 0;
-  return Math.min(ELITE.maxChance, base + (cursed && depth >= 2 ? ELITE.cursedBonus : 0));
+  return Math.min(ELITE.maxChance + HEAT.elite * heat, base + (cursed && depth >= 2 ? ELITE.cursedBonus : 0) + HEAT.elite * heat);
 }
 
 const ELITE_KINDS: EliteKind[] = ['shielded', 'swift', 'splitting'];
@@ -96,13 +116,12 @@ const SERPENT: Partial<Record<EnemyKind, { segments: number; segmentRadius: numb
 // ---------------------------------------------------------------- Spawning
 
 export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number, canBeElite = false): Enemy {
-  const t = world.time;
-  const diff = difficulty(t, world.depth);
+  const diff = difficulty(mapClock(world), world.depth, world.heat);
   const base = ENEMIES[kind];
   const s = world.snake;
   const heading = Math.atan2(s.y - y, s.x - x);
   let hp = base.hp * diff.hp;
-  if (kind === 'boss') hp = ENEMIES.boss.hp * (1 + ENEMIES.boss.hpPerIndex * (world.bossIndex - 1)) * (1 + t / 900);
+  if (kind === 'boss') hp = bossHp(world.bossIndex, world.depth, world.heat);
   const arch = ARCHETYPE[kind];
   const e: Enemy = {
     id: world.nextId++,
@@ -142,6 +161,8 @@ export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number, 
     frozen: 0,
     frozenBy: -1,
     stunned: 0,
+    shockUntil: 0,
+    chillUntil: 0,
     nav: { next: 0, direct: true, sight: true, angle: heading, far: 0, stuck: 0, lastX: x, lastY: y },
     bossId: world.map.def.boss,
     burn: 0,
@@ -150,7 +171,7 @@ export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number, 
     pile: 0,
     goal: null,
   };
-  if (canBeElite && kind !== 'boss' && world.rng() < eliteChance(world.depth, world.effects.elitesFromStart)) makeElite(world, e);
+  if (canBeElite && kind !== 'boss' && world.rng() < eliteChance(world.depth, world.effects.elitesFromStart, world.heat)) makeElite(world, e);
   const cfg = SERPENT[kind];
   if (cfg) {
     e.trail = new PathTrail(3);
@@ -307,10 +328,11 @@ export function updateDirector(world: World, dt: number): void {
   }
 
   const bossAlive = world.boss !== null || world.portals.some((p) => p.kind === 'boss');
-  const rate = spawnRate(t, world.depth) * world.effects.spawnRateMult * (bossAlive ? DIRECTOR.bossSpawnRateMult : 1);
+  const m = mapClock(world);
+  const rate = spawnRate(m, world.depth) * world.effects.spawnRateMult * (bossAlive ? DIRECTOR.bossSpawnRateMult : 1);
   world.spawnAcc += rate * dt;
   const alive = world.enemies.length + world.portals.length;
-  const cap = Math.floor(aliveCap(t, world.depth) * world.effects.capMult);
+  const cap = Math.floor(aliveCap(m, world.depth) * world.effects.capMult);
   while (world.spawnAcc >= 1) {
     world.spawnAcc -= 1;
     if (alive >= cap) {

@@ -314,6 +314,165 @@ export const EVOLUTIONS = {
 export const EVOLUTION_PARTNER_RANKS = 2;
 
 /**
+ * Aspects (L4): two ways for each spell to change how it behaves. A run takes at most one per
+ * spell; taking one removes the other from the pool. Offered from ASPECT_FROM_LEVEL.
+ */
+export type AspectId =
+  | 'ricochet'
+  | 'seeker'
+  | 'conductor'
+  | 'overload'
+  | 'implosion'
+  | 'shockwave'
+  | 'mirror'
+  | 'sanctuary'
+  | 'shatter'
+  | 'permafrost';
+export const ASPECT_IDS: AspectId[] = ['ricochet', 'seeker', 'conductor', 'overload', 'implosion', 'shockwave', 'mirror', 'sanctuary', 'shatter', 'permafrost'];
+export const ASPECT_FROM_LEVEL = 5;
+
+export const ASPECTS = {
+  ricochet: {
+    spell: 'bolt',
+    name: 'Ricochet',
+    description: 'After a hit, each bolt bounces once to the nearest other foe within 260, at 70% damage.',
+    range: 260,
+    damage: 0.7,
+  },
+  seeker: {
+    spell: 'bolt',
+    name: 'Seeker',
+    description: 'Bolts curve toward the nearest foe ahead and fly 40% farther.',
+    /** Radians a second a bolt turns, how far ahead it looks, and its range. */
+    turn: 6,
+    sight: 360,
+    range: 1.4,
+  },
+  conductor: {
+    spell: 'lightning',
+    name: 'Conductor',
+    description: 'Lightning loses no damage as it chains, and jumps 40% farther.',
+    chainRange: 1.4,
+  },
+  overload: {
+    spell: 'lightning',
+    name: 'Overload',
+    description: 'Struck foes are shocked for 3 s and take 20% more damage from everything.',
+    time: 3,
+    damage: 1.2,
+  },
+  implosion: {
+    spell: 'nova',
+    name: 'Implosion',
+    description: 'Nova pulls foes in instead of pushing them away, and hits 25% harder.',
+    pull: 0.8,
+    damage: 1.25,
+  },
+  shockwave: {
+    spell: 'nova',
+    name: 'Shockwave',
+    description: 'Nova knocks foes back twice as far and stuns them for 0.8 s.',
+    knockback: 2,
+    stun: 0.8,
+  },
+  mirror: {
+    spell: 'ward',
+    name: 'Mirror',
+    description: 'While the Ward is up, enemy shots that reach you bounce back as bolts and use no charge.',
+  },
+  sanctuary: {
+    spell: 'ward',
+    name: 'Sanctuary',
+    description: 'Casting the Ward heals 8% of max health, and you regenerate 2 health a second while it lasts.',
+    heal: 0.08,
+    regen: 2,
+  },
+  shatter: {
+    spell: 'frost',
+    name: 'Shatter',
+    description: 'Foes that die in a Frost Field burst, dealing 40% of their max health to foes within 90.',
+    share: 0.4,
+    radius: 90,
+  },
+  permafrost: {
+    spell: 'frost',
+    name: 'Permafrost',
+    description: 'Frost Fields last twice as long and are 25% wider.',
+    duration: 2,
+    radius: 1.25,
+  },
+} as const satisfies Record<AspectId, { spell: SpellId; name: string; description: string; [tuning: string]: unknown }>;
+
+/** Duo evolutions (L5): once both spells of a pair have evolved, a duo card can appear. */
+export type DuoId = 'stormlance' | 'rimeshot' | 'shatterstorm' | 'thunderclap' | 'bulwark' | 'blizzard';
+export const DUO_IDS: DuoId[] = ['stormlance', 'rimeshot', 'shatterstorm', 'thunderclap', 'bulwark', 'blizzard'];
+
+export const DUOS = {
+  stormlance: {
+    spells: ['bolt', 'lightning'],
+    name: 'Stormlance',
+    description: 'Each bolt or lance hit has a 25% chance to arc lightning to 2 nearby foes.',
+    /** Known from the start; the others are unlocked in the Grimoire. */
+    known: true,
+    chance: 0.25,
+    jumps: 2,
+    damage: 0.6,
+  },
+  rimeshot: {
+    spells: ['bolt', 'frost'],
+    name: 'Rimeshot',
+    description: 'Bolt and lance hits chill foes for 1.5 s, and chilled foes take 30% more bolt damage.',
+    known: false,
+    chill: 1.5,
+    damage: 1.3,
+  },
+  shatterstorm: {
+    spells: ['lightning', 'frost'],
+    name: 'Shatterstorm',
+    description: 'Lightning deals double damage to chilled or frozen foes.',
+    known: false,
+    damage: 2,
+  },
+  thunderclap: {
+    spells: ['nova', 'lightning'],
+    name: 'Thunderclap',
+    description: 'Each Nova strikes up to 4 of the foes it hits with lightning.',
+    known: true,
+    strikes: 4,
+  },
+  bulwark: {
+    spells: ['ward', 'nova'],
+    name: 'Bulwark',
+    description: 'Every hit the Ward blocks also releases a Nova.',
+    known: false,
+  },
+  blizzard: {
+    spells: ['nova', 'frost'],
+    name: 'Blizzard',
+    description: 'Each Nova leaves a Frost Field where it was cast.',
+    known: true,
+  },
+} as const satisfies Record<DuoId, { spells: readonly [SpellId, SpellId]; name: string; description: string; known: boolean; [tuning: string]: unknown }>;
+
+/** Overcharge (L6): endless small ranks that fill the level-up offer once the pool runs dry. */
+export type OverchargeId = 'power' | 'vigor' | 'focus';
+export const OVERCHARGE_IDS: OverchargeId[] = ['power', 'vigor', 'focus'];
+export const OVERCHARGE = {
+  power: { name: 'Overcharge: Power', glyph: '✦', damage: 0.06 },
+  vigor: { name: 'Overcharge: Vigor', glyph: '♥', maxHp: 12, heal: 25 },
+  focus: { name: 'Overcharge: Focus', glyph: '↻', cooldown: 0.97 },
+} as const;
+/** No mix of upgrades, overcharge and relics takes cooldowns below this share. */
+export const COOLDOWN_FLOOR = 0.5;
+
+/** Level-up tools (L1-L3): rerolls and banishes a run starts with (the Grimoire adds more), and what a skip heals. */
+export const LEVEL_TOOLS = {
+  rerolls: 2,
+  banishes: 1,
+  skipHeal: 0.1,
+};
+
+/**
  * Clean casts: the recognizer's confidence for a sigil, compared with per-sigil thresholds
  * (each sigil's scores spread differently), boosts the spell. Thresholds were set from
  * randomized hand-drawn strokes: Perfect is roughly the best third of careful strokes, Clean a
@@ -849,7 +1008,7 @@ export const DIRECTOR = {
   bossInterval: 300,
   bossWarning: 4,
   bossSpawnRateMult: 0.35,
-  /** Scaling with elapsed seconds t. */
+  /** Scaling with the seconds since arriving on the current map (enemies.difficulty). */
   hpLinear: 1 / 120,
   hpQuadDivisor: 300,
   damagePerSec: 1 / 360,
@@ -859,10 +1018,33 @@ export const DIRECTOR = {
 
 /** Each boss defeated opens the way to the next map, one depth deeper and harder (endless). */
 export const DEPTH = {
-  hpPerDepth: 0.35,
-  damagePerDepth: 0.2,
-  spawnPerDepth: 0.15,
+  /** Foe health ×(1 + hpPerDepth·d + hpPerDepthSq·d²), d = depth − 1, on top of the map clock's own climb. */
+  hpPerDepth: 0.75,
+  hpPerDepthSq: 0.1,
+  damagePerDepth: 0.25,
+  /** Foes start each deeper map a little quicker (the clock's speed bonus still caps it). */
+  speedPerDepth: 0.05,
+  spawnPerDepth: 0.2,
   capPerDepth: 12,
+  /** Each boss's health grows this share per depth, on top of hpPerIndex. */
+  bossHpPerDepth: 0.3,
+};
+
+/** Ultimates (U2): seconds left on one when a run begins, and the floor its cooldown can be shortened to. */
+export const ULTIMATE = {
+  start: 30,
+  minCooldown: 45,
+};
+
+/** Heat (M3): harder runs after the loop. Each level adds to foes and to the shards a run pays. */
+export const HEAT = {
+  max: 10,
+  hp: 0.12,
+  damage: 0.06,
+  elite: 0.03,
+  shards: 0.15,
+  /** Reaching this depth at heat h unlocks h + 1. */
+  clearDepth: 5,
 };
 
 /** Elite enemies (shielded, swift or splitting), from depth 2 onward. */

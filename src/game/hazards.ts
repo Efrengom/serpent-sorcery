@@ -2,7 +2,7 @@ import { inView } from './camera';
 import { HAZARDS, SNAKE, type EnemyKind } from './config';
 import { damageEnemy, enemyDistance, hurtPlayer } from './combat';
 import { addShake, burst } from './effects';
-import { difficulty } from './enemies';
+import { difficulty, mapClock } from './enemies';
 import { dist2 } from './math';
 import { clearanceAt } from './terrain';
 import type { Blast, Enemy, GroundKind, World } from './world';
@@ -109,7 +109,7 @@ export function updateHazards(world: World, dt: number): void {
       y: v.y,
       r: cfg.radius,
       delay: cfg.telegraph,
-      damage: cfg.damage * difficulty(world.time, world.depth).damage,
+      damage: cfg.damage * difficulty(mapClock(world), world.depth, world.heat).damage,
       hitsFoes: true,
       source: { kind: 'hazard', attack: look },
       after: null,

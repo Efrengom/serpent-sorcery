@@ -86,6 +86,19 @@ export const SFX_SAMPLES: Record<SfxName, SampleLayer[]> = {
     { files: ['impactSoft_heavy_001'], gain: 0.4, rate: [0.75, 0.85] },
     { files: ['creak1'], gain: 0.4, rate: [0.9, 1] },
   ],
+  ultimate: [
+    { files: ['lowFrequency_explosion_000'], gain: 0.3, rate: [0.8, 0.8] },
+    { files: ['forceField_001'], gain: 0.4, rate: [0.7, 0.75] },
+    { files: ['impactBell_heavy_003'], gain: 0.28, rate: [0.9, 0.9], delay: 0.06 },
+  ],
+  ultReady: [
+    { files: ['impactBell_heavy_002'], gain: 0.2, rate: [1.6, 1.6] },
+    { files: ['glass_002'], gain: 0.2, rate: [1.1, 1.2], delay: 0.05 },
+  ],
+  starfall: [
+    { files: ['impactGlass_heavy_000', 'impactGlass_heavy_001'], gain: 0.3, rate: [1.1, 1.3] },
+    { files: ['explosionCrunch_004'], gain: 0.12, rate: [1.2, 1.4] },
+  ],
   descend: [
     { files: ['lowFrequency_explosion_001'], gain: 0.24, rate: [0.6, 0.6] },
     { files: ['impactBell_heavy_001'], gain: 0.24, rate: [0.7, 0.7], delay: 0.3 },
@@ -339,6 +352,18 @@ export function playSynth(
       break;
     case 'rattle':
       tone(900, 700, 0.08, 'square', 0.06);
+      break;
+    case 'ultimate':
+      tone(220, 55, 0.9, 'sawtooth', 0.22);
+      [523, 784, 1047].forEach((f, i) => tone(f, f * 1.5, 0.5, 'triangle', 0.14, 0.05 + i * 0.07));
+      hiss(0.6, 0.3, 1500, 'lowpass');
+      break;
+    case 'ultReady':
+      [1047, 1568].forEach((f, i) => tone(f, f, 0.25, 'sine', 0.12, i * 0.08));
+      break;
+    case 'starfall':
+      tone(1400, 300, 0.2, 'triangle', 0.1);
+      hiss(0.2, 0.18, 2000, 'bandpass');
       break;
   }
 }

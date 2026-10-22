@@ -1,6 +1,9 @@
-import { useContext, useEffect, useRef, type ComponentProps } from 'react';
+import { useContext, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { drawAtlasPicture } from '../game/atlas';
-import { SPELL_IDS, SPELLS } from '../game/config';
+import { DUOS, HEAT, SPELL_IDS, SPELLS, type DuoId } from '../game/config';
+import { playableHeat, startMaps, unlockBlocker, UNLOCKS, type UnlockDef, type UnlockId, type UnlockKind } from '../game/grimoire';
+import type { RelicId } from '../game/relics';
+import { ULTIMATES } from '../game/ultimates';
 import { CURSE_IDS, CURSES, shardMultiplier, type CurseId } from '../game/curses';
 import { MOVE_ACTIONS, primaryKeyLabel } from '../game/keys';
 import { MAP_ORDER, MAPS } from '../game/maps';
@@ -9,7 +12,7 @@ import { formatTime } from '../game/math';
 import type { SaveData } from '../game/persistence';
 import { META_IDS, META_UPGRADES, metaMaxLevel, metaNextCost, type MetaId } from '../game/progression';
 import { isWizardUnlocked, playableWizard, WIZARD_IDS, WIZARDS, type WizardId } from '../game/wizards';
-import { PixelIcon, PixelTitleSerpent, Shard, UpgradeGlyph, usePixelArt, WizardPortrait } from './art';
+import { PixelIcon, PixelTitleSerpent, RelicIcon, Shard, UpgradeGlyph, usePixelArt, WizardPortrait } from './art';
 import { BindingsContext, KeyHint, useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 import { VolumeControls } from './VolumeControls';
@@ -88,6 +91,8 @@ export function TitleScreen({
   const firstTime = save.records.totalRuns === 0;
   const wizard = playableWizard(save.settings.wizard, save.records);
   const curses = save.settings.curses;
+  const heat = playableHeat(save.settings.heat, save.records.heatUnlocked);
+  const start = startMaps(save.grimoire).includes(save.settings.startMap) ? save.settings.startMap : MAP_ORDER[0];
   const muteKey = useKeyLabel('mute');
   return (
     <div className="screen title-screen">
@@ -104,6 +109,8 @@ export function TitleScreen({
             Wizard &amp; Curses
             <span className="setup-summary">
               {WIZARDS[wizard].name} · {curses.length === 0 ? 'no curses' : `${curses.length} ${curses.length === 1 ? 'curse' : 'curses'}, shards ×${shardMultiplier(curses).toFixed(2)}`}
+              {heat > 0 && ` · Heat ${heat}`}
+              {start !== MAP_ORDER[0] && ` · from the ${MAPS[start].name}`}
             </span>
           </button>
           <button className="btn" onClick={onShop}>
@@ -239,6 +246,10 @@ export function HowToPlay({
             <b>Clean</b> ones 15%.
           </p>
           <p className="muted">Each spell has its own short cooldown. A messy stroke shows “Sigil unclear” and costs nothing.</p>
+          <p>
+            Each wizard also has an <b>ultimate</b> on a long cooldown: press <KeyHint action="ultimate" /> or click its card at the
+            bottom of the screen once it's charged.
+          </p>
         </section>
       </div>
       <section className="howto-card howto-maps">
@@ -295,17 +306,21 @@ export function HowToPlay({
   );
 }
 
-/** Pick a wizard and any curses before a run; both are remembered. */
+/** Pick a wizard, any curses, the heat and where to start before a run; all are remembered. */
 export function SetupScreen({
   save,
   onPickWizard,
   onToggleCurse,
+  onSetHeat,
+  onPickStart,
   onBack,
   onPlay,
 }: {
   save: SaveData;
   onPickWizard(id: WizardId): void;
   onToggleCurse(id: CurseId): void;
+  onSetHeat(heat: number): void;
+  onPickStart(map: MapId): void;
   onBack(): void;
   onPlay(): void;
 }) {
@@ -315,6 +330,9 @@ export function SetupScreen({
   const chosen = playableWizard(save.settings.wizard, records);
   const curses = save.settings.curses;
   const mult = shardMultiplier(curses);
+  const heat = playableHeat(save.settings.heat, records.heatUnlocked);
+  const starts = startMaps(save.grimoire);
+  const start = starts.includes(save.settings.startMap) ? save.settings.startMap : MAP_ORDER[0];
   return (
     <div className="screen setup">
       <h2 className="screen-title">Prepare Your Run</h2>
@@ -344,7 +362,12 @@ export function SetupScreen({
                     ))}
                   </span>
                   {unlocked ? (
-                    <span className="wizard-perks">{w.perks.join(' · ')}</span>
+                    <>
+                      <span className="wizard-perks">{w.perks.join(' · ')}</span>
+                      <span className="wizard-ult" title={ULTIMATES[w.ultimate].description}>
+                        ✸ Ultimate: {ULTIMATES[w.ultimate].name}
+                      </span>
+                    </>
                   ) : (
                     <span className="wizard-lock">
                       Locked: {w.unlock.text}
@@ -376,6 +399,7 @@ export function SetupScreen({
               );
             })}
           </div>
+          <HeatPicker heat={heat} unlocked={records.heatUnlocked} cleared={records.heatCleared} onSet={onSetHeat} />
         </section>
       </div>
       <section className="setup-section atlas">
@@ -384,7 +408,15 @@ export function SetupScreen({
         </h3>
         <div className="atlas-list">
           {MAP_ORDER.map((id, i) => (
-            <AtlasCard key={id} id={id} depth={i + 1} known={records.maps.includes(id)} />
+            <AtlasCard
+              key={id}
+              id={id}
+              depth={i + 1}
+              known={records.maps.includes(id)}
+              startable={starts.length > 1 && starts.includes(id)}
+              chosen={start === id}
+              onPick={() => onPickStart(id)}
+            />
           ))}
         </div>
       </section>
@@ -400,8 +432,56 @@ export function SetupScreen({
   );
 }
 
-/** One map of a run in the atlas: its picture, name and hazard tip once reached, else a silhouette. */
-function AtlasCard({ id, depth, known }: { id: MapId; depth: number; known: boolean }) {
+/** Heat, once the loop has been reached: harder foes for more shards. */
+function HeatPicker({ heat, unlocked, cleared, onSet }: { heat: number; unlocked: number; cleared: number; onSet(heat: number): void }) {
+  return (
+    <div className="heat">
+      <h3 className="setup-head">
+        Heat {heat > 0 && <span className="setup-mult">Shards ×{(1 + HEAT.shards * heat).toFixed(2)}</span>}
+      </h3>
+      {unlocked === 0 ? (
+        <p className="heat-desc">Reach Depth {HEAT.clearDepth}, the Ruins again, to unlock Heat.</p>
+      ) : (
+        <>
+          <div className="heat-picker">
+            <button className="btn small" aria-label="Less heat" disabled={heat <= 0} onClick={() => onSet(heat - 1)}>
+              −
+            </button>
+            <span className="heat-level" data-heat={heat}>
+              {heat}
+            </span>
+            <button className="btn small" aria-label="More heat" disabled={heat >= unlocked} onClick={() => onSet(heat + 1)}>
+              +
+            </button>
+          </div>
+          <p className="heat-desc">
+            {heat === 0
+              ? 'No heat.'
+              : `Foes have ${Math.round(HEAT.hp * heat * 100)}% more health, deal ${Math.round(HEAT.damage * heat * 100)}% more damage, and elites are more common.`}{' '}
+            Reaching Depth {HEAT.clearDepth} unlocks the next level{cleared >= 0 && ` · cleared up to ${cleared}`}.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One map of a run in the atlas: its picture, name and hazard tip once reached, else a silhouette; with a waystone, a start. */
+function AtlasCard({
+  id,
+  depth,
+  known,
+  startable,
+  chosen,
+  onPick,
+}: {
+  id: MapId;
+  depth: number;
+  known: boolean;
+  startable: boolean;
+  chosen: boolean;
+  onPick(): void;
+}) {
   const picture = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     if (picture.current) drawAtlasPicture(picture.current, id, known);
@@ -413,6 +493,75 @@ function AtlasCard({ id, depth, known }: { id: MapId; depth: number; known: bool
       <span className="atlas-depth">Depth {depth}</span>
       <span className="atlas-name">{known ? def.name : 'Undiscovered'}</span>
       <span className="atlas-tip">{known ? def.tip : 'Defeat the Archmage before it to find the way down'}</span>
+      {startable && (
+        <button className={`btn small${chosen ? ' on' : ''}`} data-start={id} aria-pressed={chosen} onClick={onPick}>
+          {chosen ? 'Starting here' : 'Start here'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+const UNLOCK_GROUPS: { kind: UnlockKind; title: string }[] = [
+  { kind: 'relic', title: 'Relics to find on the way down' },
+  { kind: 'duo', title: 'Duo evolutions' },
+  { kind: 'tool', title: 'Level-up tools' },
+  { kind: 'waystone', title: 'Waystones' },
+  { kind: 'ultimate', title: 'Ultimate' },
+];
+
+const TOOL_GLYPH: Record<string, string> = { reroll1: '↻', reroll2: '↻', banish1: '✕', banish2: '✕', fourthCard: '▦' };
+
+function UnlockIcon({ def }: { def: UnlockDef }) {
+  if (def.kind === 'relic') return <RelicIcon id={def.id.slice(6) as RelicId} size={44} />;
+  if (def.kind === 'duo') {
+    const [a, b] = DUOS[def.id.slice(4) as DuoId].spells;
+    return (
+      <span className="card-pair">
+        <SigilIcon spell={a} size={36} />
+        <SigilIcon spell={b} size={36} />
+      </span>
+    );
+  }
+  return <UpgradeGlyph id={def.id} glyph={def.kind === 'waystone' ? '⟱' : def.kind === 'ultimate' ? '✸' : TOOL_GLYPH[def.id]} />;
+}
+
+/** The Grimoire: one-time unlocks that widen what a run can find and do. */
+function GrimoireGrid({ save, onBuy }: { save: SaveData; onBuy(id: UnlockId): void }) {
+  return (
+    <div className="grimoire">
+      {UNLOCK_GROUPS.map((g) => (
+        <section key={g.kind} className="grimoire-group">
+          <h3 className="setup-head">{g.title}</h3>
+          <div className="shop-grid">
+            {UNLOCKS.filter((u) => u.kind === g.kind).map((u) => {
+              const blocker = unlockBlocker(u.id, save.grimoire, save.records.maps);
+              const owned = save.grimoire.includes(u.id);
+              return (
+                <div key={u.id} className={`shop-card grimoire-card${owned ? ' maxed' : ''}`} data-unlock={u.id}>
+                  <UnlockIcon def={u} />
+                  <span className="card-name">{u.name}</span>
+                  <span className="card-desc">{u.description}</span>
+                  <button
+                    className="btn small primary"
+                    disabled={blocker !== null || save.currency < u.cost}
+                    onClick={(e) => {
+                      onBuy(u.id);
+                      if (e.detail > 0) e.currentTarget.blur();
+                    }}
+                  >
+                    {blocker ?? (
+                      <>
+                        Learn · {u.cost} <Shard />
+                      </>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
@@ -420,15 +569,18 @@ function AtlasCard({ id, depth, known }: { id: MapId; depth: number; known: bool
 export function ShopScreen({
   save,
   onBuy,
+  onBuyUnlock,
   onBack,
   onPlay,
 }: {
   save: SaveData;
   onBuy(id: MetaId): void;
+  onBuyUnlock(id: UnlockId): void;
   onBack(): void;
   onPlay(): void;
 }) {
   useKey(BACK, onBack);
+  const [tab, setTab] = useState<'stats' | 'grimoire'>('stats');
   return (
     <div className="screen shop">
       <h2 className="screen-title">Permanent Upgrades</h2>
@@ -438,6 +590,17 @@ export function ShopScreen({
           {save.currency} <Shard />
         </span>
       </p>
+      <div className="shop-tabs" role="tablist">
+        <button role="tab" className={`btn small${tab === 'stats' ? ' on' : ''}`} aria-selected={tab === 'stats'} data-tab="stats" onClick={() => setTab('stats')}>
+          Stat lines
+        </button>
+        <button role="tab" className={`btn small${tab === 'grimoire' ? ' on' : ''}`} aria-selected={tab === 'grimoire'} data-tab="grimoire" onClick={() => setTab('grimoire')}>
+          Grimoire · {save.grimoire.length} / {UNLOCKS.length}
+        </button>
+      </div>
+      {tab === 'grimoire' ? (
+        <GrimoireGrid save={save} onBuy={onBuyUnlock} />
+      ) : (
       <div className="shop-grid">
         {META_IDS.map((id) => {
           const def = META_UPGRADES[id];
@@ -478,6 +641,7 @@ export function ShopScreen({
           );
         })}
       </div>
+      )}
       <div className="menu-buttons row">
         <button className="btn" onClick={onBack}>
           Back <kbd>Esc</kbd>

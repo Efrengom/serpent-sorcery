@@ -29,6 +29,7 @@ const MIN_GAP: Partial<Record<SfxName, number>> = {
   wall: 0.2,
   shieldHit: 0.06,
   split: 0.08,
+  starfall: 0.05,
 };
 
 const SAMPLE_URLS: Record<string, string> = {};
