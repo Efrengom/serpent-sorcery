@@ -39,6 +39,8 @@ body,
 button {
   font: inherit;
   color: inherit;
+  /* Taps act at once, with no double-tap zoom. */
+  touch-action: manipulation;
 }
 
 kbd {
@@ -55,9 +57,17 @@ kbd {
   vertical-align: middle;
 }
 
+/*
+ * The whole game, kept inside a phone's safe area (clear of a notch or home bar when installed
+ * full screen), with no text selection, callouts or tap flashes from a long press.
+ */
 .app {
   position: fixed;
-  inset: 0;
+  inset: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* ---------------------------------------------------------------- buttons */
@@ -347,6 +357,172 @@ kbd {
 
 .howto-card b {
   color: var(--ink);
+}
+
+/* The Hall of Records: achievements, and the bestiary of foes met. */
+.records-screen {
+  overflow-y: auto;
+}
+
+.hall-records {
+  margin: 4px auto 14px;
+}
+
+.achievement-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  width: min(1100px, 100%);
+  margin: 12px auto 0;
+}
+
+.achievement {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  grid-template-rows: auto auto auto;
+  column-gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-edge);
+  background: rgba(14, 8, 28, 0.6);
+  color: var(--ink-dim);
+}
+
+.achievement-mark {
+  grid-row: 1 / span 3;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.achievement-name {
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.achievement-desc {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.achievement-reward {
+  font-size: 11px;
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+.achievement.earned {
+  border-color: var(--gold);
+  background: rgba(60, 40, 10, 0.45);
+}
+
+.achievement.earned .achievement-mark,
+.achievement.earned .achievement-reward {
+  color: var(--gold);
+}
+
+.bestiary {
+  width: min(1100px, 100%);
+  margin: 12px auto 0;
+}
+
+.bestiary-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.beast {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  column-gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-edge);
+  background: rgba(14, 8, 28, 0.6);
+}
+
+.beast.boss {
+  border-color: rgba(255, 212, 94, 0.45);
+}
+
+.beast-token {
+  grid-row: 1 / span 3;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 900;
+  color: #0a0614;
+  background: var(--beast);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--beast) 50%, transparent);
+}
+
+.beast.unknown .beast-token {
+  color: var(--ink-dim);
+  box-shadow: none;
+}
+
+.beast-name {
+  font-weight: 900;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.beast.unknown .beast-name {
+  color: var(--ink-dim);
+}
+
+.beast-lore {
+  font-size: 12px;
+  line-height: 1.3;
+  color: #ddd0f5;
+}
+
+.beast-count {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--gold);
+}
+
+.app.pixel .achievement,
+.app.pixel .beast {
+  border-radius: 0;
+  border-width: 2px;
+}
+
+.app.pixel .beast-token {
+  border-radius: 0;
+}
+
+/* After a run: the daily score and any achievements earned. */
+.daily-score {
+  margin: 10px 0 0;
+  color: var(--ink-dim);
+}
+
+.daily-score b {
+  color: var(--gold);
+}
+
+.stat-badge.inline {
+  position: static;
+  margin-left: 8px;
+}
+
+.earned-achievements {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.earned-achievement {
+  color: var(--gold);
+  font-weight: 800;
 }
 
 /* The atlas: the four maps of a run on the setup screen, a silhouette until reached. */
@@ -1032,6 +1208,224 @@ kbd {
   }
 }
 
+/*
+ * Phones. On a short (landscape) screen the HUD bar slims to 50 px; on a narrow (portrait) one it
+ * takes two rows, the spells below. The renderer leaves the same room (VIEW.topInsetShort and
+ * VIEW.topInsetNarrow).
+ */
+@media (max-height: 500px) {
+  .hud-bar {
+    height: 50px;
+    padding: 0 8px;
+    gap: 8px;
+  }
+  .level-badge {
+    width: 38px;
+    height: 38px;
+  }
+  .level-num {
+    font-size: 15px;
+  }
+  .level-label {
+    font-size: 7px;
+  }
+  .bars {
+    gap: 4px;
+  }
+  .bar {
+    height: 15px;
+  }
+  .bar.xp {
+    height: 9px;
+  }
+  .bar-text {
+    font-size: 10px;
+  }
+  .bar.xp .bar-text,
+  .relic-row,
+  .map-name {
+    display: none;
+  }
+  .clock,
+  .app.pixel .clock {
+    font-size: 20px;
+  }
+  .kills {
+    font-size: 10px;
+  }
+  .hud-right {
+    gap: 5px;
+  }
+  .spell-card,
+  .hud-right.many .spell-card {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    justify-content: center;
+  }
+  .spell-text {
+    display: none;
+  }
+  .spell-card svg,
+  .spell-card .sigil-px {
+    width: 28px;
+    height: 28px;
+  }
+  .cd-num {
+    right: 3px;
+    top: 2px;
+    font-size: 10px;
+  }
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+  .ult-card {
+    bottom: 8px;
+  }
+  .buff-chips,
+  .boss-bar {
+    top: 58px;
+  }
+  .boss-incoming {
+    top: 56px;
+  }
+}
+
+@media (max-width: 559px) {
+  .hud-bar {
+    height: 96px;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: 46px 44px;
+    padding: 2px 8px 4px;
+    gap: 2px 8px;
+  }
+  .hud-right {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+  .level-badge {
+    width: 38px;
+    height: 38px;
+  }
+  .level-num {
+    font-size: 15px;
+  }
+  .level-label {
+    font-size: 7px;
+  }
+  .bars {
+    gap: 4px;
+  }
+  .bar {
+    height: 15px;
+  }
+  .bar.xp {
+    height: 9px;
+  }
+  .bar-text {
+    font-size: 10px;
+  }
+  .bar.xp .bar-text,
+  .relic-row,
+  .map-name {
+    display: none;
+  }
+  .clock,
+  .app.pixel .clock {
+    font-size: 20px;
+  }
+  .kills {
+    font-size: 10px;
+  }
+  .hud-right {
+    gap: 5px;
+  }
+  .spell-card,
+  .hud-right.many .spell-card {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    justify-content: center;
+  }
+  .spell-text {
+    display: none;
+  }
+  .spell-card svg,
+  .spell-card .sigil-px {
+    width: 28px;
+    height: 28px;
+  }
+  .cd-num {
+    right: 3px;
+    top: 2px;
+    font-size: 10px;
+  }
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+  .ult-card {
+    bottom: 8px;
+  }
+  .buff-chips,
+  .boss-bar {
+    top: 106px;
+  }
+  .boss-bar {
+    width: 92vw;
+  }
+  .boss-incoming {
+    top: 104px;
+  }
+}
+
+/* A rift being fought and a cursed chest's curse, under the HUD bar. */
+.site-status {
+  position: absolute;
+  top: 82px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.rift-status,
+.curse-status {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  background: rgba(20, 10, 38, 0.85);
+  border: 1px solid #b48cff;
+  color: #e3d6ff;
+  white-space: nowrap;
+}
+
+.curse-status {
+  border-color: #c070ff;
+  color: #f0c8ff;
+}
+
+.app.pixel .rift-status,
+.app.pixel .curse-status {
+  border-radius: 0;
+  border-width: 3px;
+}
+
+@media (max-height: 500px) {
+  .site-status {
+    top: 56px;
+  }
+}
+
+@media (max-width: 559px) {
+  .site-status {
+    top: 104px;
+  }
+}
+
 /* The ultimate: bottom centre, filling with charge, glowing when ready. */
 .ult-card {
   position: absolute;
@@ -1491,22 +1885,25 @@ kbd {
   color: var(--hp);
 }
 
+/*
+ * One grid for every row (the rows' cells are its items), so the damage column is as wide as the
+ * biggest total, millions included, and every bar ends in the same place. The name can wrap and
+ * the bar shrinks on a narrow screen.
+ */
 .recap-spells {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, auto) minmax(28px, 1fr) auto;
+  align-items: center;
+  gap: 6px 10px;
   padding: 10px 14px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
 }
 
 .recap-row {
-  display: grid;
-  grid-template-columns: 28px 150px 1fr 60px;
-  align-items: center;
-  column-gap: 10px;
-  text-align: left;
+  display: contents;
 }
 
 .recap-name {
@@ -1544,6 +1941,20 @@ kbd {
   font-family: var(--title-font);
   font-weight: 900;
   font-size: 1.05rem;
+  white-space: nowrap;
+}
+
+/* On a narrow screen the bars give way, so the names and the totals keep their room. */
+@media (max-width: 559px) {
+  .recap-spells {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+  }
+  .recap-bar {
+    display: none;
+  }
+  .recap-num {
+    font-size: 0.95rem;
+  }
 }
 
 .recap-taken {
@@ -3316,4 +3727,42 @@ kbd {
 
 .app.pixel .shape-row {
   grid-template-columns: 30px 96px 1fr 40px;
+}
+
+/*
+ * Overlays on a short (landscape phone) screen: tighter panels, smaller titles and cards, and
+ * anchored to the top so a panel taller than the screen scrolls instead of losing its top.
+ */
+@media (max-height: 500px) {
+  .overlay {
+    padding: 8px;
+    place-items: start center;
+  }
+  .overlay-inner {
+    padding: 10px 16px;
+  }
+  .overlay-title {
+    font-size: 1.5rem;
+    margin: 0;
+  }
+  .eyebrow {
+    font-size: 0.68rem;
+  }
+  .overlay-sub {
+    margin: 0 0 0.5em;
+    font-size: 0.82rem;
+  }
+  .upgrade-card {
+    padding: 8px 10px;
+    gap: 3px;
+  }
+  .upgrade-card .card-name {
+    font-size: 1rem;
+  }
+  .upgrade-card .card-desc {
+    font-size: 0.8rem;
+  }
+  .upgrade-card svg {
+    max-height: 30px;
+  }
 }

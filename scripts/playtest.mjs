@@ -9,7 +9,10 @@
 // times), level-ups, death and its recap, rewards, restart, the shop, the wizard and curse setup
 // screen, gameplay depth (relics on the way down, the Grimoire, heat, a waystone start and its
 // draft, reroll, banish and skip, the ultimate), the options (comfort settings, key rebinding,
-// game speed), the sigil practice room, and save persistence.
+// game speed), the sigil practice room, touch screens (a phone held both ways, a thumb steering
+// while another finger draws, the ultimate tapped) and installing, the Archmage Ascendant and a
+// won run, the map's shrines, merchants, chests and rifts, the daily run, the Hall of Records, and
+// save persistence.
 //
 //   npm run playtest                       # ~5 minutes
 //   AUTOPILOT_SECONDS=60 npm run playtest  # shorter autopilot run
@@ -115,7 +118,9 @@ page.on('pageerror', (e) => check('no page errors', false, { error: String(e) })
 page.on('console', (m) => {
   if (m.type() === 'error') check('no console errors', false, { error: m.text() });
 });
-await page.goto(URL, { waitUntil: 'networkidle0' });
+// The older parts play on maps without shrines, rifts, chests or merchants (?nosites); Part S
+// tests those on their own.
+await page.goto(`${URL}?nosites`, { waitUntil: 'networkidle0' });
 
 // ---------------------------------------------------------------- helpers
 
@@ -1593,8 +1598,14 @@ try {
     const calm = await audioState();
     check('music settles to the calm arrangement of the map on the game-over screen', calm.scene === 'calm' && calm.theme === calm.map, calm);
   }
-  check('reward banked exactly once', sv1?.records.totalRuns === 1 && Number(/\+(\d+)/.exec(overText ?? '')?.[1]) === sv1?.currency, {
+  // The bank holds the run's reward and the shards of any achievements it earned.
+  const achievementShards = await page.evaluate(async (ids) => {
+    const { ACHIEVEMENTS } = await import('/src/game/achievements.ts');
+    return ids.reduce((sum, id) => sum + ACHIEVEMENTS[id].reward, 0);
+  }, sv1?.achievements ?? []);
+  check('reward banked exactly once', sv1?.records.totalRuns === 1 && Number(/\+(\d+)/.exec(overText ?? '')?.[1]) + achievementShards === sv1?.currency, {
     currency: sv1?.currency,
+    achievementShards,
     runs: sv1?.records.totalRuns,
   });
   await sleep(3000);
@@ -2153,6 +2164,339 @@ try {
     await page.keyboard.press('Escape');
     await sleep(200);
     check('Esc leaves the practice room', !!(await page.$('.title-screen')));
+  }
+
+  // ============================================================== Part T: touch screens and installing
+  {
+    const client = await page.target().createCDPSession();
+    const touch = (type, points) => client.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y, id]) => ({ x, y, id })) });
+    // Full speed and the usual keys again (Part F slowed the game and rebound them).
+    await page.evaluate((k) => {
+      const sv = JSON.parse(localStorage.getItem(k));
+      sv.settings.gameSpeed = 1;
+      delete sv.settings.bindings;
+      localStorage.setItem(k, JSON.stringify(sv));
+    }, SAVE_KEY);
+    await page.setViewport({ width: 812, height: 375, hasTouch: true, isMobile: true });
+    await page.reload({ waitUntil: 'networkidle0' });
+    await clickButton('Play');
+    await sleep(900);
+    const layout = await page.evaluate(() => {
+      const r = window.__serpent.renderer;
+      return { compact: r.compact, viewW: Math.round(r.viewW), viewH: Math.round(r.viewH), hud: Math.round(document.querySelector('.hud-bar').getBoundingClientRect().height) };
+    });
+    check('a phone held sideways gets the close-up view across the whole width, and a slim HUD', layout.compact && layout.viewW >= 1400 && layout.viewH === 600 && layout.hud <= 52, layout);
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.invuln = 1e9;
+      w.xp = -1e6;
+      w.spawnAcc = -1e9;
+      w.snake.reset(w.map.start.x, w.map.start.y, 0);
+    });
+    // A thumb on the left, slid upward: the serpent turns to head up.
+    await touch('touchStart', [[110, 280, 1]]);
+    for (let i = 1; i <= 6; i++) {
+      await touch('touchMove', [[110, 280 - i * 12, 1]]);
+      await sleep(30);
+    }
+    await sleep(150);
+    await page.screenshot({ path: path.join(OUT, '30-touch-phone.png') });
+    await sleep(600);
+    const steer = await page.evaluate(() => ({ heading: window.__serpent.debug().world.snake.heading, stick: window.__serpent.input.touchView.stick }));
+    const up = Math.abs(Math.atan2(Math.sin(steer.heading + Math.PI / 2), Math.cos(steer.heading + Math.PI / 2)));
+    check('a thumb slid upward on the left of a touch screen steers the serpent up', !!steer.stick && up < 0.3, { stick: steer.stick, offUp: +up.toFixed(2) });
+    // Meanwhile a finger on the right draws a line: Arcane Bolt, with the thumb still steering.
+    const bolt0 = await page.evaluate(() => window.__serpent.debug().world.recap.spells.bolt.casts);
+    await touch('touchStart', [[110, 208, 1], [480, 150, 2]]);
+    for (let i = 1; i <= 10; i++) {
+      await touch('touchMove', [[110, 208, 1], [480 + i * 26, 150, 2]]);
+      await sleep(25);
+    }
+    // A touchEnd lifts the points it lists: just the drawing finger.
+    await touch('touchEnd', [[740, 150, 2]]);
+    await sleep(250);
+    const drawn = await page.evaluate(() => ({ casts: window.__serpent.debug().world.recap.spells.bolt.casts, stick: !!window.__serpent.input.touchView.stick }));
+    check('a second finger on the right draws a sigil while the thumb keeps steering', drawn.casts === bolt0 + 1 && drawn.stick, { before: bolt0, ...drawn });
+    await touch('touchEnd', []);
+    // The ultimate's card answers a tap.
+    await page.evaluate(() => (window.__serpent.debug().world.ult.cooldown = 0));
+    await sleep(150);
+    const card = await page.$eval('[data-ult]', (b) => {
+      const r = b.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    await page.touchscreen.tap(card.x, card.y);
+    await sleep(200);
+    const ult = await page.evaluate(() => window.__serpent.debug().world.ult.active);
+    check('tapping the ultimate’s card casts it', ult > 0, { active: ult });
+    // Held upright: a two-row HUD over a tall view.
+    await page.setViewport({ width: 375, height: 812, hasTouch: true, isMobile: true });
+    await sleep(500);
+    const portrait = await page.evaluate(() => {
+      const r = window.__serpent.renderer;
+      const bar = document.querySelector('.hud-bar').getBoundingClientRect();
+      const spells = document.querySelector('.hud-right').getBoundingClientRect();
+      return { viewW: Math.round(r.viewW), hud: Math.round(bar.height), spellsBelow: spells.top > bar.top + 40, oy: Math.round(r.oy) };
+    });
+    await page.screenshot({ path: path.join(OUT, '30b-touch-portrait.png') });
+    check('a phone held upright gets a two-row HUD and a view as wide as the screen', portrait.viewW === 640 && portrait.hud >= 90 && portrait.spellsBelow && portrait.oy >= portrait.hud, portrait);
+    // Installing: a manifest with its icons, an icon for iOS, and the offline service worker.
+    const pwa = await page.evaluate(async () => {
+      const href = document.querySelector('link[rel="manifest"]')?.getAttribute('href');
+      const m = href ? await (await fetch(href)).json() : null;
+      const icons = m ? await Promise.all(m.icons.map(async (i) => (await fetch(i.src)).status)) : [];
+      const apple = document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href');
+      return { name: m?.name, display: m?.display, icons, maskable: !!m?.icons.some((i) => i.purpose === 'maskable'), apple: apple ? (await fetch(apple)).status : 0, sw: (await fetch('/sw.js')).status };
+    });
+    check('the game can be installed: a manifest with its icons (one maskable), an iOS icon and an offline service worker', pwa.name === 'Serpent Sorcery' && pwa.icons.length >= 3 && pwa.icons.every((s) => s === 200) && pwa.maskable && pwa.apple === 200 && pwa.sw === 200, pwa);
+    await page.evaluate(() => window.__serpent.endRun());
+    await sleep(500);
+    await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });
+    await page.goto(URL, { waitUntil: 'networkidle0' });
+  }
+
+  // ============================================================== Part V: the Archmage Ascendant and a won run
+  {
+    await page.goto(`${URL}?depth=4`, { waitUntil: 'networkidle0' });
+    await clickButton('Play');
+    await sleep(900);
+    const runs0 = (await readSave()).records.totalRuns;
+    await page.evaluate(async () => {
+      const w = window.__serpent.debug().world;
+      w.invuln = 1e9;
+      w.xp = -1e7;
+      w.spawnAcc = -1e9;
+      w.snake.reset(w.map.start.x, w.map.start.y, 0);
+      const { spawnEnemy } = await import('/src/game/enemies.ts');
+      const { killEnemy } = await import('/src/game/combat.ts');
+      killEnemy(w, spawnEnemy(w, 'boss', w.snake.x + 320, w.snake.y));
+    });
+    await sleep(1500);
+    const rising = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { map: w.map.def.id, stage: w.finale?.stage, descent: !!w.descent, banner: w.banner?.text, scene: window.__serpentAudio.musicScene, theme: window.__serpentAudio.musicTheme };
+    });
+    check('the Ember’s Archmage falling raises the Ascendant instead of a way down, to the finale’s hush', rising.map === 'ember' && rising.stage === 'rising' && !rising.descent && rising.theme === 'finale' && rising.scene === 'warning', rising);
+    await page.screenshot({ path: path.join(OUT, '31-ascendant-rising.png') });
+    let risen = null;
+    for (let i = 0; i < 40 && !risen; i++) {
+      await sleep(200);
+      risen = await page.evaluate(() => {
+        const b = window.__serpent.debug().world.boss;
+        return b?.bossId === 'ascendant' ? { hp: Math.round(b.maxHp), bar: document.querySelector('.boss-name')?.textContent } : null;
+      });
+    }
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      const b = w.boss;
+      if (b) w.snake.reset(b.x - 420, b.y, 0);
+    });
+    await sleep(700);
+    const fight = await audioState();
+    check('Azhdaha, the Archmage Ascendant, rises with its own bar and theme', !!risen && /Azhdaha/.test(risen.bar ?? '') && fight.theme === 'finale' && /^boss/.test(fight.scene), { risen, fight });
+    await page.screenshot({ path: path.join(OUT, '31-ascendant.png') });
+    await page.keyboard.press('KeyP');
+    await sleep(400);
+    await page.screenshot({ path: path.join(OUT, '31-ascendant-pixel.png') });
+    await page.keyboard.press('KeyP');
+    const phase = await page.evaluate(async () => {
+      const b = window.__serpent.debug().world.boss;
+      b.hp = b.maxHp * 0.6;
+      await new Promise((r) => setTimeout(r, 300));
+      return { phase: b.phase, banner: window.__serpent.debug().world.banner?.text };
+    });
+    check('below two thirds of its health the Ascendant turns to frost', phase.phase === 1 && /frost/.test(phase.banner ?? ''), phase);
+    await page.evaluate(async () => {
+      const { killEnemy } = await import('/src/game/combat.ts');
+      const w = window.__serpent.debug().world;
+      killEnemy(w, w.boss);
+    });
+    let panel = null;
+    for (let i = 0; i < 40 && !panel; i++) {
+      await sleep(200);
+      panel = await page.evaluate(() => document.querySelector('.overlay.victory')?.innerText.replace(/\n+/g, ' | ') ?? null);
+    }
+    // The panel's buttons arm after a moment, so a stray click can't choose.
+    await sleep(1100);
+    await page.screenshot({ path: path.join(OUT, '31-victory.png') });
+    const won = await page.evaluate(() => ({ phase: window.__serpent.getPhase(), won: window.__serpent.debug().world.won }));
+    check('its fall wins the run: a victory screen offers to claim it or play on', !!panel && /Victory!/i.test(panel) && /Claim victory/i.test(panel) && won.phase === 'victory' && won.won, { panel, won });
+    await page.click('[data-victory="play-on"]');
+    await sleep(800);
+    const on = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { phase: window.__serpent.getPhase(), descent: !!w.descent, won: w.won, banner: w.banner?.text };
+    });
+    const onMusic = await audioState();
+    check('playing on opens a way down into the endless depths, to the next loop’s music', on.phase === 'playing' && on.descent && on.won && onMusic.map === 'ruins' && onMusic.transpose === 1, { on, onMusic });
+    await page.keyboard.press('Escape');
+    await sleep(300);
+    await clickButton('End run');
+    await sleep(900);
+    const over = await page.evaluate(() => ({
+      title: document.querySelector('.gameover .overlay-title')?.textContent,
+      wonAt: [...document.querySelectorAll('.gameover .stat-label')].some((n) => n.textContent === 'Won at'),
+      earned: [...document.querySelectorAll('.earned-achievement')].map((n) => n.dataset.achievement),
+    }));
+    const sv = await readSave();
+    await page.screenshot({ path: path.join(OUT, '31-victory-gameover.png') });
+    check('ending the won run banks it as a victory: the records count the win and its achievement pays', over.title === 'Victory' && over.wonAt && sv.records.wins === 1 && sv.records.totalRuns === runs0 + 1 && sv.achievements.includes('ascendant') && over.earned.includes('ascendant'), {
+      over,
+      wins: sv.records.wins,
+      achievements: sv.achievements,
+    });
+    await clickButton('Title');
+    await page.goto(URL, { waitUntil: 'networkidle0' });
+  }
+
+  // ============================================================== Part S: shrines, merchants, chests and rifts
+  {
+    await clickButton('Play');
+    await sleep(900);
+    const spots = await page.evaluate(async () => {
+      const w = window.__serpent.debug().world;
+      const { clearanceAt } = await import('/src/game/terrain.ts');
+      w.invuln = 1e9;
+      w.xp = -1e7;
+      w.spawnAcc = -1e9;
+      // A purse to spend (the shards follow time and foes), with the boss kept away: it closes rifts.
+      w.time = 400;
+      w.kills = 500;
+      w.nextBossTime = 1e6;
+      const out = [];
+      for (let r = 450; r <= 1400 && out.length < 4; r += 100) {
+        for (let i = 0; i < 24 && out.length < 4; i++) {
+          const a = (i / 24) * Math.PI * 2;
+          const x = w.map.start.x + Math.cos(a) * r;
+          const y = w.map.start.y + Math.sin(a) * r;
+          const free = clearanceAt(w.map.index, x, y) >= 140 && clearanceAt(w.map.index, x - 200, y) >= 60;
+          if (free && out.every((p) => Math.hypot(p.x - x, p.y - y) > 380)) out.push({ x, y });
+        }
+      }
+      const kinds = ['shrine', 'merchant', 'chest', 'rift'];
+      w.sites = out.map((p, i) => ({ id: i + 1, kind: kinds[i], x: p.x, y: p.y, spent: false, inside: false, offer: kinds[i] === 'shrine' ? ['blood', 'haste', 'glass'] : kinds[i] === 'merchant' ? ['draught', 'tome', 'empower'] : [], sold: [] }));
+      w.snake.reset(out[0].x - 170, out[0].y, 0);
+      return out.length;
+    });
+    await sleep(300);
+    await page.screenshot({ path: path.join(OUT, '32-sites-classic.png') });
+    await page.keyboard.press('KeyP');
+    await sleep(400);
+    await page.screenshot({ path: path.join(OUT, '32-sites-pixel.png') });
+    await page.keyboard.press('KeyP');
+    /** Steers into site i with a real key, and waits for what it does. */
+    const steerInto = async (i, until) => {
+      await page.evaluate((i) => {
+        const w = window.__serpent.debug().world;
+        const s = w.sites[i];
+        w.snake.reset(s.x - 170, s.y, 0);
+      }, i);
+      await setKeys(new Set(['KeyD']));
+      let got = null;
+      for (let k = 0; k < 30 && !got; k++) {
+        await sleep(100);
+        got = await page.evaluate(until);
+      }
+      await setKeys(new Set());
+      return got;
+    };
+    const shrine = await steerInto(0, () => (window.__serpent.getPhase() === 'event' ? document.querySelector('.site-offer .overlay-title')?.textContent : null));
+    await page.screenshot({ path: path.join(OUT, '33-shrine.png') });
+    await sleep(500);
+    await page.click('[data-site-choice="blood"]');
+    await sleep(300);
+    const pact = await page.evaluate(() => ({ pacts: [...window.__serpent.debug().world.pacts], phase: window.__serpent.getPhase() }));
+    check('steering into a shrine offers pacts, and one taken with a real click lasts the run', spots === 4 && shrine === 'Shrine of Pacts' && pact.pacts.join() === 'blood' && pact.phase === 'playing', { spots, shrine, pact });
+    const merchant = await steerInto(1, () => (window.__serpent.getPhase() === 'event' ? document.querySelector('.site-offer .eyebrow')?.textContent : null));
+    await sleep(500);
+    await page.click('[data-site-choice="draught"]');
+    await sleep(300);
+    const shop = await page.evaluate(() => ({ phase: window.__serpent.getPhase(), spent: window.__serpent.debug().world.spentShards, left: [...document.querySelectorAll('[data-site-choice]')].map((b) => b.dataset.siteChoice) }));
+    await page.click('[data-tool="leave"]');
+    await sleep(300);
+    check('a merchant sells for the run’s shards with a real click, and stays open to sell more until left', /purse: \d+ shards/.test(merchant ?? '') && shop.phase === 'event' && shop.spent > 0 && !shop.left.includes('draught') && (await state()).phase === 'playing', { merchant, shop });
+    const relics0 = await page.evaluate(() => window.__serpent.debug().world.relics.length);
+    const chest = await steerInto(2, () => (window.__serpent.debug().world.chestCurse > 0 ? { banner: window.__serpent.debug().world.banner?.text, chip: document.querySelector('.curse-status')?.textContent ?? null } : null));
+    await sleep(200);
+    const chestHud = await page.evaluate(() => ({ chip: document.querySelector('.curse-status')?.textContent ?? null, relics: window.__serpent.debug().world.relics.length }));
+    check('a cursed chest opens on touch: a relic at once, and a curse shown on the HUD', !!chest && chest.banner === 'A cursed chest!' && /Cursed/.test(chestHud.chip ?? '') && chestHud.relics === relics0 + 1, { chest, chestHud });
+    const rift = await steerInto(3, () => (window.__serpent.debug().world.rift ? document.querySelector('.rift-status')?.textContent ?? 'open' : null));
+    await page.evaluate(async () => {
+      const { killEnemy } = await import('/src/game/combat.ts');
+      const { spawnEnemy } = await import('/src/game/enemies.ts');
+      const w = window.__serpent.debug().world;
+      for (let i = 0; i < 30 && w.rift; i++) {
+        const e = spawnEnemy(w, 'chaser', w.snake.x + 300, w.snake.y);
+        e.elite = 'swift';
+        killEnemy(w, e);
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    });
+    let riftOffer = null;
+    for (let i = 0; i < 20 && !riftOffer; i++) {
+      await sleep(100);
+      riftOffer = await page.evaluate(() => (window.__serpent.getPhase() === 'relic' ? document.querySelector('.relic-offer .eyebrow')?.textContent : null));
+    }
+    await sleep(500);
+    const firstRelic = await page.$eval('.upgrade-card.relic', (c) => c.dataset.relic);
+    await page.click(`.upgrade-card.relic[data-relic="${firstRelic}"]`);
+    await sleep(300);
+    const after = await page.evaluate(() => ({ relics: [...window.__serpent.debug().world.relics], phase: window.__serpent.getPhase() }));
+    check('a rift counts elites on the HUD, and winning it offers a relic taken with a real click', /Rift: \d+ \/ \d+ elites/.test(rift ?? '') && /rift yields/.test(riftOffer ?? '') && after.relics.includes(firstRelic) && after.phase === 'playing', { rift, riftOffer, after });
+    await page.keyboard.press('Escape');
+    await sleep(300);
+    await clickButton('End run');
+    await sleep(900);
+    const sv = await readSave();
+    check('the run’s rifts and purchases go into the records', sv.records.rifts >= 1 && sv.records.bought >= 1, { rifts: sv.records.rifts, bought: sv.records.bought });
+    await clickButton('Title');
+    await sleep(300);
+  }
+
+  // ============================================================== Part R: the daily run and the Hall of Records
+  {
+    const today = await page.evaluate(async () => {
+      const d = await import('/src/game/daily.ts');
+      return d.dailySetup(d.dailyDate());
+    });
+    await page.click('[data-daily]');
+    await sleep(900);
+    const run = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      return { wizard: w.wizard, curses: [...w.curses], seed: w.seed };
+    });
+    check('Daily Run starts today’s seeded run, with the day’s wizard and curse', run.wizard === today.wizard && run.curses.join() === today.curse && run.seed === today.seed, { run, today });
+    await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.time = 200;
+      w.kills = 80;
+      window.__serpent.endRun();
+    });
+    await sleep(900);
+    const line = await page.evaluate(() => ({ score: document.querySelector('[data-daily-score]')?.textContent ?? null, again: [...document.querySelectorAll('.gameover button')].map((b) => b.textContent) }));
+    const sv = await readSave();
+    check('the daily’s game-over shows its score, and the save keeps the day’s best', /Daily run .* points/.test(line.score ?? '') && line.again.some((t) => /Try the daily again/.test(t)) && sv.records.dailyDate === today.date && sv.records.dailyPlays === 1 && sv.records.dailyBest > 0, { line, records: sv.records });
+    await clickButton('Title');
+    await sleep(300);
+    await page.click('[data-records]');
+    await sleep(300);
+    const hall = await page.evaluate(() => ({
+      achievements: document.querySelectorAll('[data-achievement]').length,
+      earned: document.querySelectorAll('.achievement.earned').length,
+    }));
+    await page.screenshot({ path: path.join(OUT, '34-records.png') });
+    await page.click('[data-tab="bestiary"]');
+    await sleep(200);
+    const beasts = await page.evaluate(() => ({
+      all: document.querySelectorAll('[data-beast]').length,
+      known: [...document.querySelectorAll('.beast:not(.unknown)')].map((b) => b.dataset.beast),
+      ascendant: document.querySelector('[data-beast="ascendant"] .beast-name')?.textContent,
+    }));
+    await page.screenshot({ path: path.join(OUT, '34-bestiary.png') });
+    const saved = await readSave();
+    check('the Hall of Records lists every achievement (the earned ones lit) and a bestiary of the foes met', hall.achievements === 20 && hall.earned === saved.achievements.length && hall.earned >= 1 && beasts.all === 21 && beasts.known.includes('chaser') && beasts.known.includes('ascendant') && /Azhdaha/.test(beasts.ascendant ?? ''), { hall, beasts });
+    await page.keyboard.press('Escape');
+    await sleep(300);
   }
 
   // ============================================================== Part D: upgrade-integrity fuzz

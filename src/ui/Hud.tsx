@@ -174,6 +174,16 @@ export function Hud({ hud, muted, onPause, onToggleMute, onUltimate }: Props) {
       {!hud.boss && hud.bossIncoming !== null && (
         <div className="boss-incoming">Archmage arrives in {Math.ceil(hud.bossIncoming)}s</div>
       )}
+      {(hud.rift || hud.curse > 0) && (
+        <div className="site-status">
+          {hud.rift && (
+            <span className="rift-status" data-rift>
+              Rift: {hud.rift.kills} / {hud.rift.need} elites · {Math.ceil(hud.rift.left)}s
+            </span>
+          )}
+          {hud.curse > 0 && <span className="curse-status">Cursed · foes hit harder · {Math.ceil(hud.curse)}s</span>}
+        </div>
+      )}
     </div>
   );
 }

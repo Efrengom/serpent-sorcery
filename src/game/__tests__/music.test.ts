@@ -131,7 +131,8 @@ describe('per-map soundtracks', () => {
       for (const n of sting.lead.flat()) expect(n.midi).toBeLessThanOrEqual(noteToMidi('G6'));
     }
     expect(used.size).toBe(MAP_ORDER.length * 2);
-    expect([...used].sort()).toEqual([...THEME_IDS].sort());
+    // Every theme belongs to a map, except the Ascendant's finale.
+    expect([...used, 'finale'].sort()).toEqual([...THEME_IDS].sort());
     // The Ruins keeps its two themes; every deeper map has an ambient bed.
     expect(SOUNDTRACKS.ruins).toMatchObject({ run: 'ruins', boss: 'ruinsBoss', ambience: null });
     for (const map of MAP_ORDER.slice(1)) expect(SOUNDTRACKS[map].ambience).not.toBeNull();

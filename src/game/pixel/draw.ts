@@ -8,6 +8,8 @@ import type { ViewOptions } from '../options';
 import type { PlayArea } from '../snake';
 import { stormAngle, ULTIMATES } from '../ultimates';
 import { WIZARDS } from '../wizards';
+import { FINALE } from '../finale';
+import { SITE_INFO, SITES } from '../sites';
 import type { Blast, BuffId, Enemy, GestureView, GroundFx, World } from '../world';
 import { BUFF_INFO, HEAL_COLOR } from '../breakables';
 import { fillIcon } from '../icons';
@@ -788,7 +790,12 @@ const SNAKE_LOOK: Record<'rival' | 'salamander' | BossId, { plain: SegmentStyle;
   pyrecoil: { plain: 'pyre', marked: 'pyreSpot', head: 'pyrecoil', eye: PX.flame1, eyeHi: PX.flame2 },
   sporemaw: { plain: 'spore', marked: 'sporeSpot', head: 'sporemaw', eye: PX.cap3, eyeHi: PX.spot },
   rimecoil: { plain: 'rime', marked: 'rimeSpot', head: 'rimecoil', eye: PX.ice3, eyeHi: PX.white },
+  // The Ascendant's body is banded with the four Archmages' spotted segments (see drawEnemySnake).
+  ascendant: { plain: 'boss', marked: 'bossSpot', head: 'boss', eye: PX.gold3, eyeHi: PX.white },
 };
+
+/** The Ascendant's bands: Ouroboros, Sporemaw, Rimecoil and Pyrecoil, round and round. */
+const ASCENDANT_BANDS: SegmentStyle[] = ['bossSpot', 'sporeSpot', 'rimeSpot', 'pyreSpot'];
 
 /**
  * Something tunnelling under the floor: a mound of earth at its head (and, for a boss, humps along
@@ -825,16 +832,17 @@ function drawEnemySnake(ctx: CanvasRenderingContext2D, e: Enemy, time: number, q
   const x = e.x / P;
   const y = e.y / P;
   const R = e.r / P;
-  if (boss && e.enraged && !flash) {
-    // Pulsing dithered aura.
+  const ascendant = boss && e.bossId === 'ascendant';
+  if (boss && (e.enraged || ascendant) && !flash) {
+    // Pulsing dithered aura: red when enraged, gold for the Ascendant.
     const pulse = quiet ? 0.45 : 0.35 + 0.25 * Math.sin(time * 8);
     for (let ring = 0; ring < 3; ring++) {
-      pixels(ctx, circlePixels(x, y, R * 1.9 + ring * 2, (X, Y) => bayer(X, Y) < pulse - ring * 0.1), PX.enrage);
+      pixels(ctx, circlePixels(x, y, R * 1.9 + ring * 2, (X, Y) => bayer(X, Y) < pulse - ring * 0.1), e.enraged ? PX.enrage : PX.gold1);
     }
   }
   for (let i = n - 1; i >= 0; i--) blit(ctx, segmentOutline(radii[i]), segs[i].x / P, segs[i].y / P);
   for (let i = n - 1; i >= 0; i--) {
-    const style: SegmentStyle = flash ? 'flash' : (boss ? i % 2 === 0 : i % 3 === 0) ? marked : plain;
+    const style: SegmentStyle = flash ? 'flash' : ascendant ? (i % 2 === 0 ? ASCENDANT_BANDS[(i / 2) % 4] : plain) : (boss ? i % 2 === 0 : i % 3 === 0) ? marked : plain;
     blit(ctx, segmentFill(radii[i], style), segs[i].x / P, segs[i].y / P);
   }
   const sway = clamp(Math.round(Math.sin(time * 3.2 + e.wobble) * 1.3), -1, 1);
@@ -2090,6 +2098,89 @@ export function drawBlastsInFlight(ctx: CanvasRenderingContext2D, world: World):
 }
 
 /** The way down: a dark vortex with turning rings; a ring round it counts down to its pull. */
+/** The map's sites in pixels: the same shrine, rift, chest and stall as the classic style. */
+export function drawSites(ctx: CanvasRenderingContext2D, world: World, t: number, quiet: boolean): void {
+  const rect = (x: number, y: number, w: number, h: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+  };
+  const box = (x: number, y: number, w: number, h: number, color: string) => {
+    rect(x - 1, y - 1, w + 2, h + 2, PX.ink);
+    rect(x, y, w, h, color);
+  };
+  for (const s of world.sites) {
+    const x = Math.round(s.x / P);
+    const y = Math.round(s.y / P);
+    if (!visible(x, y, 30)) continue;
+    const color = SITE_INFO[s.kind].color;
+    const live = !s.spent;
+    if (live) {
+      const R = SITES.radius / P;
+      const spin = quiet ? 0 : t * 0.9;
+      pixels(ctx, circlePixels(x, y, R, (X, Y) => Math.floor((((Math.atan2(Y - y, X - x) + spin) % TAU) + TAU) / (TAU / 16)) % 2 === 0), color);
+      pixels(ctx, circlePixels(x, y, R * 1.6, (X, Y) => bayer(X, Y) < (quiet ? 0.12 : 0.1 + 0.05 * Math.sin(t * 3 + s.id))), color);
+    }
+    if (s.kind === 'shrine') {
+      box(x - 10, y - 3, 20, 10, '#4a4458');
+      box(x - 7, y - 9, 14, 6, '#5c566c');
+      rect(x - 2, y - 1, 4, 3, live ? color : '#3a3046');
+      if (live) rect(x - 1, y - 13 - (quiet ? 0 : Math.round(Math.sin(t * 9))), 2, 3, PX.flame1);
+    } else if (s.kind === 'rift') {
+      if (live || world.rift?.siteId === s.id) {
+        pixels(ctx, circlePixels(x, y, 9, (X, Y) => ((X - x) / 8) ** 2 + ((Y - y) / 15) ** 2 <= 1), '#0a0414');
+        const k = quiet ? 0 : Math.floor(t * 8);
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * TAU + k * 0.4;
+          px(ctx, x + Math.cos(a) * 9, y + Math.sin(a) * 16, i % 3 === 0 ? PX.white : color);
+        }
+      } else {
+        for (let i = -12; i <= 12; i++) px(ctx, x + Math.round(Math.sin(i * 0.5) * 2), y + i, '#2a1a40');
+      }
+    } else if (s.kind === 'chest') {
+      box(x - 9, y - 2, 18, 10, '#2a1a2e');
+      if (live) {
+        box(x - 9, y - 8, 18, 6, '#3a2440');
+        rect(x - 9, y - 6, 18, 1, color);
+        rect(x - 1, y - 4, 3, 4, PX.gold1);
+      } else box(x - 9, y - 12, 18, 4, '#1a0e1e');
+    } else {
+      rect(x - 12, y - 12, 2, 18, '#2a1a10');
+      rect(x + 10, y - 12, 2, 18, '#2a1a10');
+      for (let i = 0; i < 4; i++) rect(x - 13 + i * 6, y - 15, 6, 4, i % 2 === 0 ? '#7a3aa8' : PX.gold1);
+      pixels(ctx, circlePixels(x, y, 6, (X, Y) => Y >= y - 6 + Math.abs(X - x) * 2 - 6 && Y <= y + 6), '#3a1a5a');
+      rect(x - 2, y - 3, 1, 1, PX.gold3);
+      rect(x + 1, y - 3, 1, 1, PX.gold3);
+      disc(ctx, x + 9, y - 7, quiet ? 2 : 2 + Math.round(Math.sin(t * 5) * 0.5), PX.gold1);
+    }
+  }
+}
+
+/** The Ascendant rising: the four Archmages' colours circling in on a widening crack. */
+export function drawFinale(ctx: CanvasRenderingContext2D, world: World, t: number, quiet: boolean): void {
+  const f = world.finale;
+  if (!f || f.stage !== 'rising') return;
+  const x = f.x / P;
+  const y = f.y / P;
+  const k = clamp(f.t / FINALE.rise, 0, 1);
+  if (!visible(x, y, 110)) return;
+  const colors = [PX.gold1, PX.cap3, PX.ice3, PX.flame1];
+  colors.forEach((color, i) => {
+    const a = (quiet ? t * 0.6 : t * 2.2) + (i / 4) * TAU;
+    const d = (30 + (1 - k) * 230) / P;
+    const cx = x + Math.cos(a) * d;
+    const cy = y + Math.sin(a) * d;
+    pixels(ctx, circlePixels(cx, cy, 5 + 4 * k, (X, Y) => bayer(X, Y) < 0.6), color);
+    disc(ctx, cx, cy, 2 + Math.round(2 * k), color);
+  });
+  pixels(ctx, circlePixels(x, y, (40 + 60 * k) / P, (X, Y) => bayer(X, Y) < 0.15 + 0.35 * k), PX.white);
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * TAU + 0.4;
+    const len = ((40 + 70 * hash2(i, 9)) * (0.3 + k)) / P;
+    for (let s = 0; s <= len; s++) px(ctx, x + Math.cos(a) * s, y + Math.sin(a) * s, '#05010a');
+  }
+  disc(ctx, x, y, Math.round((14 + 26 * k) / P), '#05010a');
+}
+
 export function drawDescent(ctx: CanvasRenderingContext2D, world: World, t: number, quiet: boolean): void {
   const d = world.descent;
   if (!d) return;

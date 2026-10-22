@@ -4,7 +4,10 @@ import { MOVE_ACTIONS, primaryKeyLabel } from '../game/keys';
 import { formatTime } from '../game/math';
 import type { GameOptions } from '../game/options';
 import type { CommitOutcome, RunResult } from '../game/persistence';
-import type { LevelUpOffer, RelicOffer } from '../game/engine';
+import type { LevelUpOffer, RelicOffer, VictorySummary } from '../game/engine';
+import { FINALE } from '../game/finale';
+import { SITE_INFO, type SiteOffer } from '../game/sites';
+import { ACHIEVEMENTS } from '../game/achievements';
 import { MAPS } from '../game/maps';
 import { RELICS, type RelicId } from '../game/relics';
 import { ULTIMATES, ultimateFor } from '../game/ultimates';
@@ -157,7 +160,8 @@ export function LevelUpPanel({
 
 /** The threshold of the way down: one relic to carry deeper, or leave them and heal. */
 export function RelicPanel({ offer, onChoose }: { offer: RelicOffer; onChoose(relic: RelicId | null): void }) {
-  const { relics, nextMap, depth, draft } = offer;
+  const { relics, nextMap, depth, draft, source } = offer;
+  const rift = source === 'rift';
   const armed = useArmed(500, relics);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -172,11 +176,9 @@ export function RelicPanel({ offer, onChoose }: { offer: RelicOffer; onChoose(re
   return (
     <div className="overlay relic-offer">
       <div className="overlay-inner wide">
-        <p className="eyebrow">{draft ? `Waystone · relic ${draft.n} of ${draft.total}` : 'On the threshold of the way down'}</p>
+        <p className="eyebrow">{rift ? 'The rift yields its prize' : draft ? `Waystone · relic ${draft.n} of ${draft.total}` : 'On the threshold of the way down'}</p>
         <h2 className="overlay-title gold">Choose a relic</h2>
-        <p className="overlay-sub">
-          Carry one {draft ? 'into' : 'to'} Depth {depth}: {nextMap}
-        </p>
+        <p className="overlay-sub">{rift ? 'Carry one for the rest of the run' : `Carry one ${draft ? 'into' : 'to'} Depth ${depth}: ${nextMap}`}</p>
         <div className={`cards${armed ? ' armed' : ''}`} style={{ '--cols': relics.length } as CSSProperties}>
           {relics.map((id, i) => {
             const r = RELICS[id];
@@ -193,7 +195,70 @@ export function RelicPanel({ offer, onChoose }: { offer: RelicOffer; onChoose(re
         </div>
         <div className="level-tools">
           <button className="btn small" data-tool="leave" disabled={!armed} onClick={() => onChoose(null)}>
-            {draft ? 'Take none' : 'Leave them · heal 40%'} <kbd>X</kbd>
+            {rift ? 'Take none · XP instead' : draft ? 'Take none' : 'Leave them · heal 40%'} <kbd>X</kbd>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Each pact's and ware's glyph (the pixel style draws its icon instead; see UPGRADE_ICON). */
+const SITE_GLYPH: Record<string, string> = {
+  blood: '♥',
+  haste: '⧗',
+  plenty: '✦',
+  glass: '◇',
+  stone: '⬢',
+  draught: '✚',
+  tome: '✎',
+  quickening: '⧗',
+  empower: '✶',
+  swiftscale: '➶',
+};
+
+/** A shrine's pacts or a merchant's wares, while play waits; X or Leave walks away. */
+export function SitePanel({ offer, onChoose }: { offer: SiteOffer; onChoose(choice: string | null): void }) {
+  const armed = useArmed(450, offer.siteId);
+  const { choices } = offer;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!armed || e.repeat) return;
+      const i = Math.max(DIGITS.indexOf(e.code), NUMPAD.indexOf(e.code));
+      if (i >= 0 && choices[i]?.affordable) onChoose(choices[i].id);
+      else if (e.code === 'KeyX') onChoose(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [armed, choices, onChoose]);
+  const color = SITE_INFO[offer.kind].color;
+  return (
+    <div className={`overlay site-offer ${offer.kind}`}>
+      <div className="overlay-inner wide">
+        <p className="eyebrow">{offer.kind === 'shrine' ? 'Old magic hums in the stone' : `Your purse: ${offer.shards} shards this run`}</p>
+        <h2 className="overlay-title gold">{offer.title}</h2>
+        <p className="overlay-sub">{offer.sub}</p>
+        <div className={`cards${armed ? ' armed' : ''}`} style={{ '--cols': choices.length } as CSSProperties}>
+          {choices.map((c, i) => (
+            <button
+              key={c.id}
+              className="upgrade-card site"
+              data-site-choice={c.id}
+              style={{ '--spell': c.relic ? RELICS[c.relic].color : color } as CSSProperties}
+              disabled={!armed || !c.affordable}
+              onClick={() => onChoose(c.id)}
+            >
+              <span className="card-key">{i + 1}</span>
+              {c.relic ? <RelicIcon id={c.relic} size={44} /> : <UpgradeGlyph id={`site:${c.id}`} glyph={SITE_GLYPH[c.id] ?? '✧'} />}
+              <span className="card-name">{c.name}</span>
+              {offer.kind === 'merchant' && <span className="card-level">{c.affordable ? `${c.cost} shards` : `${c.cost} shards · too dear`}</span>}
+              <span className="card-desc">{c.description}</span>
+            </button>
+          ))}
+        </div>
+        <div className="level-tools">
+          <button className="btn small" data-tool="leave" disabled={!armed} onClick={() => onChoose(null)}>
+            Leave <kbd>X</kbd>
           </button>
         </div>
       </div>
@@ -283,6 +348,9 @@ export function PauseMenu({
           </li>
           <li>
             <b>Hold left mouse</b> draw a sigil, release to cast
+          </li>
+          <li>
+            <b>Touch:</b> one thumb steers from its side, the other hand draws
           </li>
           <li>
             <b>Where you press</b> is where Bolt and Lightning aim
@@ -383,6 +451,31 @@ function RunRecapView({ recap, ultimate }: { recap: RunRecap; ultimate: string }
   );
 }
 
+/** The Archmage Ascendant has fallen: claim the win, or play on into the endless depths. */
+export function VictoryPanel({ victory, onClaim, onPlayOn }: { victory: VictorySummary; onClaim(): void; onPlayOn(): void }) {
+  const armed = useArmed(900, victory.time);
+  return (
+    <div className="overlay victory">
+      <div className="overlay-inner">
+        <p className="eyebrow">The Archmage Ascendant has fallen</p>
+        <h2 className="overlay-title gold">Victory!</h2>
+        <p className="overlay-sub">
+          Won in <b>{formatTime(victory.time)}</b>, with {victory.kills} foes and {victory.bossKills} Archmages defeated, at level {victory.level}.
+        </p>
+        <div className="menu-buttons">
+          <button className="btn primary" data-victory="claim" onClick={onClaim} disabled={!armed}>
+            Claim victory · +{FINALE.reward} <Shard scale={3} /> bonus
+          </button>
+          <button className="btn" data-victory="play-on" onClick={onPlayOn} disabled={!armed}>
+            Descend into the endless depths
+          </button>
+        </div>
+        <p className="opt-note">Playing on keeps the win: its bonus is banked whenever the run ends.</p>
+      </div>
+    </div>
+  );
+}
+
 export function GameOverPanel({
   result,
   outcome,
@@ -414,9 +507,15 @@ export function GameOverPanel({
   return (
     <div className="overlay gameover">
       <div className="overlay-inner">
-        <p className="eyebrow">The serpent sheds its final skin</p>
-        <h2 className="overlay-title">Run Over</h2>
+        <p className="eyebrow">{result.won ? 'The Archmage Ascendant has fallen' : 'The serpent sheds its final skin'}</p>
+        <h2 className={`overlay-title${result.won ? ' gold' : ''}`}>{result.won ? 'Victory' : 'Run Over'}</h2>
         <div className="stats">
+          {result.won && result.wonAt !== undefined && (
+            <div className="stat">
+              <span className="stat-label">Won at</span>
+              <span className="stat-value">{formatTime(result.wonAt)}</span>
+            </div>
+          )}
           <div className="stat">
             <span className="stat-label">Survived</span>
             <span className="stat-value">{formatTime(result.time)}</span>
@@ -463,9 +562,25 @@ export function GameOverPanel({
             {result.gameSpeed && ` · played at ${Math.round(result.gameSpeed * 100)}% speed`}
           </span>
         </div>
+        {result.daily && (
+          <p className="daily-score" data-daily-score>
+            Daily run {result.daily}: <b>{result.score ?? 0}</b> points
+            {outcome.dailyBest ? <span className="stat-badge inline">Best today!</span> : ` · best today ${outcome.save.records.dailyBest}`}
+          </p>
+        )}
+        {outcome.achievements.length > 0 && (
+          <div className="earned-achievements" data-earned>
+            <span className="eyebrow">Achievements earned</span>
+            {outcome.achievements.map((id) => (
+              <span key={id} className="earned-achievement" data-achievement={id}>
+                ★ {ACHIEVEMENTS[id].name} · +{ACHIEVEMENTS[id].reward} <Shard />
+              </span>
+            ))}
+          </div>
+        )}
         <div className="menu-buttons row">
           <button className="btn primary" onClick={onRestart} disabled={!armed}>
-            Play again <kbd>R</kbd>
+            {result.daily ? 'Try the daily again' : 'Play again'} <kbd>R</kbd>
           </button>
           <button className="btn" onClick={onShop} disabled={!armed}>
             Upgrades

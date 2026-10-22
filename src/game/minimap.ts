@@ -1,4 +1,5 @@
 import { COLORS } from './palette';
+import { SITE_INFO } from './sites';
 import type { MapLayout, Rect } from './maps/types';
 import { createCanvas, hexRgb } from './pixel/bake';
 import { clearanceAt } from './terrain';
@@ -34,9 +35,10 @@ export class Minimap {
     area: number,
     private readonly pixel: boolean,
     dpr: number,
+    width = WIDTH,
   ) {
-    this.w = WIDTH;
-    this.h = Math.round((WIDTH * map.height) / map.width);
+    this.w = width;
+    this.h = Math.round((width * map.height) / map.width);
     this.style = STYLE[area] ?? STYLE[0];
     // The pixel style is chunky (one minimap pixel per 2 CSS px); classic matches the screen.
     const res = pixel ? 0.5 : dpr;
@@ -120,6 +122,8 @@ export class Minimap {
       if (e.dead || !e.elite) continue;
       this.dot(ctx, px(e.x), py(e.y), 1.5, e.elite === 'shielded' ? COLORS.eliteShield : e.elite === 'swift' ? COLORS.eliteSwift : COLORS.eliteSplit);
     }
+    // Sites still to be used.
+    for (const site of world.sites) if (!site.spent) this.dot(ctx, px(site.x), py(site.y), 2.5, SITE_INFO[site.kind].color);
     // The way down, once the boss has fallen.
     if (world.descent) this.dot(ctx, px(world.descent.x), py(world.descent.y), 4, COLORS.nova);
     const boss = world.boss ?? world.portals.find((p) => p.kind === 'boss');

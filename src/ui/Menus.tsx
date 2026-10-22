@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type ComponentProps } from 'react';
+import { useContext, useEffect, useRef, useState, type ComponentProps, type CSSProperties } from 'react';
 import { drawAtlasPicture } from '../game/atlas';
 import { DUOS, HEAT, SPELL_IDS, SPELLS, type DuoId } from '../game/config';
 import { playableHeat, startMaps, unlockBlocker, UNLOCKS, type UnlockDef, type UnlockId, type UnlockKind } from '../game/grimoire';
@@ -10,6 +10,9 @@ import { MAP_ORDER, MAPS } from '../game/maps';
 import type { MapId } from '../game/maps/types';
 import { formatTime } from '../game/math';
 import { SOUNDTRACKS, THEMES } from '../game/music/score';
+import { ACHIEVEMENT_IDS, ACHIEVEMENTS, type AchievementDef } from '../game/achievements';
+import { BEAST_IDS, BEASTS, bestiaryPages } from '../game/bestiary';
+import type { DailySetup } from '../game/daily';
 import type { SaveData } from '../game/persistence';
 import { META_IDS, META_UPGRADES, metaMaxLevel, metaNextCost, type MetaId } from '../game/progression';
 import { isWizardUnlocked, playableWizard, WIZARD_IDS, WIZARDS, type WizardId } from '../game/wizards';
@@ -67,6 +70,9 @@ function TitleSerpent({ wizard }: { wizard: WizardId }) {
 export function TitleScreen({
   save,
   onPlay,
+  onDaily,
+  daily,
+  onRecords,
   onSetup,
   onHowTo,
   onShop,
@@ -78,6 +84,10 @@ export function TitleScreen({
 }: {
   save: SaveData;
   onPlay(): void;
+  /** Today's daily run, and starting it. */
+  onDaily(): void;
+  daily: DailySetup;
+  onRecords(): void;
   onSetup(): void;
   onHowTo(): void;
   onShop(): void;
@@ -121,6 +131,21 @@ export function TitleScreen({
             </span>
           </button>
           <div className="menu-pair">
+            <button className="btn setup-btn daily-btn" data-daily onClick={onDaily}>
+              Daily Run
+              <span className="setup-summary">
+                {WIZARDS[daily.wizard].name} · {CURSES[daily.curse].name}
+                {save.records.dailyDate === daily.date && ` · best ${save.records.dailyBest}`}
+              </span>
+            </button>
+            <button className="btn setup-btn" data-records onClick={onRecords}>
+              Hall of Records
+              <span className="setup-summary">
+                {save.achievements.length} / {ACHIEVEMENT_IDS.length} achievements
+              </span>
+            </button>
+          </div>
+          <div className="menu-pair">
             <button className={`btn${firstTime ? ' pulse' : ''}`} onClick={onHowTo}>
               How to Play
             </button>
@@ -159,11 +184,110 @@ export function TitleScreen({
             <span>Runs</span>
             <b>{save.records.totalRuns}</b>
           </div>
+          {save.records.wins > 0 && (
+            <div>
+              <span>Wins</span>
+              <b>{save.records.wins}</b>
+            </div>
+          )}
         </div>
       </div>
       <button className="icon-btn corner" onClick={onToggleMute} title={`Mute (${muteKey})`} aria-label="Toggle sound">
         {pixel ? <PixelIcon name={save.settings.muted ? 'soundOff' : 'soundOn'} scale={2} /> : save.settings.muted ? '🔇' : '🔊'}
       </button>
+    </div>
+  );
+}
+
+/** Achievements earned and to come, the bestiary of foes met, and the run records behind them. */
+export function RecordsScreen({ save, onBack }: { save: SaveData; onBack(): void }) {
+  useKey(BACK, onBack);
+  const [tab, setTab] = useState<'achievements' | 'bestiary'>('achievements');
+  const r = save.records;
+  const seen = BEAST_IDS.filter((id) => (r.bestiary[id] ?? 0) > 0).length;
+  return (
+    <div className="screen records-screen">
+      <h2 className="screen-title">Hall of Records</h2>
+      <div className="records hall-records">
+        <div>
+          <span>Wins</span>
+          <b>{r.wins}</b>
+        </div>
+        <div>
+          <span>Fastest win</span>
+          <b>{r.fastestWin > 0 ? formatTime(r.fastestWin) : '—'}</b>
+        </div>
+        <div>
+          <span>Foes defeated</span>
+          <b>{r.totalKills.toLocaleString()}</b>
+        </div>
+        <div>
+          <span>Daily best</span>
+          <b>{r.dailyDate ? r.dailyBest : '—'}</b>
+        </div>
+        <div>
+          <span>Daily streak</span>
+          <b>{r.dailyStreak}</b>
+        </div>
+      </div>
+      <div className="shop-tabs" role="tablist">
+        <button role="tab" className={`btn small${tab === 'achievements' ? ' on' : ''}`} aria-selected={tab === 'achievements'} data-tab="achievements" onClick={() => setTab('achievements')}>
+          Achievements {save.achievements.length} / {ACHIEVEMENT_IDS.length}
+        </button>
+        <button role="tab" className={`btn small${tab === 'bestiary' ? ' on' : ''}`} aria-selected={tab === 'bestiary'} data-tab="bestiary" onClick={() => setTab('bestiary')}>
+          Bestiary {seen} / {BEAST_IDS.length}
+        </button>
+      </div>
+      {tab === 'achievements' ? (
+        <div className="achievement-grid">
+          {ACHIEVEMENT_IDS.map((id) => {
+            const a: AchievementDef = ACHIEVEMENTS[id];
+            const got = save.achievements.includes(id);
+            return (
+              <div key={id} className={`achievement${got ? ' earned' : ''}`} data-achievement={id}>
+                <span className="achievement-mark" aria-hidden="true">
+                  {got ? '★' : '☆'}
+                </span>
+                <span className="achievement-name">{a.name}</span>
+                <span className="achievement-desc">{a.description}</span>
+                <span className="achievement-reward">
+                  {got ? 'Earned' : (a.progress?.(r) ?? 'Not yet')} · {a.reward} <Shard />
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="bestiary">
+          {bestiaryPages().map((page) => (
+            <section key={page.title} className="bestiary-page">
+              <h3 className="setup-head">{page.title}</h3>
+              <div className="bestiary-list">
+                {page.beasts.map((id) => {
+                  const b = BEASTS[id];
+                  const n = r.bestiary[id] ?? 0;
+                  const known = n > 0;
+                  return (
+                    <div key={id} className={`beast${known ? '' : ' unknown'}${b.boss ? ' boss' : ''}`} data-beast={id}>
+                      <span className="beast-token" style={{ '--beast': known ? b.color : '#3a2e50' } as CSSProperties}>
+                        {known ? b.glyph : '?'}
+                      </span>
+                      <span className="beast-name">{known ? b.name : '???'}</span>
+                      <span className="beast-lore">{known ? b.lore : 'Not yet met.'}</span>
+                      {known && <span className="beast-count">{n.toLocaleString()} defeated</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+      <div className="menu-buttons row">
+        <button className="btn" onClick={onBack}>
+          Back <kbd>Esc</kbd>
+        </button>
+      </div>
     </div>
   );
 }
@@ -202,6 +326,10 @@ export function HowToPlay({
             Let go and it keeps its heading. Turns curve — reversing makes a U-turn.
           </p>
           <p>
+            <b>On a touch screen</b>, hold a thumb on the left of the screen and slide it the way to go (or the right, in
+            Options). Your other hand draws anywhere else. Tap the ultimate's card to cast it.
+          </p>
+          <p>
             Walls, pillars and statues sting and bounce you off, but they also block enemy shots. Only enemy <b>heads</b> bite,
             and your own tail is safe.
           </p>
@@ -213,7 +341,7 @@ export function HowToPlay({
         <section className="howto-card">
           <h3>2 · Draw</h3>
           <p>
-            <b>Hold the left mouse button</b> anywhere over the map, draw a sigil in one stroke, then <b>release</b> to cast.
+            <b>Hold the left mouse button</b> (or a finger) anywhere over the map, draw a sigil in one stroke, then <b>release</b> to cast.
             Size doesn't matter: lines, triangles and zigzags work in any direction, circles either way round, and a V
             just needs to open roughly upward. Each wizard starts with three sigils; level-ups teach the others.
           </p>

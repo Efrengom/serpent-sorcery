@@ -1,6 +1,6 @@
 # Serpent Sorcery
 
-A top-down action roguelite for desktop browsers. One hand steers a wizard snake that never stops moving; the other hand draws magic sigils with the mouse to cast spells. Survive as long as you can across four maps, each several screens across, where the camera follows the serpent and every pillar, wall and fallen statue hurts to run into. Your snake grows longer and stronger, learns new sigils and evolves its spells, and each map sends ever nastier foes of its own, including a rival Archmage serpent at 5:00. Defeat it and a way down opens to the next map: from the Sunken Ruins to the Mycelium Hollows, the Rimefrost Catacombs and the Ember Depths, then round again, deeper and harder. Before each run you pick a wizard and, if you dare, curses that raise the reward.
+A top-down action roguelite for desktop and phone browsers. One hand steers a wizard snake that never stops moving; the other hand draws magic sigils with the mouse (or a finger) to cast spells. Survive as long as you can across four maps, each several screens across, where the camera follows the serpent and every pillar, wall and fallen statue hurts to run into. Your snake grows longer and stronger, learns new sigils and evolves its spells, and each map sends ever nastier foes of its own, including a rival Archmage serpent at 5:00. Defeat it and a way down opens to the next map: from the Sunken Ruins to the Mycelium Hollows, the Rimefrost Catacombs and the Ember Depths. Beyond the last waits the Archmage Ascendant: defeat it to win the run, then claim the victory or play on into the endless depths. Shrines, rifts, cursed chests and merchants by the landmarks offer choices along the way. Before each run you pick a wizard and, if you dare, curses that raise the reward; or play the daily run, the same for everyone that day.
 
 ## Setup
 
@@ -9,11 +9,12 @@ Requires Node 18+.
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # unit tests (recognizer, progression, persistence, movement, music, hit-stop, recap, spells, depth, clean casts, Constrict, options, practice, maps, terrain, camera, navigation, breakables, buffs, descent, hazards, every map's foes and bosses, records)
+npm test           # unit tests (recognizer, progression, persistence, movement, touch, music, hit-stop, recap, spells, depth, clean casts, Constrict, options, practice, maps, terrain, camera, navigation, breakables, buffs, descent, hazards, every map's foes and bosses, the Ascendant, sites, the daily run, achievements, records)
 npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 npm run playtest   # ~6 min end-to-end play-test in a headless Edge/Chrome
 npx vite-node scripts/balance.ts   # a bot plays every map headlessly; damage taken by kind, per map
+node scripts/make-icons.mjs        # redraw the home-screen icons in public/icons from the game's sprites
 ```
 
 On Windows PowerShell with script execution disabled, `npm` itself is blocked (`npm.ps1 cannot be loaded`). Use `npm.cmd` instead (for example `npm.cmd run dev`), or run the commands from Command Prompt or Git Bash.
@@ -38,6 +39,10 @@ On Windows PowerShell with script execution disabled, `npm` itself is blocked (`
 - shop purchases and reload persistence
 - the options screen: toggles, sliders and rebinding set with real clicks and keys and saved, a key taken from another action, Esc cancelling a rebind, the run steering with the new key (and not the old one), 50% game speed advancing the run at half speed, and canvas pixels showing a struck foe not flashing white with reduced flashing and a charge lane and a vent's circle painted in hazard yellow with colorblind-safe warnings
 - the sigil practice room: the live reading while drawing, a V graded as Forked Lightning, a square drawn for the triangle explaining that it has 4 corners, and the tally of attempts
+- touch screens: a phone held sideways (the close-up view across the whole width, a slim HUD) and upright (a two-row HUD), a thumb steering while another finger draws a Bolt with real touch input, a tap casting the ultimate, and the manifest, icons and service worker for installing
+- the Archmage Ascendant: Pyrecoil's fall raising it to the finale's music, its frost phase, the victory screen, playing on into the next loop, and the won run banked as a victory with its achievement
+- shrines, merchants, cursed chests and rifts entered with a real key: a pact and a ware taken with real clicks, the chest's curse and the rift's count on the HUD, and the rift's relic
+- the daily run with the day's wizard and curse, its score and the day's best, and the Hall of Records' achievements and bestiary
 - a 400-action random keyboard/mouse fuzz asserting that permanent upgrades only change through a "Learn" click
 
 Screenshots and `results.json` go to `playtest-output/`. Set `PLAYTEST_BROWSER` to use a different Chromium-based browser and `AUTOPILOT_SECONDS` to shorten the run.
@@ -58,6 +63,8 @@ Screenshots and `results.json` go to `playtest-output/`. Set `PLAYTEST_BROWSER` 
 | **R / B / X** | On a level-up: reroll, banish a card, or skip it and heal |
 | **Enter** (title) | Play with the saved wizard and curses; **Wizard & Curses** changes them |
 | **R / Enter** | Play again from the game-over screen |
+| **Touch: left thumb** | Hold anywhere on the left of the screen and slide the way to go (any angle); the stick follows a long drag. **Steer with the right thumb** in Options swaps sides. |
+| **Touch: other hand** | Draw a sigil anywhere else, while steering. Tap the ultimate's card to cast it. |
 
 ### Sigils
 
@@ -192,11 +199,22 @@ Once nothing else is left to offer, endless **overcharge** cards fill the offer:
 
 Stepping into the way down after a boss offers **three relics** to carry for the rest of the run; pick one, or leave them and heal 40%. One of the three is always the next map's own relic, which blunts its hazards: Stoneshaper's Charm (stone doesn't hurt), Thornhide (brambles, half from spores), Rimewalker (ice doesn't widen turns, half from icicles) and Emberwalk (lava and burning ground, half from eruptions). The others range from the Ouroboros Coil (+1% damage per 4 body segments), the Tail Sigil (the tail fires bolts) and Glass Fang (+40% damage, −25% health) to Sacrificial Scales (once per map a killing blow sheds a third of the body instead) and Hunter's Mark (elites and bosses take 25% more). Carried relics show as icons under the HUD bars, with their effects in the pause menu. Ten are known from the start; the Grimoire unlocks eight more.
 
+## Shrines, rifts, chests and merchants
+
+Each map has two **sites** by its landmarks (three from the Catacombs on), on the minimap until used. Steer into one:
+
+| Site | What it does |
+| --- | --- |
+| **Shrine of Pacts** | Choose one of three pacts for the rest of the run, each a boon with a price: Blood (+18% damage, −20% health), Haste (−12% cooldowns, foes hit 15% harder), Plenty (+25% XP and reach, −10% health), Glass (+30% damage, foes hit 30% harder), Stone (+25% health, foes hit 15% softer, +10% cooldowns). Or leave it. |
+| **Elite Rift** | Elites pour out; defeat 6 (+1 per depth) within 35 s, counted on the HUD, for a relic choice |
+| **Cursed Chest** | A relic at once, but foes hit 40% harder for 45 s and three elite guards come |
+| **Wandering Merchant** | Sells a healing draught, a relic or a tome (a level), and an elixir (a buff), for the shards the run will bank. Prices rise each depth; it can be visited again. |
+
 ## The Grimoire, waystones and heat
 
 The **Permanent Upgrades** screen has a second tab, the **Grimoire**: one-time unlocks that add options rather than power. It sells the eight locked relics, three duos, extra rerolls and banishes, a fourth card at every level-up, a primed ultimate, and **waystones**. A waystone (once you've reached that map) lets a run start on the Hollows, the Catacombs or the Ember Depths, picked in the atlas on the setup screen. To catch up, the run first chooses a relic and drafts twelve level-ups for each map it skips, through the usual panel, with **Auto-pick the rest** to hurry.
 
-Reaching Depth 5 (the Ruins again) unlocks **heat**. Each heat level gives foes 12% more health, 6% more damage and 3% more elites, and the run 15% more shards. Reaching Depth 5 at a heat unlocks the next, up to 10. It's set on the setup screen.
+Winning a run, or reaching Depth 5 (the Ruins again), unlocks **heat**. Each heat level gives foes 12% more health, 6% more damage and 3% more elites, and the run 15% more shards. Winning or reaching Depth 5 at a heat unlocks the next, up to 10. It's set on the setup screen.
 
 ## Wizards
 
@@ -233,9 +251,24 @@ Optional handicaps toggled on the same screen. Each adds to the run's shard mult
 | Champions' Hunt | Elites appear from the start, and more often | +20% |
 | Impatient Archmage | The boss arrives at 3:30, and every 3:30 after | +20% |
 
+## Winning: the Archmage Ascendant
+
+When Pyrecoil falls at the end of the Ember Depths, no way down opens: the field clears, the ground splits, and after a few seconds **Azhdaha, the Archmage Ascendant** rises from the four Archmages' magic. It has over twice an Archmage's health and fights in three phases, announced as they come: the Ruins' and Hollows' moves (volleys, spores, charges, burrows), then below two thirds of its health the Catacombs' (icicles, rings of ice), then below a third the Ember's (meteors and a fire trail) with everything else. It has its own theme, "Azhdaha", in the Ruins' key with every map's band at once.
+
+Defeat it and the run is won. The victory screen offers **Claim victory** (end the run, with a 300-shard bonus) or **Descend into the endless depths**: a way down opens and the run goes on into the next loop, the win kept whenever it ends. The game-over screen shows a won run as a Victory, and the records count wins, the fastest, and the wizards who have won.
+
+## Daily run, achievements and the bestiary
+
+- **Daily Run** (on the title screen): one seed a day (UTC), the same for everyone, so the maps, foes, sites and every offer follow from it, with the day's wizard (any of the four, locked or not) and one curse. Its score counts time, foes, levels and Archmages, and a win most of all; the save keeps the day's best and a streak of days played in a row.
+- **Hall of Records** (on the title screen): the run records, twenty **achievements** (from a first Archmage to winning with every wizard or at Heat 10, and feats like 50 Perfect sigils in a run), each paying shards once, and the **bestiary** of every foe and Archmage by map, with how many you've defeated.
+
+## Playing on a phone
+
+Hold the phone sideways for the widest view. A phone-sized window gets a closer view (the serpent stays big enough to see), a slimmer HUD (two rows when upright) and tighter panels. Add the game to the home screen to play it full screen and offline: it has a web manifest, icons and a service worker (in production builds).
+
 ## Depths and elites
 
-The run never ends on its own. Each Archmage defeated takes you one **depth** deeper (shown next to the kill count), onto the next map. Foes grow tougher with the time spent on the map you're on, not the run's length, and each depth adds a step: health ×(1 + 0.75·d + 0.1·d²) for d depths down, 25% more damage, 20% more spawns and room for 12 more foes each depth. So each map opens a little easier than the last one closed, and the boss keeps returning stronger.
+Until the Ascendant, and after it if you play on, the run never ends on its own. Each Archmage defeated takes you one **depth** deeper (shown next to the kill count), onto the next map. Foes grow tougher with the time spent on the map you're on, not the run's length, and each depth adds a step: health ×(1 + 0.75·d + 0.1·d²) for d depths down, 25% more damage, 20% more spawns and room for 12 more foes each depth. So each map opens a little easier than the last one closed, and the boss keeps returning stronger.
 
 From Depth 2, spawns can be **elites** (10% at Depth 2, +5% per depth, up to 35%): bigger, 1.6× health, 2.5× experience, a crown marker and one modifier:
 
@@ -344,6 +377,11 @@ src/game/            framework-free game code (no React)
   heap.ts, hash.ts   a min-heap for path searches; position-keyed randomness for seamless floors
   breakables.ts      urns and reliquaries, their drops, pickups, and buffs
   descent.ts         the way down after a boss, its relic choice, and moving the run to the next map
+  finale.ts          the Archmage Ascendant rising after the last map, and winning the run
+  sites.ts           shrines, rifts, cursed chests and merchants: where they stand and what they do
+  daily.ts           the daily run's seed, wizard, curse and score
+  achievements.ts    the achievements and what earns each
+  bestiary.ts        every foe and Archmage, for the bestiary
   levelup.ts         level-up offers, applying cards, reroll, banish and skip
   relics.ts          the relics: their table, offers, and what each does as things happen
   ultimates.ts       the four ultimates: casting, cooldown, and their effects each step
@@ -353,7 +391,7 @@ src/game/            framework-free game code (no React)
   telegraph.ts       what both renderers need to preview attacks: lanes, aim lines, blasts in flight
   atlas.ts           the setup screen's map pictures
   icons.ts           pickup and buff icons, shared by the canvas, pixel sprites and HUD
-  input.ts           keyboard (following the key bindings) + pointer capture, clears on blur/resize/pause
+  input.ts           keyboard (following the key bindings), pointer capture, and the touch stick and drawing zones; clears on blur/resize/pause
   keys.ts            key bindings: defaults, rebinding, validation, key labels
   options.ts         comfort and accessibility options: shake, flashing, warnings, minimap, camera, game speed
   gesture.ts         sigil recognizer, and the per-sigil explanations for practice
@@ -376,11 +414,12 @@ src/game/            framework-free game code (no React)
   sfx.ts             sound-effect samples and the synthesized fallback
   music/             score (each map's themes and band as data), synth instruments, ambient beds, player, what plays when
 src/ui/              React screens, HUD and overlays
-scripts/             the end-to-end play-test, the headless balance bot, and the music mix report
+public/              the web manifest, home-screen icons and the offline service worker
+scripts/             the end-to-end play-test, the headless balance bot, the music mix report, and the icon renderer
 ```
 
 The animation loop and all fast-changing state live in `Game` outside React. React gets phase changes, level-up offers, run results, and a HUD snapshot throttled to 20 Hz. The simulation runs at a fixed 120 Hz step, so movement, cooldowns and spawns don't depend on frame rate.
 
 ## Saves
 
-Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, Grimoire unlocks, records (best time, level, kills, run count, lifetime bosses defeated, deepest depth, maps reached for the atlas, lifetime containers smashed, heat unlocked and cleared), mute/volume, the chosen wizard, curses, heat and start map, and the options (shake, reduced flashing, safe warnings, minimap, steady camera, game speed, key bindings). Saved bindings are cleaned on load: unknown keys, duplicates and a stray Esc are dropped. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.
+Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, Grimoire unlocks, records (best time, level, kills, run count, lifetime bosses defeated, deepest depth, maps reached for the atlas, lifetime containers smashed, heat unlocked and cleared, wins, the fastest win, the wizards who have won and the highest heat won at, lifetime foes defeated, rifts won and wares bought, the bestiary's counts, the daily's date, best, tries and streak), achievements earned, mute/volume, the chosen wizard, curses, heat and start map, and the options (shake, reduced flashing, safe warnings, minimap, steady camera, game speed, key bindings, which thumb steers). Saved bindings are cleaned on load: unknown keys, duplicates and a stray Esc are dropped. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.

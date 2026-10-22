@@ -569,6 +569,10 @@ export interface RunSummary {
   bonusShards?: number;
   /** Heat the run was played at: each level pays more, on top of the curses' cap. */
   heat?: number;
+  /** The Archmage Ascendant was defeated: a victory bonus. */
+  won?: boolean;
+  /** Shards already spent at merchants (E1), taken off the total. */
+  spent?: number;
 }
 
 /** The most curses can multiply a run's shards by. */
@@ -578,6 +582,7 @@ export function computeReward(run: RunSummary): number {
   const t = Math.max(0, run.time);
   const heat = Number.isFinite(run.heat) ? Math.max(0, Math.min(HEAT.max, run.heat!)) : 0;
   const mult = Math.max(1, Math.min(MAX_SHARD_MULT, Number.isFinite(run.shardMult) ? run.shardMult! : 1)) * (1 + HEAT.shards * heat);
+  const spent = Number.isFinite(run.spent) ? Math.max(0, run.spent!) : 0;
   return Math.max(
     0,
     Math.floor(
@@ -585,9 +590,10 @@ export function computeReward(run: RunSummary): number {
         Math.max(0, run.kills) * REWARDS.perKill +
         Math.max(0, run.level - 1) * REWARDS.perLevel +
         Math.max(0, run.bossKills) * REWARDS.perBoss +
+        (run.won ? REWARDS.victory : 0) +
         Math.max(0, Number.isFinite(run.bonusShards) ? run.bonusShards! : 0)) *
         mult,
-    ),
+    ) - spent,
   );
 }
 

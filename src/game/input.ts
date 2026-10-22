@@ -1,4 +1,4 @@
-import { GESTURE } from './config';
+import { GESTURE, TOUCH } from './config';
 import type { Pt } from './gesture';
 import { bindingMap, DEFAULT_BINDINGS, RESERVED_KEY, type KeyAction, type KeyBindings, type MoveAction } from './keys';
 
@@ -16,15 +16,33 @@ export interface InputCallbacks {
   onUserGesture(): void;
 }
 
+/** The steering thumb's stick: where it landed (the base, which follows a long drag) and where it is, in canvas CSS pixels. */
+export interface StickView {
+  ox: number;
+  oy: number;
+  x: number;
+  y: number;
+}
+
+/** What the renderer shows of touch input. */
+export interface TouchView {
+  /** A touch has been seen, so the screen is a touch screen. */
+  seen: boolean;
+  stick: StickView | null;
+  /** The side of the screen the steering thumb owns. */
+  side: 'left' | 'right';
+}
+
 function isMove(a: KeyAction | undefined): a is MoveAction {
   return a === 'up' || a === 'down' || a === 'left' || a === 'right';
 }
 
 /**
- * Keyboard + pointer input. Keys follow the player's bindings and are tracked as held state; Escape
- * always pauses. The drawing gesture is
- * captured in CSS pixels relative to the canvas. Pointer-down is only accepted on the
- * canvas itself, so clicks on DOM interface elements never start a sigil.
+ * Keyboard, pointer and touch input. Keys follow the player's bindings and are tracked as held
+ * state; Escape always pauses. The drawing gesture is captured in CSS pixels relative to the
+ * canvas. Pointer-down is only accepted on the canvas itself, so clicks on DOM interface
+ * elements never start a sigil. On a touch screen a thumb on the steering side of the screen
+ * holds a floating stick, and a finger anywhere else draws, so both work at once.
  */
 export class InputManager {
   private held = new Set<MoveAction>();
@@ -34,6 +52,9 @@ export class InputManager {
   private drawing = false;
   private pointerId = -1;
   points: Pt[] = [];
+  private stick: (StickView & { id: number }) | null = null;
+  private touchSeen = false;
+  private steerSide: 'left' | 'right' = 'left';
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -73,12 +94,35 @@ export class InputManager {
     this.tapped.clear();
   }
 
-  /** Steering vector from the held keys; opposite keys cancel out. (0,0) means keep heading. */
+  /** Which side of a touch screen the steering thumb owns (the other draws). */
+  setSteerSide(side: 'left' | 'right'): void {
+    this.steerSide = side;
+  }
+
+  /**
+   * Steering vector from the held keys, opposite keys cancelling out; with no key held, the
+   * stick's direction (any angle). (0,0) means keep heading.
+   */
   direction(): { x: number; y: number } {
     const on = (d: MoveAction) => this.held.has(d) || this.tapped.has(d);
     const x = (on('right') ? 1 : 0) - (on('left') ? 1 : 0);
     const y = (on('down') ? 1 : 0) - (on('up') ? 1 : 0);
-    return { x, y };
+    if ((x !== 0 || y !== 0) || !this.stick) return { x, y };
+    const dx = this.stick.x - this.stick.ox;
+    const dy = this.stick.y - this.stick.oy;
+    const d = Math.hypot(dx, dy);
+    return d < TOUCH.deadzone ? { x: 0, y: 0 } : { x: dx / d, y: dy / d };
+  }
+
+  get touchView(): TouchView {
+    const s = this.stick;
+    return { seen: this.touchSeen, stick: s ? { ox: s.ox, oy: s.oy, x: s.x, y: s.y } : null, side: this.steerSide };
+  }
+
+  /** True when a touch at canvas x belongs to the steering thumb's side. */
+  private inSteerZone(x: number): boolean {
+    const w = this.canvas.clientWidth || 1;
+    return this.steerSide === 'left' ? x < w * TOUCH.zone : x > w * (1 - TOUCH.zone);
   }
 
   /** Called after each simulation step; held keys keep applying, finished taps are dropped. */
@@ -90,10 +134,11 @@ export class InputManager {
     return this.drawing;
   }
 
-  /** Releases every held key and abandons any unfinished gesture. */
+  /** Releases every held key and the stick, and abandons any unfinished gesture. */
   clearAll(): void {
     this.held.clear();
     this.tapped.clear();
+    this.stick = null;
     this.cancelGesture();
   }
 
@@ -167,8 +212,23 @@ export class InputManager {
   private onPointerDown = (e: PointerEvent) => {
     this.cb.onUserGesture();
     if (e.button !== 0) return;
-    if (this.drawing) this.cancelGesture();
     const p = this.toCanvas(e.clientX, e.clientY);
+    if (e.pointerType === 'touch') {
+      this.touchSeen = true;
+      if (!this.stick && this.inSteerZone(p.x)) {
+        e.preventDefault();
+        this.stick = { id: e.pointerId, ox: p.x, oy: p.y, x: p.x, y: p.y };
+        try {
+          this.canvas.setPointerCapture(e.pointerId);
+        } catch {
+          // Not fatal: window-level move/up listeners still track the thumb.
+        }
+        return;
+      }
+      // Another finger while one is drawing leaves the sigil alone.
+      if (this.drawing) return;
+    }
+    if (this.drawing) this.cancelGesture();
     if (!this.cb.onGestureStart(p)) return;
     e.preventDefault();
     this.drawing = true;
@@ -182,6 +242,21 @@ export class InputManager {
   };
 
   private onPointerMove = (e: PointerEvent) => {
+    const s = this.stick;
+    if (s && e.pointerId === s.id) {
+      const p = this.toCanvas(e.clientX, e.clientY);
+      // A long drag pulls the base along behind the thumb, so turning back is never far.
+      const dx = p.x - s.ox;
+      const dy = p.y - s.oy;
+      const d = Math.hypot(dx, dy);
+      if (d > TOUCH.radius) {
+        s.ox = p.x - (dx / d) * TOUCH.radius;
+        s.oy = p.y - (dy / d) * TOUCH.radius;
+      }
+      s.x = p.x;
+      s.y = p.y;
+      return;
+    }
     if (!this.drawing || e.pointerId !== this.pointerId) return;
     const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
     const list = events.length > 0 ? events : [e];
@@ -194,6 +269,10 @@ export class InputManager {
   };
 
   private onPointerUp = (e: PointerEvent) => {
+    if (this.stick && e.pointerId === this.stick.id) {
+      this.stick = null;
+      return;
+    }
     if (!this.drawing || e.pointerId !== this.pointerId) return;
     const p = this.toCanvas(e.clientX, e.clientY);
     const last = this.points[this.points.length - 1];
@@ -206,6 +285,7 @@ export class InputManager {
   };
 
   private onPointerCancel = (e: PointerEvent) => {
-    if (e.pointerId === this.pointerId) this.cancelGesture();
+    if (this.stick && e.pointerId === this.stick.id) this.stick = null;
+    else if (e.pointerId === this.pointerId) this.cancelGesture();
   };
 }

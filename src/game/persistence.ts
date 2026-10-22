@@ -16,6 +16,9 @@ import {
 import { CURSE_IDS, type CurseId } from './curses';
 import { HEAT } from './config';
 import { UNLOCK_IDS, unlockBlocker, unlockDef, type UnlockId } from './grimoire';
+import { ACHIEVEMENT_IDS, ACHIEVEMENTS, newAchievements, type AchievementId } from './achievements';
+import { BEAST_IDS } from './bestiary';
+import { previousDay } from './daily';
 import { MAP_ORDER } from './maps';
 import type { MapId } from './maps/types';
 import { sanitizeBindings, type KeyBindings } from './keys';
@@ -47,7 +50,24 @@ export interface SaveData {
     /** Highest heat unlocked (0 = none yet), and the highest at which the loop was reached (-1 = never). */
     heatUnlocked: number;
     heatCleared: number;
+    /** Runs won (the Archmage Ascendant defeated), the fastest win's time, the wizards who have won and the highest heat won at (-1 = none). */
+    wins: number;
+    fastestWin: number;
+    winners: WizardId[];
+    wonHeat: number;
+    /** Lifetime foes defeated, rifts won and merchant wares bought, and foes defeated by kind (the bestiary). */
+    totalKills: number;
+    rifts: number;
+    bought: number;
+    bestiary: Record<string, number>;
+    /** The daily run: the day last played, its best score and tries, and the run of days played in a row. */
+    dailyDate: string;
+    dailyBest: number;
+    dailyPlays: number;
+    dailyStreak: number;
   };
+  /** Achievements earned (D2). */
+  achievements: AchievementId[];
   /** Grimoire unlocks bought (M1). */
   grimoire: UnlockId[];
   settings: {
@@ -73,6 +93,8 @@ export interface SaveData {
     /** Simulation speed, 0.5 to 1. */
     gameSpeed: number;
     bindings: KeyBindings;
+    /** Touch screens: the right thumb steers. */
+    steerRight: boolean;
   };
   /** Id of the last run whose reward was banked; guarantees one award per run. */
   lastRunId: string;
@@ -83,7 +105,31 @@ export function defaultSave(): SaveData {
     version: SAVE_VERSION,
     currency: 0,
     meta: emptyMetaLevels(),
-    records: { bestTime: 0, bestKills: 0, bestLevel: 0, totalRuns: 0, bossKills: 0, deepest: 1, maps: ['ruins'], breakables: 0, heatUnlocked: 0, heatCleared: -1 },
+    records: {
+      bestTime: 0,
+      bestKills: 0,
+      bestLevel: 0,
+      totalRuns: 0,
+      bossKills: 0,
+      deepest: 1,
+      maps: ['ruins'],
+      breakables: 0,
+      heatUnlocked: 0,
+      heatCleared: -1,
+      wins: 0,
+      fastestWin: 0,
+      winners: [],
+      wonHeat: -1,
+      totalKills: 0,
+      rifts: 0,
+      bought: 0,
+      bestiary: {},
+      dailyDate: '',
+      dailyBest: 0,
+      dailyPlays: 0,
+      dailyStreak: 0,
+    },
+    achievements: [],
     grimoire: [],
     settings: { muted: false, volume: 0.7, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [], heat: 0, startMap: 'ruins', ...defaultOptions() },
     lastRunId: '',
@@ -124,7 +170,22 @@ export function sanitizeSave(input: unknown): SaveData {
       breakables: num(records.breakables, 0, 0, 1e9, true),
       heatUnlocked: num(records.heatUnlocked, 0, 0, HEAT.max, true),
       heatCleared: num(records.heatCleared, -1, -1, HEAT.max, true),
+      wins: num(records.wins, 0, 0, 1e9, true),
+      fastestWin: num(records.fastestWin, 0, 0, 1e7),
+      winners: Array.isArray(records.winners) ? WIZARD_IDS.filter((id) => (records.winners as unknown[]).includes(id)) : [],
+      wonHeat: num(records.wonHeat, -1, -1, HEAT.max, true),
+      totalKills: num(records.totalKills, 0, 0, 1e12, true),
+      rifts: num(records.rifts, 0, 0, 1e9, true),
+      bought: num(records.bought, 0, 0, 1e9, true),
+      bestiary: Object.fromEntries(
+        BEAST_IDS.filter((id) => num(obj(records.bestiary)[id], 0, 0, 1e12, true) > 0).map((id) => [id, num(obj(records.bestiary)[id], 0, 0, 1e12, true)]),
+      ),
+      dailyDate: typeof records.dailyDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(records.dailyDate) ? records.dailyDate : '',
+      dailyBest: num(records.dailyBest, 0, 0, 1e9, true),
+      dailyPlays: num(records.dailyPlays, 0, 0, 1e6, true),
+      dailyStreak: num(records.dailyStreak, 0, 0, 1e5, true),
     },
+    achievements: Array.isArray(o.achievements) ? ACHIEVEMENT_IDS.filter((id) => (o.achievements as unknown[]).includes(id)) : [],
     grimoire: Array.isArray(o.grimoire) ? UNLOCK_IDS.filter((id) => (o.grimoire as unknown[]).includes(id)) : [],
     settings: {
       muted: typeof settings.muted === 'boolean' ? settings.muted : d.settings.muted,
@@ -145,6 +206,7 @@ export function sanitizeSave(input: unknown): SaveData {
       steadyCamera: typeof settings.steadyCamera === 'boolean' ? settings.steadyCamera : d.settings.steadyCamera,
       gameSpeed: clampSpeed(num(settings.gameSpeed, d.settings.gameSpeed, 0, 1)),
       bindings: sanitizeBindings(settings.bindings),
+      steerRight: typeof settings.steerRight === 'boolean' ? settings.steerRight : d.settings.steerRight,
     },
     lastRunId: typeof o.lastRunId === 'string' ? o.lastRunId.slice(0, 64) : '',
   };
@@ -152,8 +214,8 @@ export function sanitizeSave(input: unknown): SaveData {
 
 /** The options a run and its renderer use, taken from the settings. */
 export function optionsOf(settings: SaveData['settings']): GameOptions {
-  const { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings } = settings;
-  return { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings };
+  const { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings, steerRight } = settings;
+  return { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings, steerRight };
 }
 
 export function parseSave(raw: string | null | undefined): SaveData {
@@ -210,50 +272,113 @@ export interface RunResult extends RunSummary {
   breakables?: number;
   /** Relics carried at the end (for the game-over screen; not saved). */
   relics?: RelicId[];
+  /** Game time the Archmage Ascendant fell, when the run was won. */
+  wonAt?: number;
+  /** A daily run's date, and its score. */
+  daily?: string;
+  score?: number;
 }
 
 export interface CommitOutcome {
   save: SaveData;
   awarded: boolean;
   newBestTime: boolean;
+  /** Achievements the run earned, and the shards they paid. */
+  achievements: AchievementId[];
+  achievementShards: number;
+  /** A daily run beat the day's best. */
+  dailyBest: boolean;
 }
 
 /** Banks a finished run exactly once (idempotent per runId). */
 export function commitRunResult(save: SaveData, run: RunResult): CommitOutcome {
   if (!run.runId || save.lastRunId === run.runId) {
-    return { save, awarded: false, newBestTime: false };
+    return { save, awarded: false, newBestTime: false, achievements: [], achievementShards: 0, dailyBest: false };
   }
   const reward = computeReward(run);
   const newBestTime = run.time > save.records.bestTime;
+  const daily = dailyRecords(save.records, run);
+  const records: SaveData['records'] = {
+    bestTime: Math.max(save.records.bestTime, run.time),
+    bestKills: Math.max(save.records.bestKills, run.kills),
+    bestLevel: Math.max(save.records.bestLevel, run.level),
+    totalRuns: save.records.totalRuns + 1,
+    bossKills: save.records.bossKills + Math.max(0, Math.floor(run.bossKills)),
+    deepest: Math.max(save.records.deepest, Math.floor(run.depth ?? 1)),
+    maps: MAP_ORDER.filter((id) => save.records.maps.includes(id) || (run.maps ?? []).includes(id)),
+    breakables: save.records.breakables + Math.max(0, Math.floor(run.breakables ?? 0)),
+    ...heatRecords(save.records, run),
+    ...winRecords(save.records, run),
+    totalKills: save.records.totalKills + Math.max(0, Math.floor(run.kills)),
+    rifts: save.records.rifts + Math.max(0, run.recap?.rifts ?? 0),
+    bought: save.records.bought + Math.max(0, run.recap?.bought ?? 0),
+    bestiary: addSlain(save.records.bestiary, run.recap?.slain ?? {}),
+    ...daily.records,
+  };
+  const earned = newAchievements(records, run, save.achievements);
+  const achievementShards = earned.reduce((sum, id) => sum + ACHIEVEMENTS[id].reward, 0);
   return {
     awarded: true,
     newBestTime,
+    achievements: earned,
+    achievementShards,
+    dailyBest: daily.best,
     save: {
       ...save,
-      currency: save.currency + reward,
-      records: {
-        bestTime: Math.max(save.records.bestTime, run.time),
-        bestKills: Math.max(save.records.bestKills, run.kills),
-        bestLevel: Math.max(save.records.bestLevel, run.level),
-        totalRuns: save.records.totalRuns + 1,
-        bossKills: save.records.bossKills + Math.max(0, Math.floor(run.bossKills)),
-        deepest: Math.max(save.records.deepest, Math.floor(run.depth ?? 1)),
-        maps: MAP_ORDER.filter((id) => save.records.maps.includes(id) || (run.maps ?? []).includes(id)),
-        breakables: save.records.breakables + Math.max(0, Math.floor(run.breakables ?? 0)),
-        ...heatRecords(save.records, run),
-      },
+      currency: save.currency + reward + achievementShards,
+      records,
+      achievements: [...save.achievements, ...earned],
       lastRunId: run.runId,
     },
   };
 }
 
-/** Reaching the loop at heat h clears it and unlocks h + 1 (M3). */
+/** Adds a run's foes defeated, by kind, to the bestiary's counts. */
+function addSlain(bestiary: Record<string, number>, slain: Record<string, number>): Record<string, number> {
+  const out = { ...bestiary };
+  for (const id of BEAST_IDS) {
+    const n = Math.max(0, Math.floor(slain[id] ?? 0));
+    if (n > 0) out[id] = (out[id] ?? 0) + n;
+  }
+  return out;
+}
+
+/** A daily run updates the day's best and tries, and the streak of days played in a row. */
+function dailyRecords(
+  records: SaveData['records'],
+  run: RunResult,
+): { records: Pick<SaveData['records'], 'dailyDate' | 'dailyBest' | 'dailyPlays' | 'dailyStreak'>; best: boolean } {
+  const { dailyDate, dailyBest, dailyPlays, dailyStreak } = records;
+  if (!run.daily) return { records: { dailyDate, dailyBest, dailyPlays, dailyStreak }, best: false };
+  const score = Math.max(0, Math.floor(run.score ?? 0));
+  if (run.daily === dailyDate) {
+    return { records: { dailyDate, dailyBest: Math.max(dailyBest, score), dailyPlays: dailyPlays + 1, dailyStreak }, best: score > dailyBest };
+  }
+  const streak = dailyDate === previousDay(run.daily) ? dailyStreak + 1 : 1;
+  return { records: { dailyDate: run.daily, dailyBest: score, dailyPlays: 1, dailyStreak: streak }, best: true };
+}
+
+/** Winning, or reaching the loop, at heat h clears it and unlocks h + 1 (M3). */
 function heatRecords(records: SaveData['records'], run: RunResult): Pick<SaveData['records'], 'heatUnlocked' | 'heatCleared'> {
   const heat = Math.max(0, Math.floor(run.heat ?? 0));
-  if ((run.depth ?? 1) < HEAT.clearDepth) return { heatUnlocked: records.heatUnlocked, heatCleared: records.heatCleared };
+  if (!run.won && (run.depth ?? 1) < HEAT.clearDepth) return { heatUnlocked: records.heatUnlocked, heatCleared: records.heatCleared };
   return {
     heatUnlocked: Math.min(HEAT.max, Math.max(records.heatUnlocked, heat + 1)),
     heatCleared: Math.max(records.heatCleared, heat),
+  };
+}
+
+/** A won run counts once, keeps the fastest time, and adds its wizard and heat (V1). */
+function winRecords(records: SaveData['records'], run: RunResult): Pick<SaveData['records'], 'wins' | 'fastestWin' | 'winners' | 'wonHeat'> {
+  const { wins, fastestWin, winners, wonHeat } = records;
+  if (!run.won) return { wins, fastestWin, winners, wonHeat };
+  const at = Math.max(0, run.wonAt ?? run.time);
+  const wizard = run.wizard;
+  return {
+    wins: wins + 1,
+    fastestWin: fastestWin > 0 ? Math.min(fastestWin, at) : at,
+    winners: wizard && !winners.includes(wizard) ? WIZARD_IDS.filter((id) => winners.includes(id) || id === wizard) : winners,
+    wonHeat: Math.max(wonHeat, Math.max(0, Math.floor(run.heat ?? 0))),
   };
 }
 

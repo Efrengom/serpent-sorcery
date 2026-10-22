@@ -5,6 +5,7 @@ import {
   BASS_CALM,
   bassRoot,
   LAYERS,
+  FINALE_STING,
   parsePhrase,
   prepareTheme,
   SCENES,
@@ -90,11 +91,13 @@ export class MusicPlayer {
   readonly output: GainNode;
   private readonly tracks = new Map<string, Track>();
   private readonly beds = new Map<AmbienceId, AmbienceBed>();
-  private readonly stings = new Map<MapId, Phrase>();
+  private readonly stings = new Map<MapId | 'finale', Phrase>();
   private current: Track;
   private sceneName: MusicScene = 'calm';
   private mapId: MapId = 'ruins';
   private loopN = 0;
+  /** Playing the Ascendant's music, in place of the map's own. */
+  private finaleOn = false;
   /** Notes scheduled so far, for tests. */
   scheduled = 0;
   /** When set, only this layer is heard (for measuring the mix). */
@@ -247,17 +250,19 @@ export class MusicPlayer {
 
   /**
    * What should play: a map's music (`loop` deeper loops of the map order raise its key) in an
-   * arrangement. A new theme crossfades in on the beat; a new arrangement of the same theme
-   * changes on the bar line; silence (the player died) cuts at once.
+   * arrangement, or with `finale` the Ascendant's theme in its place. A new theme crossfades in
+   * on the beat; a new arrangement of the same theme changes on the bar line; silence (the
+   * player died) cuts at once.
    */
-  cue(map: MapId, loop: number, scene: MusicScene, now: number): void {
-    if (map === this.mapId && loop === this.loopN && scene === this.sceneName) return;
+  cue(map: MapId, loop: number, scene: MusicScene, now: number, finale = false): void {
+    if (map === this.mapId && loop === this.loopN && scene === this.sceneName && finale === this.finaleOn) return;
     const victory = scene === 'victory' && this.sceneName !== 'victory';
     this.mapId = map;
     this.loopN = loop;
     this.sceneName = scene;
+    this.finaleOn = finale;
     this.applyAmbience(now);
-    const next = this.track(themeFor(map, scene), transposeFor(loop));
+    const next = this.track(finale ? 'finale' : themeFor(map, scene), transposeFor(loop));
     const cur = this.current;
     if (!cur.running) {
       // Nothing is playing yet; start() applies the scene.
@@ -364,11 +369,12 @@ export class MusicPlayer {
   /** The map's two-bar victory sting, played once at `time` with the track's band and key. */
   private playSting(t: Track, time: number): void {
     if (!this.musicOn) return;
-    let phrase = this.stings.get(this.mapId);
+    const key = this.finaleOn ? 'finale' : this.mapId;
+    let phrase = this.stings.get(key);
     if (!phrase) {
-      const s = SOUNDTRACKS[this.mapId].sting;
+      const s = this.finaleOn ? FINALE_STING : SOUNDTRACKS[this.mapId].sting;
       phrase = parsePhrase(s.chords, s.lead);
-      this.stings.set(this.mapId, phrase);
+      this.stings.set(key, phrase);
     }
     const { band, stepDur, transpose: tr } = t;
     const theme = t.score.theme;

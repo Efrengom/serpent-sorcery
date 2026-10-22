@@ -26,6 +26,12 @@ export const CAMERA = {
   maxViewWidth: 1600,
   minViewWidth: 1000,
   maxViewHeight: 1100,
+  /**
+   * Phones (a window under 560 CSS pixels wide, or 500 tall) zoom in a little: 600 units top to
+   * bottom, at least 640 across, so the serpent stays big enough to see on a small screen.
+   */
+  compactViewHeight: 600,
+  compactMinViewWidth: 640,
   /** How far ahead of the head the camera looks, and its catch-up time constant in seconds. */
   lookahead: 120,
   ease: 0.25,
@@ -118,9 +124,27 @@ export const NAV = {
   bossPortalDistance: 300,
 };
 
+/**
+ * Touch screens: one thumb steers with a floating stick, the other draws. The steering thumb
+ * owns this fraction of the screen's width on its side; anywhere else a touch draws a sigil.
+ */
+export const TOUCH = {
+  zone: 0.42,
+  /** CSS pixels the thumb must move before it steers, and how far the knob travels before the base follows. */
+  deadzone: 10,
+  radius: 56,
+  /** Seconds of a run during which the two zones are labelled, on a touch screen. */
+  hintTime: 8,
+};
+
 export const VIEW = {
-  /** CSS pixels reserved at the top of the window for the HUD bar. */
+  /** CSS pixels reserved at the top of the window for the HUD bar (slimmer on a short phone screen, two rows on a narrow one). */
   topInset: 78,
+  topInsetShort: 56,
+  topInsetNarrow: 102,
+  /** Window sizes that count as a phone: narrower than this, or no taller than this. */
+  narrowBelow: 560,
+  shortAtMost: 500,
   sideInset: 14,
   bottomInset: 14,
   maxShake: 7,
@@ -862,7 +886,7 @@ export const ARCHETYPE: Record<EnemyKind, 'chaser' | 'caster' | 'brute' | 'rival
 };
 
 /** Each map's boss: Ouroboros's body and AI, with its own name, look and two moves of its own. */
-export type BossId = 'ouroboros' | 'sporemaw' | 'rimecoil' | 'pyrecoil';
+export type BossId = 'ouroboros' | 'sporemaw' | 'rimecoil' | 'pyrecoil' | 'ascendant';
 export type BossMove = 'slither' | 'volley' | 'charge' | 'summon' | 'meteors' | 'spores' | 'burrow' | 'icicles' | 'iceRing';
 export const BOSSES: Record<
   BossId,
@@ -879,6 +903,11 @@ export const BOSSES: Record<
     summon: [EnemyKind, EnemyKind];
     /** Its charge leaves burning ground. */
     fireTrail: boolean;
+    /**
+     * A boss with phases (the Ascendant) changes its moves, summons and trail as its health falls
+     * below each phase's `at` (a fraction of its full health), announcing each.
+     */
+    phases?: { at: number; moves: BossMove[]; summon: [EnemyKind, EnemyKind]; fireTrail: boolean; banner: [string, string] }[];
   }
 > = {
   sporemaw: {
@@ -910,6 +939,33 @@ export const BOSSES: Record<
     moves: ['volley', 'charge', 'summon', 'volley', 'charge'],
     summon: ['chaser', 'caster'],
     fireTrail: false,
+  },
+  ascendant: {
+    name: 'Azhdaha, the Archmage Ascendant',
+    short: 'Azhdaha',
+    enraged: 'Faster, and fiercer with every spell',
+    warning: ['The ground splits…', 'The four Archmages’ magic gathers into one'],
+    arrival: 'It wields every Archmage’s magic — and learns more as it bleeds',
+    moves: ['volley', 'spores', 'charge', 'summon', 'burrow'],
+    summon: ['chaser', 'caster'],
+    fireTrail: false,
+    phases: [
+      { at: 1, moves: ['volley', 'spores', 'charge', 'summon', 'burrow'], summon: ['chaser', 'puffcap'], fireTrail: false, banner: ['', ''] },
+      {
+        at: 2 / 3,
+        moves: ['icicles', 'charge', 'iceRing', 'volley', 'summon', 'icicles'],
+        summon: ['rattler', 'frostArcher'],
+        fireTrail: false,
+        banner: ['Azhdaha turns to frost', 'Icicles down its lines, and rings of ice'],
+      },
+      {
+        at: 1 / 3,
+        moves: ['meteors', 'charge', 'icicles', 'burrow', 'spores', 'meteors', 'volley'],
+        summon: ['imp', 'pyromancer'],
+        fireTrail: true,
+        banner: ['Azhdaha burns', 'Meteors and fire — and everything it has learned'],
+      },
+    ],
   },
   pyrecoil: {
     name: 'Pyrecoil, the Ember Archmage',
@@ -1084,6 +1140,8 @@ export const REWARDS = {
   perKill: 0.5,
   perLevel: 3,
   perBoss: 50,
+  /** Defeating the Archmage Ascendant (see FINALE in finale.ts). */
+  victory: 300,
 };
 
 export const EFFECTS = {

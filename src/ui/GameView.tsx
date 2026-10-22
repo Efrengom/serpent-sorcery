@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { audio } from '../game/audio';
-import { Game, type HudSnapshot, type LevelUpOffer, type Phase, type RelicOffer } from '../game/engine';
+import { Game, type HudSnapshot, type LevelUpOffer, type Phase, type RelicOffer, type VictorySummary } from '../game/engine';
 import type { RelicId } from '../game/relics';
+import type { SiteOffer } from '../game/sites';
 import type { CommitOutcome, RunResult } from '../game/persistence';
 import type { GameOptions } from '../game/options';
 import type { MetaLevels, UpgradeChoice } from '../game/progression';
 import type { RunSetup } from '../game/world';
 import { Hud } from './Hud';
-import { GameOverPanel, LevelUpPanel, PauseMenu, RelicPanel } from './Overlays';
+import { GameOverPanel, LevelUpPanel, PauseMenu, RelicPanel, SitePanel, VictoryPanel } from './Overlays';
 import type { VolumeControls } from './VolumeControls';
 
 interface Props {
@@ -50,6 +51,8 @@ export function GameView({
   const [hud, setHud] = useState<HudSnapshot | null>(null);
   const [levelUp, setLevelUp] = useState<LevelUpOffer | null>(null);
   const [relicOffer, setRelicOffer] = useState<RelicOffer | null>(null);
+  const [victory, setVictory] = useState<VictorySummary | null>(null);
+  const [siteOffer, setSiteOffer] = useState<SiteOffer | null>(null);
   const [over, setOver] = useState<{ result: RunResult; outcome: CommitOutcome } | null>(null);
 
   // Keep latest callbacks/props reachable from the long-lived Game without re-creating it.
@@ -66,6 +69,8 @@ export function GameView({
         onPhase: setPhase,
         onLevelUp: setLevelUp,
         onRelicOffer: setRelicOffer,
+        onVictory: setVictory,
+        onSiteOffer: setSiteOffer,
         onGameOver: (result) => {
           const outcome = latest.current.onCommitRun(result);
           setOver({ result, outcome });
@@ -127,6 +132,8 @@ export function GameView({
     setOver(null);
     setLevelUp(null);
     setRelicOffer(null);
+    setVictory(null);
+    setSiteOffer(null);
     gameRef.current?.restart(latest.current.meta, latest.current.setup);
   }, []);
 
@@ -153,6 +160,10 @@ export function GameView({
         />
       )}
       {phase === 'relic' && relicOffer && <RelicPanel offer={relicOffer} onChoose={chooseRelic} />}
+      {phase === 'event' && siteOffer && <SitePanel offer={siteOffer} onChoose={(c) => gameRef.current?.chooseSite(c)} />}
+      {phase === 'victory' && victory && (
+        <VictoryPanel victory={victory} onClaim={() => gameRef.current?.claimVictory()} onPlayOn={() => gameRef.current?.playOn()} />
+      )}
       {phase === 'levelup' && levelUp && (
         <LevelUpPanel offer={levelUp} onChoose={choose} onReroll={reroll} onBanish={banish} onSkip={skip} onAutoDraft={autoDraft} />
       )}

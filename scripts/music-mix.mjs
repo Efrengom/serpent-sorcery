@@ -3,6 +3,7 @@
 //
 //   node scripts/music-mix.mjs            # every map, scene, layer, ambience and sting
 //   node scripts/music-mix.mjs hollows    # one map (always compared with the Ruins)
+//   node scripts/music-mix.mjs finale     # just the Archmage Ascendant's theme
 //
 // Levels are weighted RMS in dBFS (bass counts less, roughly as heard). For each map it prints
 // every arrangement against the Ruins' same arrangement, each layer played alone against the
@@ -95,6 +96,25 @@ for (const map of maps) {
   if (out.ambience.rms > -150) console.log(`  ambience alone ${out.ambience.rms.toFixed(1)} (calm music ${out.scenes.calm.rms.toFixed(1)}, ${fmt(out.ambience.rms - out.scenes.calm.rms)})  peak ${out.ambience.peak.toFixed(1)}`);
   const sting = out.sting.perSecond;
   console.log(`  sting, per second after the boss theme: ${sting.map((x) => x.toFixed(1)).join(' ')}  peak ${out.sting.peak.toFixed(1)}`);
+}
+
+// The Archmage Ascendant's finale, against the Ruins' boss theme (and its calm arrangement, which
+// plays over the victory screen, against the Ruins' calm).
+if (!ONLY || ONLY === 'finale') {
+  const out = { scenes: {}, layers: {}, sting: null };
+  for (const scene of ['calm', ...BOSS_SCENES]) out.scenes[scene] = await render(scene, { map: 'ember', finale: true });
+  for (const solo of LAYERS.filter((l) => l !== 'bassCalm')) out.layers[solo] = await render('boss2', { map: 'ember', finale: true, solo });
+  out.sting = await render('victory', { map: 'ember', finale: true, from: 'boss2', seconds: 6 });
+  report.finale = out;
+  console.log('\n== finale');
+  console.log('  arrangement   level   vs ruins   peak');
+  for (const scene of ['calm', ...BOSS_SCENES]) {
+    const r = out.scenes[scene];
+    console.log(`  ${scene.padEnd(12)} ${r.rms.toFixed(1).padStart(6)}   ${fmt(r.rms - ref.scenes[scene].rms).padStart(6)}   ${r.peak.toFixed(1)}`);
+  }
+  console.log('  layers alone (boss), vs ruins:');
+  console.log('   ' + LAYERS.filter((l) => l !== 'bassCalm').map((l) => `${l} ${fmt(out.layers[l].rms - ref.layers.boss[l].rms)}`).join('  '));
+  console.log(`  sting, per second after the boss theme: ${out.sting.perSecond.map((x) => x.toFixed(1)).join(' ')}  peak ${out.sting.peak.toFixed(1)}`);
 }
 
 fs.mkdirSync(path.join(ROOT, 'playtest-output'), { recursive: true });

@@ -1,12 +1,15 @@
 import type { Camera } from './camera';
 import { BUFF_INFO, HEAL_COLOR } from './breakables';
 import { AREA_STYLE, ClassicFloor } from './classicFloor';
-import { ARCHETYPE, CAMERA, ENEMIES, PIXEL_ART, SNAKE, VIEW, type BossId } from './config';
-import { drawBlastMarks, drawBlastsInFlight, drawDescent, drawGroundFx, drawHazardShimmer } from './hazardDraw';
+import { ARCHETYPE, CAMERA, ENEMIES, PIXEL_ART, SNAKE, TOUCH, VIEW, type BossId } from './config';
+import { drawBlastMarks, drawBlastsInFlight, drawDescent, drawFinale, drawGroundFx, drawHazardShimmer, drawSites } from './hazardDraw';
+import { SITE_INFO } from './sites';
+import { ASCENDANT_COLORS } from './finale';
 import { aimLines, attackLane, fadeLevel, flameCone, windup } from './telegraph';
 import { castRay, clearanceAt } from './terrain';
 import { shakeOffset } from './effects';
 import type { Pt } from './gesture';
+import type { TouchView } from './input';
 import type { MapLayout } from './maps/types';
 import { clamp, dist, mulberry32, TAU, type Vec } from './math';
 import { fillIcon, strokeIcon } from './icons';
@@ -43,6 +46,8 @@ import {
   drawBlastMarks as drawBlastMarksPixel,
   drawBlastsInFlight as drawBlastsInFlightPixel,
   drawDescent as drawDescentPixel,
+  drawFinale as drawFinalePixel,
+  drawSites as drawSitesPixel,
   drawGroundFx as drawGroundFxPixel,
   drawHazards,
   setDrawBounds,
@@ -107,6 +112,8 @@ const SERPENT_LOOK: Record<
   sporemaw: { seg: ['#24645c', '#143a3a'], head: '#2a5a52', hat: '#9a2a86', band: '#5fffd0', eye: '#ff8ae8', spot: 'rgba(255,120,220,0.5)', enrage: '#ff5ad8', crown: 'cap' },
   rimecoil: { seg: ['#5a8cbc', '#2c4a72'], head: '#4a7aaa', hat: '#16284a', band: '#bfe6ff', eye: '#eaf8ff', spot: 'rgba(230,248,255,0.55)', enrage: '#7ad8ff', crown: 'crest' },
   pyrecoil: { seg: ['#5a1a0a', '#2e0e06'], head: '#4a1206', hat: '#1a0604', band: '#ff7a2a', eye: '#ffb35c', spot: 'rgba(255,140,60,0.6)', enrage: '#ff6a2a' },
+  // The Ascendant's body is banded in all four Archmages' colours (see drawEnemySnake).
+  ascendant: { seg: ['#2a1450', '#2a1450'], head: '#3a1a6a', hat: '#140a28', band: '#ffd45e', eye: '#fff4c0', spot: 'rgba(255,244,192,0.35)', enrage: '#ffd45e' },
 };
 
 export class Renderer {
@@ -133,6 +140,8 @@ export class Renderer {
   private classicFloor: ClassicFloor | null = null;
   private vignette: HTMLCanvasElement | null = null;
   private minimap: Minimap | null = null;
+  /** Touch input to show: the steering stick, and the zones' labels early in a run. */
+  touch: TouchView | null = null;
   private glows = new Map<string, HTMLCanvasElement>();
   // Pixel-art style
   private pixel: boolean;
@@ -192,9 +201,10 @@ export class Renderer {
       return;
     }
     // The view is CAMERA.viewHeight tall (taller only in narrow windows) and as wide as the window allows.
+    const fit = this.fitSize();
     const availW = cssW - VIEW.sideInset * 2;
-    const availH = cssH - VIEW.topInset - VIEW.bottomInset;
-    this.scale = Math.max(0.2, Math.min(availH / CAMERA.viewHeight, availW / CAMERA.minViewWidth));
+    const availH = cssH - this.topInset - VIEW.bottomInset;
+    this.scale = Math.max(0.2, Math.min(availH / fit.h, availW / fit.w));
     this.viewW = Math.min(CAMERA.maxViewWidth, availW / this.scale);
     this.viewH = Math.min(CAMERA.maxViewHeight, availH / this.scale);
     this.ox = (cssW - this.viewW * this.scale) / 2;
@@ -211,9 +221,10 @@ export class Renderer {
   private layoutPixel(): void {
     void document.fonts?.load(`16px ${PIXEL_FONT}`).catch(() => undefined);
     const dpr = this.dpr;
+    const size = this.fitSize();
     const availW = (this.cssW - VIEW.sideInset * 2) * dpr;
-    const availH = (this.cssH - VIEW.topInset) * dpr;
-    const fit = Math.min(availW / (CAMERA.minViewWidth / P), availH / (CAMERA.viewHeight / P));
+    const availH = (this.cssH - this.topInset) * dpr;
+    const fit = Math.min(availW / (size.w / P), availH / (size.h / P));
     const whole = Math.floor(fit);
     const f = whole >= PIXEL_ART.minIntegerScale ? whole : Math.max(0.5, fit);
     this.pixelFactor = f;
@@ -228,7 +239,7 @@ export class Renderer {
     const devW = this.lowW * f;
     const devH = this.lowH * f;
     this.devX = Math.round((this.cssW * dpr - devW) / 2);
-    this.devY = Math.round(VIEW.topInset * dpr + Math.max(0, (availH - VIEW.bottomInset * dpr - devH) / 2));
+    this.devY = Math.round(this.topInset * dpr + Math.max(0, (availH - VIEW.bottomInset * dpr - devH) / 2));
     this.scale = f / P / dpr;
     this.ox = this.devX / dpr;
     this.oy = this.devY / dpr;
@@ -242,6 +253,21 @@ export class Renderer {
       this.uiCtx = this.ui.getContext('2d')!;
       this.vignettes = [];
     }
+  }
+
+  /** A phone-sized window: narrower than VIEW.narrowBelow or no taller than VIEW.shortAtMost (the HUD's CSS uses the same sizes). */
+  get compact(): boolean {
+    return this.cssW < VIEW.narrowBelow || this.cssH <= VIEW.shortAtMost;
+  }
+
+  /** CSS pixels the HUD bar takes at the top of the window. */
+  private get topInset(): number {
+    return this.cssW < VIEW.narrowBelow ? VIEW.topInsetNarrow : this.cssH <= VIEW.shortAtMost ? VIEW.topInsetShort : VIEW.topInset;
+  }
+
+  /** The world size the view is fitted to: the usual height and least width, or a closer one on a phone. */
+  private fitSize(): { w: number; h: number } {
+    return this.compact ? { w: CAMERA.compactMinViewWidth, h: CAMERA.compactViewHeight } : { w: CAMERA.minViewWidth, h: CAMERA.viewHeight };
   }
 
   /**
@@ -347,6 +373,8 @@ export class Renderer {
     this.drawClearing(world, realTime);
     drawGroundFx(ctx, world, realTime, near, glow);
     drawDescent(ctx, world, realTime, glow, this.view.reduceFlashing);
+    drawFinale(ctx, world, realTime, glow, this.view.reduceFlashing);
+    drawSites(ctx, world, realTime, near, glow, this.view.reduceFlashing);
     this.drawPortals(world, realTime);
     this.drawFrostFields(world, realTime);
     this.drawCrystals(world);
@@ -394,6 +422,7 @@ export class Renderer {
     this.drawGesture(gesture);
     this.drawReading(gesture, world);
     this.drawScreenFloaters(world);
+    this.drawTouch(world);
   }
 
   /** True when (x, y) is within `margin` world units of the view. */
@@ -430,6 +459,7 @@ export class Renderer {
   /** What deserves an arrow when it's off-screen: the way down, the boss (or its portal), else the clearing it's coming to. */
   private pointers(world: World): Pointer[] {
     if (world.descent) return [{ x: world.descent.x, y: world.descent.y, label: 'Way down', color: COLORS.nova }];
+    if (world.finale?.stage === 'rising') return [{ x: world.finale.x, y: world.finale.y, label: 'Rising', color: '#ffd45e' }];
     const boss = world.boss ?? world.portals.find((p) => p.kind === 'boss');
     if (boss) return [{ x: boss.x, y: boss.y, label: 'Boss', color: '#ff6a8a' }];
     if (world.bossClearing >= 0) {
@@ -507,7 +537,7 @@ export class Renderer {
 
   private drawMinimap(world: World): void {
     if (!this.view.minimap) return;
-    this.minimap ??= new Minimap(world.map, world.area, this.pixel, this.dpr);
+    this.minimap ??= new Minimap(world.map, world.area, this.pixel, this.dpr, this.compact ? 120 : undefined);
     const m = this.minimap;
     const x = Math.round(this.ox + this.viewW * this.scale - m.w - 10);
     const y = Math.round(this.oy + this.viewH * this.scale - m.h - 10);
@@ -542,6 +572,8 @@ export class Renderer {
     if (world.bossClearing >= 0) drawClearingMark(low, world.map.clearings[world.bossClearing], realTime, this.view.reduceFlashing);
     drawGroundFxPixel(low, world, realTime);
     drawDescentPixel(low, world, realTime, quiet);
+    drawFinalePixel(low, world, realTime, quiet);
+    drawSitesPixel(low, world, realTime, quiet);
     drawFrostFields(low, world, realTime);
     drawPortals(low, world, realTime);
     drawCrystals(low, world);
@@ -601,6 +633,63 @@ export class Renderer {
     main.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.drawReading(gesture, world);
     this.drawScreenFloaters(world);
+    this.drawTouch(world);
+  }
+
+  /**
+   * The steering stick under the thumb (a ring where it landed, a knob where it is), and early in
+   * a run on a touch screen, a label on each side saying which thumb does what.
+   */
+  private drawTouch(world: World): void {
+    const t = this.touch;
+    if (!t?.seen) return;
+    const ctx = this.mainCtx;
+    ctx.save();
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    if (world.time < TOUCH.hintTime) {
+      const a = Math.min(1, (TOUCH.hintTime - world.time) / 2) * 0.55;
+      const steerX = t.side === 'left' ? this.cssW * TOUCH.zone * 0.5 : this.cssW * (1 - TOUCH.zone * 0.5);
+      const drawX = t.side === 'left' ? this.cssW * (0.5 + TOUCH.zone / 2) : this.cssW * (0.5 - TOUCH.zone / 2);
+      const y = this.cssH - 96;
+      ctx.globalAlpha = a;
+      ctx.font = this.font(17, 800);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#f4ecff';
+      ctx.strokeStyle = 'rgba(10,6,20,0.8)';
+      ctx.lineWidth = 4;
+      for (const [x, text] of [
+        [steerX, 'Hold here to steer'],
+        [drawX, 'Draw sigils here'],
+      ] as const) {
+        ctx.strokeText(text, x, y);
+        ctx.fillText(text, x, y);
+      }
+      ctx.globalAlpha = 1;
+    }
+    const s = t.stick;
+    if (s) {
+      const dx = s.x - s.ox;
+      const dy = s.y - s.oy;
+      const d = Math.hypot(dx, dy);
+      const k = d > TOUCH.radius ? TOUCH.radius / d : 1;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(244,236,255,0.45)';
+      ctx.fillStyle = 'rgba(20,12,40,0.25)';
+      ctx.beginPath();
+      if (this.pixel) ctx.rect(s.ox - TOUCH.radius, s.oy - TOUCH.radius, TOUCH.radius * 2, TOUCH.radius * 2);
+      else ctx.arc(s.ox, s.oy, TOUCH.radius, 0, TAU);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = d >= TOUCH.deadzone ? 'rgba(255,212,94,0.75)' : 'rgba(244,236,255,0.55)';
+      ctx.beginPath();
+      const kx = s.ox + dx * k;
+      const ky = s.oy + dy * k;
+      if (this.pixel) ctx.rect(kx - 18, ky - 18, 36, 36);
+      else ctx.arc(kx, ky, 22, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   private drawPixelOverlay(world: World, gesture: GestureView, t: number): void {
@@ -1616,9 +1705,10 @@ export class Renderer {
       this.drawMound(e.x, e.y, e.r * 1.3, e.heading, world.time, true);
       return;
     }
-    if (boss && e.enraged) {
+    const ascendant = boss && e.bossId === 'ascendant';
+    if (boss && (e.enraged || ascendant)) {
       ctx.globalCompositeOperation = 'lighter';
-      this.drawGlow(look.enrage, e.x, e.y, e.r * 3.2, quiet ? 0.35 : 0.35 + Math.sin(world.time * 8) * 0.12);
+      this.drawGlow(look.enrage, e.x, e.y, e.r * 3.2, quiet ? 0.35 : (e.enraged ? 0.35 : 0.2) + Math.sin(world.time * 8) * 0.12);
       ctx.globalCompositeOperation = 'source-over';
     }
     // A Salamander's breath: a roaring cone of flame while it attacks.
@@ -1647,7 +1737,7 @@ export class Renderer {
     }
     for (let i = segs.length - 1; i >= 0; i--) {
       const r = e.segRadius * (1 - (i / segs.length) * 0.45);
-      ctx.fillStyle = flash ? '#ffd6de' : i % 3 === 0 ? look.seg[0] : look.seg[1];
+      ctx.fillStyle = flash ? '#ffd6de' : ascendant ? (i % 2 === 0 ? ASCENDANT_COLORS[(i / 2) % 4] : look.seg[0]) : i % 3 === 0 ? look.seg[0] : look.seg[1];
       ctx.beginPath();
       ctx.arc(segs[i].x, segs[i].y, r, 0, TAU);
       ctx.fill();
@@ -3173,6 +3263,15 @@ export class Renderer {
     const ctx = this.ctx;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    // Each site's name under it while it can still be used (once it is well inside the view).
+    for (const s of world.sites) {
+      if (s.spent || !this.near(s.x, s.y, -80)) continue;
+      const text = SITE_INFO[s.kind].name;
+      if (this.pixel) {
+        const p = this.worldToScreen({ x: s.x, y: s.y + 66 });
+        this.drawFloater(text, p.x, p.y, 14, SITE_INFO[s.kind].color, 0.45);
+      } else this.drawFloater(text, s.x, s.y + 66, 14 / Math.max(0.6, this.scale), SITE_INFO[s.kind].color, 0.45);
+    }
     for (const f of world.floaters) {
       if (f.screen) continue;
       if (this.pixel) {

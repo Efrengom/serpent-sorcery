@@ -157,6 +157,17 @@ function BitmapIcon({ icon, scale, className }: { icon: Bitmap; scale: number; c
 }
 
 const UPGRADE_ICON: Record<string, IconName> = {
+  // A shrine's pacts and a merchant's wares
+  'site:blood': 'heart',
+  'site:haste': 'hourglass',
+  'site:plenty': 'crystal',
+  'site:glass': 'pierce',
+  'site:stone': 'plus',
+  'site:draught': 'potion',
+  'site:tome': 'eye',
+  'site:quickening': 'hourglass',
+  'site:empower': 'star',
+  'site:swiftscale': 'fork',
   potency: 'star',
   multibolt: 'fork',
   pierce: 'pierce',

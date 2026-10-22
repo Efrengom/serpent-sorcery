@@ -7,6 +7,7 @@ import { buildLayout, mapArea, mapForIndex, mapSeed } from './maps';
 import { clamp, dist, TAU, type Vec } from './math';
 import { createFlowField, refreshFlowField } from './nav';
 import { offerRelics, RELIC_TUNING, takeRelic, type RelicId } from './relics';
+import { placeSites } from './sites';
 import { refreshStats } from './world';
 import { COLORS } from './palette';
 import { clearanceAt, pushOut } from './terrain';
@@ -18,8 +19,8 @@ import type { World } from './world';
  * takes the serpent to the next map, one depth deeper, with everything it has learned.
  */
 
-/** Opens the way down at (x, y), once the boss is dead. */
-export function beginDescent(world: World, x: number, y: number): void {
+/** Opens the way down at (x, y), once the boss is dead (or, after a win, when the player plays on). */
+export function beginDescent(world: World, x: number, y: number, banner = { text: 'The Archmage falls!', sub: 'A way down opens where it fell: steer into it' }): void {
   const at = portalSpot(world, x, y);
   for (const e of world.enemies) {
     if (e.dead) continue;
@@ -34,7 +35,7 @@ export function beginDescent(world: World, x: number, y: number): void {
   world.bossWarned = false;
   for (const c of world.crystals) c.magnet = true;
   world.descent = { x: at.x, y: at.y, t: 0 };
-  world.banner = { text: 'The Archmage falls!', sub: 'A way down opens where it fell: steer into it', t: 0, max: 3.6, color: COLORS.nova };
+  world.banner = { ...banner, t: 0, max: 3.6, color: COLORS.nova };
   world.sfx('descend');
 }
 
@@ -146,6 +147,7 @@ export function enterNextMap(world: World): void {
   refreshFlowField(world.flow, s.x, s.y);
   placeBreakables(world);
   placeVents(world);
+  placeSites(world);
 
   world.bossClearing = -1;
   world.bossWarned = false;

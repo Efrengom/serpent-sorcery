@@ -5,15 +5,18 @@ import { castPower, castTier, tierBonusLabel } from './cast';
 import { ARENA, ASPECTS, BOSSES, BUFFS, CLEAN_CAST, DUOS, HAZARDS, EVOLUTIONS, GESTURE, HIT_STOP, SIM, SPELL_IDS, SPELL_INFO, SPELLS, type SpellId } from './config';
 import { updateConstrict } from './constrict';
 import { gainXp, hurtPlayer, updateContacts, updateCrystals, updateShots } from './combat';
-import { leaveForNextMap, updateDescent } from './descent';
+import { beginDescent, leaveForNextMap, updateDescent } from './descent';
+import { updateFinale, victoryReady } from './finale';
+import { chooseAtSite, riftKills, riftLeft, siteOffer, SITES, updateSites, type SiteOffer } from './sites';
 import { updateDirector, updateEnemies, updatePortals } from './enemies';
 import { onIce, updateHazards } from './hazards';
 import { burst, floater, updateEffects } from './effects';
 import { recognize, type Pt } from './gesture';
 import { InputManager } from './input';
 import { defaultOptions, type GameOptions } from './options';
-import { clamp, type Vec } from './math';
-import { arenaPressure, IntensityTracker, musicCue } from './music/mood';
+import { clamp, mulberry32, type Vec } from './math';
+import { dailyScore } from './daily';
+import { arenaPressure, IntensityTracker, musicCue, VICTORY_HOLD } from './music/mood';
 import { COLORS } from './palette';
 import type { RunResult } from './persistence';
 import { applyChoice, banishFromOffer, rerollOffer, rollOffer, skipLevelUp } from './levelup';
@@ -49,7 +52,16 @@ import {
 import { castUltimate, ULTIMATES, ultimateCooldown, updateUltimate } from './ultimates';
 import { createWorld, DEFAULT_SETUP, refreshStats, type GestureView, type RunSetup, type SigilReading, type TimedBuff, type World } from './world';
 
-export type Phase = 'playing' | 'paused' | 'levelup' | 'relic' | 'dying' | 'gameover';
+export type Phase = 'playing' | 'paused' | 'levelup' | 'relic' | 'event' | 'victory' | 'dying' | 'gameover';
+
+/** The run so far, when the Archmage Ascendant falls (V1), for the victory screen. */
+export interface VictorySummary {
+  time: number;
+  kills: number;
+  level: number;
+  bossKills: number;
+  wizard: string;
+}
 
 export interface HudSnapshot {
   hp: number;
@@ -73,6 +85,9 @@ export interface HudSnapshot {
   buffs: { id: TimedBuff; left: number; total: number }[];
   /** Relics carried, in the order they were taken. */
   relics: RelicId[];
+  /** A rift being fought (elites slain of those needed, seconds left), and a cursed chest's curse. */
+  rift: { kills: number; need: number; left: number } | null;
+  curse: number;
   /** The wizard's ultimate: its name, colour, cooldown and whether it's running. */
   ultimate: { name: string; color: string; remaining: number; total: number; active: number; flash: number };
 }
@@ -84,6 +99,8 @@ export interface RelicOffer {
   depth: number;
   /** A waystone start's catch-up: which of its relic choices this is. */
   draft: { n: number; total: number } | null;
+  /** A won rift's reward, rather than the way down's. */
+  source?: 'rift';
 }
 
 /** A level-up's cards, and the tools left for an offer you don't like. */
@@ -102,6 +119,10 @@ export interface GameEvents {
   /** The way down offers relics; answer with chooseRelic. */
   onRelicOffer(offer: RelicOffer): void;
   onGameOver(result: RunResult): void;
+  /** A shrine or merchant's panel opened (answer with chooseSite), or closed (null). */
+  onSiteOffer(offer: SiteOffer | null): void;
+  /** The Ascendant has fallen: answer with claimVictory or playOn. */
+  onVictory(summary: VictorySummary): void;
   onHud(hud: HudSnapshot): void;
   onToggleMute(): void;
   onToggleArt(): void;
@@ -131,6 +152,13 @@ export class Game {
   private draftLevels = 0;
   private finished = false;
   private destroyed = false;
+  /** The victory screen has been offered this run (it is offered once). */
+  private victoryOffered = false;
+  /** Where level-up and relic offers come from: the daily run's seed, or chance. */
+  private offerRng: () => number = Math.random;
+  /** The site whose panel is open, and whether the relic offer on screen is a rift's. */
+  private siteId = -1;
+  private riftRelics = false;
   private runId = newRunId();
   private intensity = new IntensityTracker();
   private readonly gesture: GestureView = { active: false, points: [], target: null, fade: null, reading: null };
@@ -178,13 +206,16 @@ export class Game {
   /** Applies the player's options (shake, flashing, warnings, speed, keys); safe mid-run. */
   setOptions(options: GameOptions): void {
     if (options.bindings !== this.options.bindings) this.input.setBindings(options.bindings);
+    this.input.setSteerSide(options.steerRight ? 'right' : 'left');
     this.options = options;
     this.renderer.view = options;
   }
 
   private makeWorld(): World {
     const setup = { ...this.setup, startDepth: this.setup.startDepth ?? devStartDepth() };
-    return createWorld(this.meta, (name) => audio.play(name, name === 'pickup' ? this.world.pickupPitch : 0), Date.now(), setup);
+    // A seeded run (the daily) deals the same offers to the same choices.
+    this.offerRng = setup.seed !== undefined ? mulberry32((setup.seed ^ 0x5bd1e995) >>> 0) : Math.random;
+    return createWorld(this.meta, (name) => audio.play(name, name === 'pickup' ? this.world.pickupPitch : 0), setup.seed ?? Date.now(), setup);
   }
 
   start(): void {
@@ -213,7 +244,7 @@ export class Game {
     const draft = w.draft;
     if (!draft) return;
     if (draft.relics > 0) {
-      const offer = offerRelics(w, Math.random, w.mapIndex);
+      const offer = offerRelics(w, this.offerRng, w.mapIndex);
       if (offer.length > 0) {
         w.relicOffer = offer;
         this.draftRelics.n++;
@@ -250,7 +281,7 @@ export class Game {
       this.pendingLevelUps--;
       if (this.pendingLevelUps > 0) {
         this.offerLevel = w.level - this.pendingLevelUps + 1;
-        this.offer = rollOffer(w, this.offerLevel, Math.random);
+        this.offer = rollOffer(w, this.offerLevel, this.offerRng);
       }
     }
     w.hp = w.stats.maxHp;
@@ -314,6 +345,8 @@ export class Game {
     this.runId = newRunId();
     this.intensity = new IntensityTracker();
     this.finished = false;
+    this.victoryOffered = false;
+    this.riftRelics = false;
     this.pendingLevelUps = 0;
     this.dyingTime = 0;
     this.gesture.fade = null;
@@ -327,6 +360,26 @@ export class Game {
   /** Ends the run from the pause menu; rewards are still banked. */
   endRun(): void {
     if (this.phase === 'paused' || this.phase === 'playing') this.finishRun();
+  }
+
+  /** Ends a won run from the victory screen, banking it with the victory bonus. */
+  claimVictory(): void {
+    if (this.phase === 'victory') this.finishRun();
+  }
+
+  /** Plays on after a win: a way down opens where the Ascendant fell, into the endless depths. */
+  playOn(): void {
+    if (this.phase !== 'victory') return;
+    const w = this.world;
+    const f = w.finale;
+    w.finale = null;
+    if (f) {
+      beginDescent(w, f.x, f.y, { text: 'The endless depths', sub: 'A way down opens: steer into it to play on' });
+      // Straight to the next map's music: the victory has had its sting.
+      if (w.descent) w.descent.t = VICTORY_HOLD;
+    }
+    this.last = performance.now();
+    this.setPhase('playing');
   }
 
   chooseUpgrade(choice: UpgradeChoice): void {
@@ -381,6 +434,17 @@ export class Game {
     const w = this.world;
     audio.play(relic ? 'evolve' : 'select');
     this.last = performance.now();
+    if (this.riftRelics) {
+      // A won rift's relic: taken (or XP instead), and play goes on where it was.
+      this.riftRelics = false;
+      if (relic && w.relicOffer?.includes(relic)) {
+        takeRelic(w, relic);
+        refreshStats(w);
+      } else gainXp(w, SITES.rift.xp);
+      w.relicOffer = null;
+      this.setPhase('playing');
+      return;
+    }
     if (w.draft) {
       if (relic && w.relicOffer?.includes(relic)) {
         takeRelic(w, relic);
@@ -395,10 +459,31 @@ export class Game {
     this.setPhase('playing');
   }
 
+  /**
+   * Answers a shrine's or merchant's panel: a pact or a ware (null leaves). A merchant's panel
+   * stays open after a purchase while it has more to sell.
+   */
+  chooseSite(choice: string | null): void {
+    if (this.phase !== 'event') return;
+    const w = this.world;
+    const site = w.sites.find((s) => s.id === this.siteId);
+    if (choice && site && chooseAtSite(w, site.id, choice) && site.kind === 'merchant') {
+      const offer = siteOffer(w, site);
+      if (offer.choices.length > 0) {
+        this.events.onSiteOffer(offer);
+        this.emitHud();
+        return;
+      }
+    } else if (!choice) audio.play('select');
+    this.events.onSiteOffer(null);
+    this.last = performance.now();
+    this.setPhase('playing');
+  }
+
   /** Spends a reroll on a fresh offer. */
   rerollLevelUp(): void {
     if (this.phase !== 'levelup') return;
-    const offer = rerollOffer(this.world, this.offerLevel, Math.random);
+    const offer = rerollOffer(this.world, this.offerLevel, this.offerRng);
     if (!offer) return;
     this.offer = offer;
     audio.play('select');
@@ -408,7 +493,7 @@ export class Game {
   /** Spends a banish: the card is gone for the run and a new one takes its place. */
   banishChoice(choice: UpgradeChoice): void {
     if (this.phase !== 'levelup') return;
-    const offer = banishFromOffer(this.world, this.offer, choice, this.offerLevel, Math.random);
+    const offer = banishFromOffer(this.world, this.offer, choice, this.offerLevel, this.offerRng);
     if (!offer) return;
     this.offer = offer;
     audio.play('wall');
@@ -441,7 +526,7 @@ export class Game {
   private offerLevelUp(): void {
     const w = this.world;
     this.offerLevel = w.level - this.pendingLevelUps + 1;
-    this.offer = rollOffer(w, this.offerLevel, Math.random);
+    this.offer = rollOffer(w, this.offerLevel, this.offerRng);
     this.setPhase('levelup');
     this.emitOffer();
   }
@@ -596,6 +681,7 @@ export class Game {
     }
 
     const showSnake = this.phase !== 'dying' && this.phase !== 'gameover';
+    this.renderer.touch = this.phase === 'playing' ? this.input.touchView : null;
     this.renderer.render(this.world, this.gesture, this.realTime, showSnake);
 
     this.hudTimer -= dt;
@@ -641,6 +727,34 @@ export class Game {
       updateCrystals(w, dt);
       updatePickups(w, dt);
       updateBuffs(w, dt);
+      // Shrines, rifts, chests and merchants: one may open a panel, a won rift offers relics.
+      const site = updateSites(w, dt);
+      if (site) {
+        this.siteId = site.id;
+        this.setPhase('event');
+        this.events.onSiteOffer(siteOffer(w, site));
+        return;
+      }
+      if (w.riftReward) {
+        w.riftReward = false;
+        const offer = offerRelics(w, this.offerRng, w.mapIndex);
+        if (offer.length > 0) {
+          w.relicOffer = offer;
+          this.riftRelics = true;
+          this.setPhase('relic');
+          this.events.onRelicOffer({ relics: [...offer], nextMap: w.map.def.name, depth: w.depth, draft: null, source: 'rift' });
+          return;
+        }
+        gainXp(w, SITES.rift.xp);
+      }
+      // The run's ending: the Ascendant rising, and the moment after it falls.
+      updateFinale(w, dt);
+      if (victoryReady(w) && !this.victoryOffered) {
+        this.victoryOffered = true;
+        this.setPhase('victory');
+        this.events.onVictory({ time: w.wonAt, kills: w.kills, level: w.level, bossKills: w.bossKills, wizard: w.wizard });
+        return;
+      }
       // Last: stepping into the way down offers relics, then swaps the whole map.
       updateDescent(w, dt);
       if (w.relicOffer) {
@@ -713,7 +827,7 @@ export class Game {
     if (this.finished || this.destroyed) return;
     this.finished = true;
     const w = this.world;
-    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills, shardMult: shardMultiplier(w.curses), bonusShards: w.bonusShards, heat: w.heat };
+    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills, shardMult: shardMultiplier(w.curses), bonusShards: w.bonusShards, heat: w.heat, won: w.won, spent: w.spentShards };
     const result: RunResult = {
       ...summary,
       runId: this.runId,
@@ -726,6 +840,9 @@ export class Game {
       maps: [...w.visited],
       breakables: w.recap.breakables,
       relics: [...w.relics],
+      wonAt: w.won ? w.wonAt : undefined,
+      daily: this.setup.daily,
+      score: this.setup.daily ? dailyScore(summary) : undefined,
     };
     this.setPhase('gameover');
     this.events.onGameOver(result);
@@ -763,6 +880,8 @@ export class Game {
       bossIncoming: !w.boss && incoming <= 30 && incoming > 0 ? incoming : null,
       buffs: TIMED_BUFFS.filter((id) => w.buffs[id] > 0).map((id) => ({ id, left: w.buffs[id], total: buffDuration(id) })),
       relics: [...w.relics],
+      rift: w.rift ? { kills: riftKills(w), need: w.rift.need, left: riftLeft(w) } : null,
+      curse: w.chestCurse,
       ultimate: {
         name: ULTIMATES[w.ult.id].name,
         color: ULTIMATES[w.ult.id].color,

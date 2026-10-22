@@ -1,5 +1,7 @@
 import { addShape, solidPath } from './classicFloor';
 import { DESCENT } from './config';
+import { ASCENDANT_COLORS, FINALE } from './finale';
+import { SITE_INFO, SITES } from './sites';
 import { hash2 } from './hash';
 import type { Hazard } from './maps/types';
 import { clearanceAt, solidBounds } from './terrain';
@@ -541,6 +543,159 @@ function drawFallingIcicle(ctx: CanvasRenderingContext2D, f: { x: number; y: num
 }
 
 /** The way down: a dark vortex ringed with light; a ring round it counts down to its pull. */
+/**
+ * The map's sites (E1): a dashed circle on the ground where steering in uses it, and what stands
+ * there: a stone shrine with a burning rune, a torn rift, a dark chest, a merchant's stall.
+ * Spent ones go quiet: the shrine's rune dies, the rift becomes a scar, the chest lies open.
+ */
+export function drawSites(ctx: CanvasRenderingContext2D, world: World, t: number, near: Near, glow: Glow, quiet: boolean): void {
+  for (const s of world.sites) {
+    if (!near(s.x, s.y, 140)) continue;
+    const color = SITE_INFO[s.kind].color;
+    const live = !s.spent;
+    if (live) {
+      ctx.globalCompositeOperation = 'lighter';
+      glow(color, s.x, s.y, 95, quiet ? 0.3 : 0.24 + 0.1 * Math.sin(t * 3 + s.id));
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.6;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([12, 10]);
+      ctx.lineDashOffset = quiet ? 0 : -t * 14;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, SITES.radius, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = '#0a0614';
+    ctx.lineWidth = 3;
+    if (s.kind === 'shrine') {
+      ctx.fillStyle = '#4a4458';
+      ctx.fillRect(s.x - 26, s.y - 8, 52, 26);
+      ctx.strokeRect(s.x - 26, s.y - 8, 52, 26);
+      ctx.fillStyle = '#5c566c';
+      ctx.fillRect(s.x - 18, s.y - 22, 36, 16);
+      ctx.strokeRect(s.x - 18, s.y - 22, 36, 16);
+      // The rune burns until a pact is made.
+      ctx.fillStyle = live ? color : '#3a3046';
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y - 4);
+      ctx.lineTo(s.x + 7, s.y + 6);
+      ctx.lineTo(s.x - 7, s.y + 6);
+      ctx.closePath();
+      ctx.fill();
+      if (live) {
+        ctx.globalCompositeOperation = 'lighter';
+        glow('#ffb36a', s.x, s.y - 30, 16 + (quiet ? 0 : 3 * Math.sin(t * 9)), 0.8);
+        ctx.globalCompositeOperation = 'source-over';
+      }
+    } else if (s.kind === 'rift') {
+      if (live || world.rift?.siteId === s.id) {
+        ctx.fillStyle = '#0a0414';
+        ctx.beginPath();
+        ctx.ellipse(s.x, s.y, 20, 38, 0.2, 0, TAU);
+        ctx.fill();
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 3; i++) {
+          ctx.strokeStyle = i === 1 ? '#ffffff' : color;
+          ctx.globalAlpha = 0.8 - i * 0.2;
+          ctx.beginPath();
+          ctx.ellipse(s.x, s.y, 20 + i * 6, 38 + i * 8, 0.2, (quiet ? 0 : t * (1.5 + i)) + i, (quiet ? 0 : t * (1.5 + i)) + i + 3.6);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      } else {
+        // A scar where it closed.
+        ctx.strokeStyle = '#2a1a40';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(s.x - 6, s.y - 30);
+        ctx.lineTo(s.x + 4, s.y - 4);
+        ctx.lineTo(s.x - 3, s.y + 10);
+        ctx.lineTo(s.x + 6, s.y + 30);
+        ctx.stroke();
+      }
+    } else if (s.kind === 'chest') {
+      ctx.fillStyle = '#2a1a2e';
+      ctx.fillRect(s.x - 24, s.y - 6, 48, 26);
+      ctx.strokeRect(s.x - 24, s.y - 6, 48, 26);
+      // The lid: shut and banded until opened, then thrown back.
+      ctx.fillStyle = live ? '#3a2440' : '#1a0e1e';
+      if (live) {
+        ctx.fillRect(s.x - 24, s.y - 20, 48, 16);
+        ctx.strokeRect(s.x - 24, s.y - 20, 48, 16);
+        ctx.fillStyle = '#ffd45e';
+        ctx.fillRect(s.x - 4, s.y - 10, 8, 10);
+        ctx.fillStyle = color;
+        ctx.fillRect(s.x - 24, s.y - 14, 48, 3);
+      } else {
+        ctx.fillRect(s.x - 24, s.y - 30, 48, 10);
+        ctx.strokeRect(s.x - 24, s.y - 30, 48, 10);
+      }
+    } else {
+      // A striped awning on two poles, a lantern, and the hooded merchant beneath.
+      ctx.fillStyle = '#2a1a10';
+      ctx.fillRect(s.x - 30, s.y - 30, 4, 46);
+      ctx.fillRect(s.x + 26, s.y - 30, 4, 46);
+      for (let i = 0; i < 4; i++) {
+        ctx.fillStyle = i % 2 === 0 ? '#7a3aa8' : '#ffd45e';
+        ctx.fillRect(s.x - 32 + i * 16, s.y - 38, 16, 12);
+      }
+      ctx.strokeRect(s.x - 32, s.y - 38, 64, 12);
+      ctx.fillStyle = '#3a1a5a';
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y - 16);
+      ctx.lineTo(s.x + 14, s.y + 16);
+      ctx.lineTo(s.x - 14, s.y + 16);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#ffe08a';
+      ctx.fillRect(s.x - 5, s.y - 8, 3, 3);
+      ctx.fillRect(s.x + 2, s.y - 8, 3, 3);
+      ctx.globalCompositeOperation = 'lighter';
+      glow('#ffd45e', s.x + 22, s.y - 18, 18 + (quiet ? 0 : 2 * Math.sin(t * 5)), 0.85);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+  }
+}
+
+/**
+ * The Ascendant rising where the last Archmage fell: the four Archmages' colours circling in and
+ * closing on a crack in the floor that widens and brightens until it comes up.
+ */
+export function drawFinale(ctx: CanvasRenderingContext2D, world: World, t: number, glow: Glow, quiet: boolean): void {
+  const f = world.finale;
+  if (!f || f.stage !== 'rising') return;
+  const k = clamp(f.t / FINALE.rise, 0, 1);
+  ctx.globalCompositeOperation = 'lighter';
+  ASCENDANT_COLORS.forEach((color, i) => {
+    const a = (quiet ? t * 0.6 : t * 2.2) + (i / 4) * TAU;
+    const d = 30 + (1 - k) * 230;
+    glow(color, f.x + Math.cos(a) * d, f.y + Math.sin(a) * d, 36 + 34 * k, 0.85);
+  });
+  glow('#ffffff', f.x, f.y, 60 + 120 * k, quiet ? 0.35 : 0.2 + 0.5 * k);
+  ctx.globalCompositeOperation = 'source-over';
+  // The crack: dark jagged rays that lengthen as it comes.
+  ctx.strokeStyle = '#05010a';
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * TAU + 0.4;
+    const len = (40 + 70 * hash2(i, 9)) * (0.3 + k);
+    ctx.lineWidth = 7 - i % 3;
+    ctx.beginPath();
+    ctx.moveTo(f.x, f.y);
+    ctx.lineTo(f.x + Math.cos(a + 0.2) * len * 0.5, f.y + Math.sin(a + 0.2) * len * 0.5);
+    ctx.lineTo(f.x + Math.cos(a) * len, f.y + Math.sin(a) * len);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#05010a';
+  ctx.beginPath();
+  ctx.arc(f.x, f.y, 14 + 26 * k, 0, TAU);
+  ctx.fill();
+}
+
 export function drawDescent(ctx: CanvasRenderingContext2D, world: World, t: number, glow: Glow, quiet: boolean): void {
   const d = world.descent;
   if (!d) return;
