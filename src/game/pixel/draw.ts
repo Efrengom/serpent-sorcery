@@ -1350,16 +1350,48 @@ export function drawParticles(ctx: CanvasRenderingContext2D, world: World): void
   }
 }
 
-export function drawAim(ctx: CanvasRenderingContext2D, world: World, target: Vec, t: number): void {
+/**
+ * The aim while drawing: a dashed guide from the head, and a reticle where the cast will go, or
+ * with auto-aim locked onto a foe, brackets round it (so the foe stays in sight) and the guide
+ * stopping at them.
+ */
+export function drawAim(ctx: CanvasRenderingContext2D, world: World, target: Vec, t: number, lock: { x: number; y: number; r: number } | null = null): void {
   const s = world.snake;
-  const far = Math.hypot(target.x - s.x, target.y - s.y) >= SNAKE.aimMinDistance;
+  const far = lock !== null || Math.hypot(target.x - s.x, target.y - s.y) >= SNAKE.aimMinDistance;
   const hx = s.x / P;
   const hy = s.y / P;
+  const off = Math.floor(t * 14);
+  if (lock) {
+    const lx = lock.x / P;
+    const ly = lock.y / P;
+    const h = Math.round(lock.r / P) + 3 + (Math.floor(t * 4) % 2);
+    const len = Math.hypot(lx - hx, ly - hy);
+    const k = Math.max(0, (len - h - 2) / Math.max(1e-6, len));
+    pixels(ctx, linePixels(hx, hy, hx + (lx - hx) * k, hy + (ly - hy) * k, (i) => i > 8 && (i + off) % 8 < 3), PX.cyan1);
+    drawLock(ctx, Math.round(lx), Math.round(ly), h);
+    return;
+  }
   const ex = far ? target.x / P : hx + (Math.cos(s.heading) * 140) / P;
   const ey = far ? target.y / P : hy + (Math.sin(s.heading) * 140) / P;
-  const off = Math.floor(t * 14);
   pixels(ctx, linePixels(hx, hy, ex, ey, (i) => i > 8 && (i + off) % 8 < 3), far ? PX.cyan1 : PX.cyan0);
   blit(ctx, reticle(Math.floor(t * 6) % RETICLE_FRAMES, far), target.x / P, target.y / P);
+}
+
+/** Four corner brackets `h` pixels out from (x, y) on each side, bright and cased in ink. */
+function drawLock(ctx: CanvasRenderingContext2D, x: number, y: number, h: number): void {
+  const L = 3;
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      const cx = x + sx * h;
+      const cy = y + sy * h;
+      const ax = sx > 0 ? cx - L + 1 : cx;
+      const ay = sy > 0 ? cy - L + 1 : cy;
+      px(ctx, ax - 1, cy - 1, PX.ink, L + 2, 3);
+      px(ctx, cx - 1, ay - 1, PX.ink, 3, L + 2);
+      px(ctx, ax, cy, PX.cyan3, L, 1);
+      px(ctx, cx, ay, PX.cyan3, 1, L);
+    }
+  }
 }
 
 // ---------------------------------------------------------------- screen-space overlay (sigil trail, hurt flash)

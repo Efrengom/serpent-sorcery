@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { TOUCH } from '../config';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SNAKE, TOUCH } from '../config';
+import { spawnEnemy } from '../enemies';
 import type { Pt } from '../gesture';
 import { InputManager, type InputCallbacks } from '../input';
+import { defaultOptions } from '../options';
+import { defaultSave, optionsOf, parseSave } from '../persistence';
+import { emptyMetaLevels } from '../progression';
+import { autoAimPoint, autoAimTarget, castSpell } from '../spells';
+import { createWorld } from '../world';
 
 /** An input manager on a 1000×600 canvas with no DOM: handlers are called directly. */
 function setup() {
@@ -121,5 +127,71 @@ describe('touch controls', () => {
     touch.down(2, 100, 300);
     touch.cancel(2);
     expect(input.touchView.stick).toBeNull();
+  });
+});
+
+describe('auto-aim', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const pointer = (coarse: boolean) => vi.stubGlobal('matchMedia', (q: string) => ({ matches: coarse && q === '(pointer: coarse)' }));
+
+  it('starts on for a phone or tablet and off for a mouse, and a choice is kept', () => {
+    pointer(true);
+    expect(defaultOptions().autoAim).toBe(true);
+    // A save from before the option takes the device's default; a saved choice stays.
+    expect(optionsOf(parseSave(JSON.stringify({ settings: {} })).settings).autoAim).toBe(true);
+    expect(optionsOf(parseSave(JSON.stringify({ settings: { autoAim: false } })).settings).autoAim).toBe(false);
+    pointer(false);
+    expect(defaultOptions().autoAim).toBe(false);
+    expect(optionsOf(defaultSave().settings).autoAim).toBe(false);
+    expect(optionsOf(parseSave(JSON.stringify({ settings: { autoAim: 'yes' } })).settings).autoAim).toBe(false);
+  });
+
+  /** A world with the serpent at the start heading right, and no foes yet. */
+  function arena() {
+    const w = createWorld(emptyMetaLevels(), () => undefined, 5);
+    w.enemies.length = 0;
+    w.snake.reset(w.map.start.x, w.map.start.y, 0);
+    w.camera.x = w.snake.x;
+    w.camera.y = w.snake.y;
+    return w;
+  }
+
+  it('picks the nearest foe in view that a bolt can reach, passing over what can’t be hit', () => {
+    const w = arena();
+    const { x, y } = w.snake;
+    expect(autoAimTarget(w)).toBeNull();
+    const far = spawnEnemy(w, 'chaser', x - 300, y);
+    const near = spawnEnemy(w, 'chaser', x + 200, y);
+    expect(autoAimTarget(w)).toBe(near);
+    // Behind stone (no line for a bolt), the nearer one gives way to one in the open.
+    near.nav.sight = false;
+    expect(autoAimTarget(w)).toBe(far);
+    far.nav.sight = false;
+    expect(autoAimTarget(w)).toBe(near);
+    near.nav.sight = far.nav.sight = true;
+    // Underground, dead, or out of view: passed over.
+    near.hidden = true;
+    expect(autoAimTarget(w)).toBe(far);
+    far.dead = true;
+    expect(autoAimTarget(w)).toBeNull();
+    spawnEnemy(w, 'chaser', x + 5000, y);
+    expect(autoAimTarget(w)).toBeNull();
+  });
+
+  it('aims a bolt behind the serpent, and carries a foe at the head out to a direction', () => {
+    const w = arena();
+    const { x, y } = w.snake;
+    spawnEnemy(w, 'brute', x - 250, y);
+    // Heading right, the foe is behind: the bolt flies left at it.
+    castSpell(w, 'bolt', autoAimPoint(w));
+    expect(w.bolts.length).toBeGreaterThan(0);
+    expect(w.bolts.every((b) => b.vx < 0 && Math.abs(b.vy) < Math.abs(b.vx) * 0.3)).toBe(true);
+    // Right against the head, the point goes out along the line to the foe, past the heading fallback.
+    w.enemies.length = 0;
+    spawnEnemy(w, 'chaser', x, y + 20);
+    const p = autoAimPoint(w)!;
+    expect(Math.hypot(p.x - x, p.y - y)).toBeGreaterThan(SNAKE.aimMinDistance);
+    expect(Math.abs(p.x - x)).toBeLessThan(1e-6);
+    expect(p.y).toBeGreaterThan(y);
   });
 });

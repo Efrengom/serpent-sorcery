@@ -268,7 +268,7 @@ export class Renderer {
     drawShots(low, world);
     drawBlastsInFlight(low, world);
     drawParticles(low, world);
-    if (gesture.active && gesture.target && showSnake) drawAim(low, world, gesture.target, realTime);
+    if (gesture.active && gesture.target && showSnake) drawAim(low, world, gesture.target, realTime, gesture.lock);
     const arrows = this.arrows(world);
     for (const a of arrows) drawEdgeArrow(low, a.x / P, a.y / P, a.a, a.p.color);
 

@@ -344,7 +344,15 @@ export function PauseMenu({
             <b>Touch:</b> one thumb steers from its side, the other hand draws
           </li>
           <li>
-            <b>Where you press</b> is where Bolt and Lightning aim
+            {options.autoAim ? (
+              <>
+                <b>Auto-aim:</b> spells go to the nearest foe
+              </>
+            ) : (
+              <>
+                <b>Where you press</b> is where Bolt and Lightning aim
+              </>
+            )}
           </li>
         </ul>
       </div>

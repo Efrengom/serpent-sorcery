@@ -2156,6 +2156,8 @@ try {
       const sv = JSON.parse(localStorage.getItem(k));
       sv.settings.gameSpeed = 1;
       delete sv.settings.bindings;
+      // Auto-aim off to begin with (this save was made on a desktop); it is switched on below.
+      sv.settings.autoAim = false;
       localStorage.setItem(k, JSON.stringify(sv));
     }, SAVE_KEY);
     await page.setViewport({ width: 812, height: 375, hasTouch: true, isMobile: true });
@@ -2199,6 +2201,58 @@ try {
     const drawn = await page.evaluate(() => ({ casts: window.__serpent.debug().world.recap.spells.bolt.casts, stick: !!window.__serpent.input.touchView.stick }));
     check('a second finger on the right draws a sigil while the thumb keeps steering', drawn.casts === bolt0 + 1 && drawn.stick, { before: bolt0, ...drawn });
     await touch('touchEnd', []);
+    // Auto-aim. A phone starts with it on; a brute on the steering side can't be aimed at by
+    // drawing on the other side without it, and is hit with it.
+    const phoneDefault = await page.evaluate(async () => ({
+      coarse: matchMedia('(pointer: coarse)').matches,
+      autoAim: (await import('/src/game/options.ts')).defaultOptions().autoAim,
+    }));
+    check('a phone or tablet starts with auto-aim on', phoneDefault.coarse && phoneDefault.autoAim, phoneDefault);
+    const boltAtBrute = async () => {
+      await page.evaluate(async () => {
+        const w = window.__serpent.debug().world;
+        if (!window.__aimFoe) {
+          const { spawnEnemy } = await import('/src/game/enemies.ts');
+          window.__aimFoe = spawnEnemy(w, 'brute', 0, 0);
+          Object.assign(window.__aimFoe, { hp: 5000, maxHp: 5000, speed: 0, attackTimer: 1e9 });
+        }
+        // Alone, a little left of the serpent: on the steering thumb's side of the screen.
+        w.enemies.length = 0;
+        w.enemies.push(window.__aimFoe);
+        Object.assign(window.__aimFoe, { x: w.snake.x - 230, y: w.snake.y, kx: 0, ky: 0 });
+        w.cooldowns.bolt = 0;
+      });
+      const hp0 = await page.evaluate(() => window.__aimFoe.hp);
+      await touch('touchStart', [[520, 200, 3]]);
+      for (let i = 1; i <= 8; i++) {
+        await touch('touchMove', [[520 + i * 26, 200 - i * 4, 3]]);
+        await sleep(25);
+      }
+      await touch('touchEnd', []);
+      await sleep(450);
+      return page.evaluate((hp0) => ({ hit: hp0 - window.__aimFoe.hp, onScreen: window.__serpent.renderer.worldToScreen(window.__aimFoe).x }), hp0);
+    };
+    const manual = await boltAtBrute();
+    await page.keyboard.press('Escape');
+    await sleep(200);
+    await clickButton('Options');
+    await sleep(150);
+    const toggled = await clickButton('Auto-aim');
+    await sleep(100);
+    await clickButton('Back to pause');
+    await clickButton('Resume');
+    await sleep(300);
+    const auto = await boltAtBrute();
+    const savedAim = (await readSave()).settings.autoAim;
+    check(
+      'with auto-aim (switched on in the pause menu’s options) a bolt drawn on one side hits a foe on the steering side; without it, it misses',
+      manual.hit === 0 && toggled && savedAim === true && auto.hit > 0 && auto.onScreen < 812 * 0.42,
+      { manual, auto, toggled, savedAim },
+    );
+    await page.evaluate(() => {
+      window.__serpent.debug().world.enemies.length = 0;
+      delete window.__aimFoe;
+    });
     // The ultimate's card answers a tap.
     await page.evaluate(() => (window.__serpent.debug().world.ult.cooldown = 0));
     await sleep(150);

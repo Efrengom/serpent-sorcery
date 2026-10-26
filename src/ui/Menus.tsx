@@ -330,6 +330,10 @@ export function HowToPlay({
             Press right on top of the serpent to fire straight ahead. Frost Field lands where you pressed; Nova and Ward
             always surround you.
           </p>
+          <p>
+            With <b>Auto-aim</b> (in Options; on by default on phones and tablets) they go to the nearest foe in view
+            instead, wherever you draw, and the marker shows which.
+          </p>
           <p>Max a spell's own upgrade and take two ranks of its partner, and a golden card evolves it.</p>
           <p>
             While you draw, the trail takes the colour of the spell it reads. <b>Perfect</b> sigils hit 35% harder,{' '}
