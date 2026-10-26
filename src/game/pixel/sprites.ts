@@ -716,20 +716,26 @@ export function wraith(dir: number, frame: number, phased: boolean, flash: boole
 
 export const CHASER_FRAMES = 4;
 
-/** Spiky crimson blob; frames rotate the spikes so it appears to churn as it chases. */
-export function chaser(frame: number, flash: boolean, imp = false): Sprite {
-  return cached(`chaser:${frame}:${flash}:${imp}`, () => {
-    // A Cinder Imp is smaller, with fewer, sharper flames for spikes.
+/**
+ * Spiky crimson blob; frames rotate the spikes so it appears to churn as it chases. Its dark face
+ * sits (fx, fy) pixels off centre, toward where it is heading, with room for both eyes and a dark
+ * pixel either side, so neither eye ever lands on the bright body.
+ */
+export function chaser(frame: number, flash: boolean, imp = false, fx = 0, fy = 0): Sprite {
+  return cached(`chaser:${frame}:${flash}:${imp}:${fx}:${fy}`, () => {
+    // A Cinder Imp is smaller, with fewer, sharper flames for spikes, and a fuller body round the
+    // same face (so the face, shifted, still stops short of its rim).
     const R = (imp ? ENEMIES.imp.radius : ENEMIES.chaser.radius) / P;
     const spikes = imp ? 6 : 10;
     const phase = (frame / CHASER_FRAMES) * (TAU / spikes);
-    const inner = 0.85 * R;
+    const inner = (imp ? 0.95 : 0.85) * R;
     const outer = 1.35 * R;
+    const face = 2.6;
     return bakeShape(
       20,
       (x, y) => {
+        if (Math.hypot(x - fx, y - fy) <= face) return 'core';
         const d = Math.hypot(x, y);
-        if (d <= 2.2) return 'core';
         const a = Math.atan2(y, x);
         const k = Math.pow((1 + Math.cos(spikes * (a - phase))) / 2, 3);
         return d <= inner + (outer - inner) * k ? 'body' : null;
@@ -778,7 +784,10 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
-/** Rounded stone block with glowing cracks that run hot while it winds up and charges. */
+/**
+ * Rounded stone block with glowing cracks that run hot while it winds up and charges. The cracks
+ * run over its back and flanks only, leaving the front plain stone for its eyes (drawn on top).
+ */
 export function brute(dir: number, hot: boolean, flash: boolean, magma = false): Sprite {
   return cached(`brute:${dir}:${hot}:${flash}:${magma}`, () => {
     // A Magma Brute: cooled black rock whose cracks always glow.
@@ -786,10 +795,10 @@ export function brute(dir: number, hot: boolean, flash: boolean, magma = false):
     const rc = 2.5;
     const toLocal = local(dir);
     const cracks: [number, number, number, number][] = [
-      [-0.6 * r, -0.5 * r, -0.1 * r, -0.1 * r],
-      [-0.1 * r, -0.1 * r, -0.4 * r, 0.5 * r],
-      [0.1 * r, 0.7 * r, 0.3 * r, 0.2 * r],
-      [0.45 * r, -0.65 * r, 0.2 * r, -0.3 * r],
+      [-0.7 * r, -0.4 * r, -0.2 * r, -0.05 * r],
+      [-0.2 * r, -0.05 * r, -0.5 * r, 0.55 * r],
+      [-0.05 * r, 0.8 * r, -0.3 * r, 0.45 * r],
+      [0.05 * r, -0.8 * r, -0.25 * r, -0.55 * r],
     ];
     return bakeShape(
       30,

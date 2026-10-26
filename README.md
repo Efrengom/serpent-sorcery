@@ -15,6 +15,7 @@ npm run preview    # serve the production build
 npm run playtest   # ~6 min end-to-end play-test in a headless Edge/Chrome
 npx vite-node scripts/balance.ts   # a bot plays every map headlessly; damage taken by kind, per map
 node scripts/make-icons.mjs        # redraw the home-screen icons in public/icons from the game's sprites
+node scripts/make-bold-w.mjs       # redraw the bold W that stands in for Silkscreen Bold's (src/ui/fonts)
 ```
 
 On Windows PowerShell with script execution disabled, `npm` itself is blocked (`npm.ps1 cannot be loaded`). Use `npm.cmd` instead (for example `npm.cmd run dev`), or run the commands from Command Prompt or Git Bash.
@@ -329,7 +330,7 @@ Everything is pixel art. The view is drawn on a low-res canvas 320 art pixels ta
 - **The floor** is painted per pixel in 256×256 chunks: flagstones, cracks, moss, the rune circle, torch light, and the stonework shaded from each solid's exact distance (rim-lit top-left, shadows cast down-right). Every detail is keyed by its position on the map, so chunks meet without seams. The chunks around the view are painted a band at a time within 3 ms a frame, ahead of need.
 - **Effects** use per-pixel lines and circles plus ordered (Bayer) dithering: charge lanes, lightning, Nova, enemy shots, crystals, particles and portals.
 - **Overlay:** the sigil trail and hurt flash are drawn on a screen-sized overlay that lines up with the same pixel grid.
-- **HUD and menus** use pixel fonts (Silkscreen, Pixelify Sans), stepped panels and bitmap icons.
+- **HUD and menus** use pixel fonts (Silkscreen, Pixelify Sans), stepped panels and bitmap icons. Silkscreen Bold's own W is nearly solid and reads as a heart, so a one-letter font drawn on its grid (`scripts/make-bold-w.mjs`) stands in for W and w wherever it is bold.
 
 The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite rasterizer), `sprites.ts`, `floor.ts` (chunked floor) and `draw.ts`. The menu pieces are in `src/ui/art.tsx`. Pixel size is `PIXEL_ART.worldPerPixel` in `config.ts`. (An earlier vector style, "Classic", was dropped; a save that had chosen it simply opens in pixel art.)
 

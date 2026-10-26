@@ -130,7 +130,8 @@ export class Renderer {
    * allows, within the camera's limits. Very small windows fall back to fractional scaling.
    */
   resize(): void {
-    void document.fonts?.load(`16px ${PIXEL_FONT}`).catch(() => undefined);
+    // Both weights, and the bold W that is a face of its own (see styles.css), ready for the canvas.
+    for (const font of [`16px ${PIXEL_FONT}`, `700 16px ${PIXEL_FONT}`]) void document.fonts?.load(font, 'AW').catch(() => undefined);
     this.cssW = Math.max(320, this.canvas.clientWidth || window.innerWidth);
     this.cssH = Math.max(240, this.canvas.clientHeight || window.innerHeight);
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
