@@ -4,6 +4,7 @@ import { ICON_PATHS } from '../game/icons';
 import { formatTime } from '../game/math';
 import { RELICS } from '../game/relics';
 import { PixelIcon, RelicIcon } from './art';
+import { useFullscreen } from './fullscreen';
 import { useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 
@@ -42,6 +43,7 @@ function UltimateCard({ ult, keyLabel, onCast }: { ult: HudSnapshot['ultimate'];
 }
 
 export function Hud({ hud, muted, onPause, onToggleMute, onUltimate }: Props) {
+  const fullscreen = useFullscreen();
   const muteKey = useKeyLabel('mute');
   const pauseKey = useKeyLabel('pause');
   const ultKey = useKeyLabel('ultimate');
@@ -117,6 +119,19 @@ export function Hud({ hud, muted, onPause, onToggleMute, onUltimate }: Props) {
           })}
           {/* Mouse-only buttons that never take focus, so in-game keys can't re-trigger them. */}
           <div className="hud-buttons">
+            {fullscreen && (
+              <button
+                className="icon-btn"
+                tabIndex={-1}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={fullscreen.toggle}
+                title={fullscreen.on ? 'Leave fullscreen' : 'Fullscreen'}
+                aria-label={fullscreen.on ? 'Leave fullscreen' : 'Fullscreen'}
+                data-fullscreen
+              >
+                <PixelIcon name={fullscreen.on ? 'windowed' : 'fullscreen'} scale={2} />
+              </button>
+            )}
             <button
               className="icon-btn"
               tabIndex={-1}

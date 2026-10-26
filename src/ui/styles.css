@@ -173,10 +173,12 @@ kbd {
   border-color: rgba(220, 200, 255, 0.7);
 }
 
-.icon-btn.corner {
+.corner-buttons {
   position: absolute;
   top: 16px;
   right: 16px;
+  display: flex;
+  gap: 8px;
 }
 
 .menu-buttons {

@@ -74,6 +74,15 @@ const ICONS = {
     rows: ['ww.ww', 'ww.ww', 'ww.ww', 'ww.ww', 'ww.ww', 'ww.ww'],
     colors: { w: PX.eye },
   },
+  // Fullscreen: four corners opening out; and back to a window: the corners folding in.
+  fullscreen: {
+    rows: ['www...www', 'w.......w', 'w.......w', '.........', '.........', '.........', 'w.......w', 'w.......w', 'www...www'],
+    colors: { w: PX.eye },
+  },
+  windowed: {
+    rows: ['..w...w..', '..w...w..', 'www...www', '.........', '.........', '.........', 'www...www', '..w...w..', '..w...w..'],
+    colors: { w: PX.eye },
+  },
   triangle: {
     rows: ['....w....', '...wcw...', '...c.c...', '..c...c..', '..c...c..', '.c.....c.', '.c.....c.', 'ccccccccc'],
     colors: { c: PX.ward1, w: PX.ward2 },

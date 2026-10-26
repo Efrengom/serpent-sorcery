@@ -346,7 +346,7 @@ export function PauseMenu({
           <li>
             {options.autoAim ? (
               <>
-                <b>Auto-aim:</b> spells go to the nearest foe
+                <b>Auto-aim:</b> spells go to the nearest target
               </>
             ) : (
               <>
