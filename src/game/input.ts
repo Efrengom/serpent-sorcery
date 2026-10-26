@@ -6,7 +6,6 @@ export interface InputCallbacks {
   onPause(): void;
   onUltimate(): void;
   onToggleMute(): void;
-  onToggleArt(): void;
   /** Return false to refuse the gesture (e.g. while paused). */
   onGestureStart(screen: Pt): boolean;
   onGestureEnd(points: Pt[]): void;
@@ -169,12 +168,11 @@ export class InputManager {
     this.cb.onUserGesture();
     const action = e.code === RESERVED_KEY ? 'pause' : this.keys.get(e.code);
     if (!action) return;
-    if (action === 'pause' || action === 'mute' || action === 'art' || action === 'ultimate') {
+    if (action === 'pause' || action === 'mute' || action === 'ultimate') {
       if (!e.repeat) {
         if (action === 'pause') this.cb.onPause();
         else if (action === 'mute') this.cb.onToggleMute();
-        else if (action === 'ultimate') this.cb.onUltimate();
-        else this.cb.onToggleArt();
+        else this.cb.onUltimate();
       }
       e.preventDefault();
       return;

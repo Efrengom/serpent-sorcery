@@ -33,15 +33,13 @@ export class Minimap {
   constructor(
     private readonly map: MapLayout,
     area: number,
-    private readonly pixel: boolean,
-    dpr: number,
     width = WIDTH,
   ) {
     this.w = width;
     this.h = Math.round((width * map.height) / map.width);
     this.style = STYLE[area] ?? STYLE[0];
-    // The pixel style is chunky (one minimap pixel per 2 CSS px); classic matches the screen.
-    const res = pixel ? 0.5 : dpr;
+    // Chunky: one minimap pixel per 2 CSS px.
+    const res = 0.5;
     const mw = Math.round(this.w * res);
     const mh = Math.round(this.h * res);
     const per = map.width / mw;
@@ -64,24 +62,13 @@ export class Minimap {
       }
     }
     g.putImageData(img, 0, 0);
-    // Landmarks: a small plus (pixel) or diamond (classic) each.
+    // Landmarks: a small plus each.
     g.fillStyle = this.style.landmark;
     for (const l of map.landmarks) {
-      const x = l.x / per;
-      const y = l.y / per;
-      if (pixel) {
-        g.fillRect(Math.round(x) - 1, Math.round(y), 3, 1);
-        g.fillRect(Math.round(x), Math.round(y) - 1, 1, 3);
-      } else {
-        const s = 3.5 * res;
-        g.beginPath();
-        g.moveTo(x, y - s);
-        g.lineTo(x + s, y);
-        g.lineTo(x, y + s);
-        g.lineTo(x - s, y);
-        g.closePath();
-        g.fill();
-      }
+      const x = Math.round(l.x / per);
+      const y = Math.round(l.y / per);
+      g.fillRect(x - 1, y, 3, 1);
+      g.fillRect(x, y - 1, 1, 3);
     }
     this.img = c;
   }
@@ -95,7 +82,7 @@ export class Minimap {
     ctx.globalAlpha = 0.85;
     ctx.fillStyle = this.style.frame;
     ctx.fillRect(x - 3, y - 3, this.w + 6, this.h + 6);
-    ctx.imageSmoothingEnabled = !this.pixel;
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.img, x, y, this.w, this.h);
     ctx.globalAlpha = 1;
 
@@ -103,7 +90,7 @@ export class Minimap {
       const c = world.map.clearings[world.bossClearing];
       ctx.strokeStyle = COLORS.nova;
       ctx.lineWidth = 2;
-      ctx.setLineDash(this.pixel ? [4, 2] : [3, 2]);
+      ctx.setLineDash([4, 2]);
       ctx.strokeRect(px(c.x0), py(c.y0), (c.x1 - c.x0) * k, (c.y1 - c.y0) * k);
       ctx.setLineDash([]);
     }
@@ -115,8 +102,7 @@ export class Minimap {
     ctx.fillStyle = '#e8c87a';
     for (const b of world.breakables) {
       if (b.size !== 'large') continue;
-      const s = this.pixel ? 2 : 2.5;
-      ctx.fillRect(this.pixel ? Math.round(px(b.x) / 2) * 2 - 1 : px(b.x) - s / 2, this.pixel ? Math.round(py(b.y) / 2) * 2 - 1 : py(b.y) - s / 2, s, s);
+      ctx.fillRect(Math.round(px(b.x) / 2) * 2 - 1, Math.round(py(b.y) / 2) * 2 - 1, 2, 2);
     }
     for (const e of world.enemies) {
       if (e.dead || !e.elite) continue;
@@ -133,25 +119,15 @@ export class Minimap {
     ctx.restore();
   }
 
-  /** A marker with a dark outline: a square on the pixel grid, or a round dot. */
+  /** A marker with a dark outline: a square on the pixel grid. */
   private dot(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string): void {
+    const s = Math.max(2, Math.round(r) * 2);
+    const gx = Math.round(x / 2) * 2 - s / 2;
+    const gy = Math.round(y / 2) * 2 - s / 2;
     ctx.fillStyle = COLORS.outline;
-    if (this.pixel) {
-      const s = Math.max(2, Math.round(r) * 2);
-      const gx = Math.round(x / 2) * 2 - s / 2;
-      const gy = Math.round(y / 2) * 2 - s / 2;
-      ctx.fillRect(gx - 2, gy - 2, s + 4, s + 4);
-      ctx.fillStyle = color;
-      ctx.fillRect(gx, gy, s, s);
-      return;
-    }
-    ctx.beginPath();
-    ctx.arc(x, y, r + 1.5, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(gx - 2, gy - 2, s + 4, s + 4);
     ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(gx, gy, s, s);
   }
 }
 

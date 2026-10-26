@@ -16,7 +16,7 @@ import type { DailySetup } from '../game/daily';
 import type { SaveData } from '../game/persistence';
 import { META_IDS, META_UPGRADES, metaMaxLevel, metaNextCost, type MetaId } from '../game/progression';
 import { isWizardUnlocked, playableWizard, WIZARD_IDS, WIZARDS, type WizardId } from '../game/wizards';
-import { PixelIcon, PixelTitleSerpent, RelicIcon, Shard, UpgradeGlyph, usePixelArt, WizardPortrait } from './art';
+import { PixelIcon, PixelTitleSerpent, RelicIcon, Shard, UpgradeGlyph, WizardPortrait } from './art';
 import { BindingsContext, KeyHint, useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 import { VolumeControls } from './VolumeControls';
@@ -37,36 +37,6 @@ function useKey(code: string[], handler: () => void): void {
 const ENTER = ['Enter', 'Space'];
 const BACK = ['Escape'];
 
-function TitleSerpent({ wizard }: { wizard: WizardId }) {
-  const look = WIZARDS[wizard].look;
-  return (
-    <svg className="title-serpent" viewBox="0 0 520 150" aria-hidden="true">
-      <defs>
-        <linearGradient id="body" x1="0" x2="1">
-          <stop offset="0" stopColor={look.bodyDark} />
-          <stop offset="1" stopColor={look.body} />
-        </linearGradient>
-      </defs>
-      <path
-        className="serpent-body"
-        d="M20 110 C 90 40, 150 140, 220 90 S 340 30, 400 85"
-        stroke="url(#body)"
-        strokeWidth="22"
-        strokeLinecap="round"
-        fill="none"
-      />
-      <ellipse cx="420" cy="92" rx="26" ry="20" fill={look.body} stroke="#140a24" strokeWidth="4" />
-      <circle cx="430" cy="84" r="5" fill="#fff" />
-      <circle cx="432" cy="84" r="2.5" fill="#140a24" />
-      <path d="M445 98 l14 2 l6 -4 m-6 4 l6 5" stroke="#ff4f7b" strokeWidth="3" fill="none" strokeLinecap="round" />
-      <path className="serpent-hat" d="M392 76 Q 400 12, 470 6 Q 432 34, 444 74 Z" fill={look.hat} stroke="#140a24" strokeWidth="4" />
-      <ellipse cx="418" cy="76" rx="36" ry="9" fill={look.hat} stroke="#140a24" strokeWidth="4" />
-      <path d="M398 66 L 440 62" stroke={look.band} strokeWidth="5" />
-      <path className="hat-star" d="M470 6 l3 7 7 1 -5 5 1 7 -6 -3 -6 3 1 -7 -5 -5 7 -1z" fill={look.band} />
-    </svg>
-  );
-}
-
 export function TitleScreen({
   save,
   onPlay,
@@ -79,7 +49,6 @@ export function TitleScreen({
   onOptions,
   onPractice,
   onToggleMute,
-  onToggleArt,
   volume,
 }: {
   save: SaveData;
@@ -94,11 +63,9 @@ export function TitleScreen({
   onOptions(): void;
   onPractice(): void;
   onToggleMute(): void;
-  onToggleArt(): void;
   volume: ComponentProps<typeof VolumeControls>;
 }) {
   useKey(ENTER, onPlay);
-  const pixel = usePixelArt();
   const firstTime = save.records.totalRuns === 0;
   const wizard = playableWizard(save.settings.wizard, save.records);
   const curses = save.settings.curses;
@@ -107,9 +74,8 @@ export function TitleScreen({
   const muteKey = useKeyLabel('mute');
   return (
     <div className="screen title-screen">
-      <div className="runes-bg" aria-hidden="true" />
       <div className="title-wrap">
-        {pixel ? <PixelTitleSerpent wizard={wizard} /> : <TitleSerpent wizard={wizard} />}
+        <PixelTitleSerpent wizard={wizard} />
         <h1 className="game-title">Serpent Sorcery</h1>
         <p className="tagline">One hand steers the serpent. The other draws the spells.</p>
         <div className="menu-buttons">
@@ -153,14 +119,9 @@ export function TitleScreen({
               Practice Sigils
             </button>
           </div>
-          <div className="menu-pair">
-            <button className="btn" onClick={onOptions}>
-              Options
-            </button>
-            <button className="btn" onClick={onToggleArt}>
-              Art: {save.settings.pixelArt ? 'Pixel' : 'Classic'} <KeyHint action="art" />
-            </button>
-          </div>
+          <button className="btn" onClick={onOptions}>
+            Options
+          </button>
         </div>
         <VolumeControls {...volume} />
         <div className="records">
@@ -193,7 +154,7 @@ export function TitleScreen({
         </div>
       </div>
       <button className="icon-btn corner" onClick={onToggleMute} title={`Mute (${muteKey})`} aria-label="Toggle sound">
-        {pixel ? <PixelIcon name={save.settings.muted ? 'soundOff' : 'soundOn'} scale={2} /> : save.settings.muted ? '🔇' : '🔊'}
+        <PixelIcon name={save.settings.muted ? 'soundOff' : 'soundOn'} scale={2} />
       </button>
     </div>
   );

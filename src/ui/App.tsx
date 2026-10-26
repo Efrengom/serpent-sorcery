@@ -11,7 +11,7 @@ import type { GameOptions } from '../game/options';
 import type { MetaId } from '../game/progression';
 import { playableWizard, type WizardId } from '../game/wizards';
 import type { RunSetup } from '../game/world';
-import { PixelArtContext, pixelFloorUrl } from './art';
+import { pixelFloorUrl } from './art';
 import { GameView } from './GameView';
 import { Jukebox } from './Jukebox';
 import { HowToPlay, RecordsScreen, SetupScreen, ShopScreen, TitleScreen } from './Menus';
@@ -57,10 +57,6 @@ export function App() {
     setSave((s) => ({ ...s, settings: { ...s.settings, muted: !s.settings.muted } }));
   }, []);
 
-  const toggleArt = useCallback(() => {
-    setSave((s) => ({ ...s, settings: { ...s.settings, pixelArt: !s.settings.pixelArt } }));
-  }, []);
-
   const setMusicVolume = useCallback((v: number) => {
     setSave((s) => ({ ...s, settings: { ...s.settings, musicVolume: v } }));
   }, []);
@@ -91,7 +87,7 @@ export function App() {
     setSave((s) => ({ ...s, settings: { ...s.settings, ...patch } }));
   }, []);
 
-  // The mute and art keys work on menu screens too (the game handles them while playing).
+  // The mute key works on menu screens too (the game handles them while playing).
   const bindings = save.settings.bindings;
   useEffect(() => {
     if (screen === 'game') return;
@@ -100,11 +96,10 @@ export function App() {
       if (e.repeat) return;
       const action = keys.get(e.code);
       if (action === 'mute') toggleMute();
-      if (action === 'art') toggleArt();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [screen, bindings, toggleMute, toggleArt]);
+  }, [screen, bindings, toggleMute]);
 
   /** Called once per finished run by the engine; idempotent per run id. */
   const commitRun = useCallback((result: RunResult) => {
@@ -171,8 +166,6 @@ export function App() {
         ...(startDepth > 1 ? { startDepth, waystone: true } : {}),
       };
 
-  const pixel = save.settings.pixelArt;
-
   // A map being listened to in the atlas, on the setup screen.
   const [listening, setListening] = useState<MapId | null>(null);
   useEffect(() => {
@@ -201,11 +194,10 @@ export function App() {
   const toTitle = useCallback(() => setScreen('title'), []);
 
   return (
-    <PixelArtContext.Provider value={pixel}>
     <BindingsContext.Provider value={bindings}>
     <div
-      className={`app${pixel ? ' pixel' : ''}${options.reduceFlashing ? ' reduce-flash' : ''}`}
-      style={pixel ? ({ '--pixel-floor': `url(${pixelFloorUrl()})` } as CSSProperties) : undefined}
+      className={`app pixel${options.reduceFlashing ? ' reduce-flash' : ''}`}
+      style={{ '--pixel-floor': `url(${pixelFloorUrl()})` } as CSSProperties}
     >
       {screen === 'title' && (
         <TitleScreen
@@ -220,7 +212,6 @@ export function App() {
           onOptions={() => setScreen('options')}
           onPractice={() => setScreen('practice')}
           onToggleMute={toggleMute}
-          onToggleArt={toggleArt}
           volume={volume}
         />
       )}
@@ -248,20 +239,17 @@ export function App() {
           meta={save.meta}
           setup={setup}
           muted={save.settings.muted}
-          pixelArt={save.settings.pixelArt}
           options={options}
           onOptions={setOptions}
           volume={volume}
           totalCurrency={save.currency}
           onCommitRun={commitRun}
           onToggleMute={toggleMute}
-          onToggleArt={toggleArt}
           onExit={setScreen}
         />
       )}
       {JUKEBOX && <Jukebox />}
     </div>
     </BindingsContext.Provider>
-    </PixelArtContext.Provider>
   );
 }

@@ -16,11 +16,8 @@ export interface UnlockRecords {
 export type Ramp = readonly [string, string, string];
 
 export interface WizardLook {
-  /** Classic renderer colours. */
+  /** The body's colour, for the minimap's marker and the flash of a loop crushing foes. */
   body: string;
-  bodyDark: string;
-  hat: string;
-  band: string;
   /** Pixel sprite ramps. */
   px: { body: Ramp; stripe: Ramp; hat: Ramp; brim: Ramp; band: Ramp };
 }
@@ -52,9 +49,6 @@ export const WIZARDS: Record<WizardId, WizardDef> = {
     mods: {},
     look: {
       body: '#2fd3b5',
-      bodyDark: '#127a6c',
-      hat: '#8a4ee8',
-      band: '#ffd45e',
       px: {
         body: ['#2fd3b5', '#a8ffe2', '#16907d'],
         stripe: ['#16907d', '#2fd3b5', '#0d5a52'],
@@ -75,9 +69,6 @@ export const WIZARDS: Record<WizardId, WizardDef> = {
     mods: { frostRadiusMult: 1.2 },
     look: {
       body: '#8fd8ff',
-      bodyDark: '#3a7fb8',
-      hat: '#2c4fa8',
-      band: '#e8f6ff',
       px: {
         body: ['#8fd8ff', '#e2f6ff', '#3a7fb8'],
         stripe: ['#3a7fb8', '#8fd8ff', '#1d3f6e'],
@@ -102,9 +93,6 @@ export const WIZARDS: Record<WizardId, WizardDef> = {
     mods: { maxHp: 25, wardCharges: 1 },
     look: {
       body: '#a6d65a',
-      bodyDark: '#4f7a22',
-      hat: '#a8742c',
-      band: '#fff3c4',
       px: {
         body: ['#a6d65a', '#e4ffb0', '#4f7a22'],
         stripe: ['#4f7a22', '#a6d65a', '#2c4a12'],
@@ -129,9 +117,6 @@ export const WIZARDS: Record<WizardId, WizardDef> = {
     mods: { damageMult: 1.2, chains: 1, maxHp: -25 },
     look: {
       body: '#7d88b0',
-      bodyDark: '#3a4262',
-      hat: '#c02a4a',
-      band: '#8cff6a',
       px: {
         body: ['#7d88b0', '#c8d0f0', '#3a4262'],
         stripe: ['#3a4262', '#7d88b0', '#1e2238'],

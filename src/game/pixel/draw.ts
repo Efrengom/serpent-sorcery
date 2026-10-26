@@ -2098,7 +2098,7 @@ export function drawBlastsInFlight(ctx: CanvasRenderingContext2D, world: World):
 }
 
 /** The way down: a dark vortex with turning rings; a ring round it counts down to its pull. */
-/** The map's sites in pixels: the same shrine, rift, chest and stall as the classic style. */
+/** The map's sites in pixels: a shrine, a rift, a cursed chest and a merchant's stall. */
 export function drawSites(ctx: CanvasRenderingContext2D, world: World, t: number, quiet: boolean): void {
   const rect = (x: number, y: number, w: number, h: number, color: string) => {
     ctx.fillStyle = color;

@@ -73,8 +73,6 @@ export interface SaveData {
   settings: {
     muted: boolean;
     volume: number;
-    /** Pixel-art style for the arena, HUD and menus. */
-    pixelArt: boolean;
     /** Music slider, 0..1 (0 = off). `volume` above is the sound-effects slider. */
     musicVolume: number;
     /** Run setup, kept between runs. A locked wizard falls back to the Arcanist at run start. */
@@ -131,7 +129,7 @@ export function defaultSave(): SaveData {
     },
     achievements: [],
     grimoire: [],
-    settings: { muted: false, volume: 0.7, pixelArt: false, musicVolume: 0.55, wizard: 'arcanist', curses: [], heat: 0, startMap: 'ruins', ...defaultOptions() },
+    settings: { muted: false, volume: 0.7, musicVolume: 0.55, wizard: 'arcanist', curses: [], heat: 0, startMap: 'ruins', ...defaultOptions() },
     lastRunId: '',
   };
 }
@@ -192,7 +190,6 @@ export function sanitizeSave(input: unknown): SaveData {
     settings: {
       muted: typeof settings.muted === 'boolean' ? settings.muted : d.settings.muted,
       volume: num(settings.volume, d.settings.volume, 0, 1),
-      pixelArt: typeof settings.pixelArt === 'boolean' ? settings.pixelArt : d.settings.pixelArt,
       // Saves from before the slider stored an on/off flag; "off" becomes a silent slider.
       musicVolume: num(settings.musicVolume, settings.music === false ? 0 : d.settings.musicVolume, 0, 1),
       wizard: WIZARD_IDS.includes(settings.wizard as WizardId) ? (settings.wizard as WizardId) : d.settings.wizard,

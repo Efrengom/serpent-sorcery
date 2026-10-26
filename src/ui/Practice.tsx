@@ -6,10 +6,8 @@ import { analyzeStroke, recognize, SIGIL_KINDS, type Pt, type SigilKind, type St
 import { COLORS } from '../game/palette';
 import { cornerMarks, measurements, reportAttempt, SHAPE_NAMES, SHAPE_TIPS, shapeOverlay, type AttemptOutcome } from '../game/practice';
 import { SIGIL_TO_SPELL, SPELL_COLORS } from '../game/spells';
-import { usePixelArt } from './art';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 
-const UI_FONT = "'Nunito', 'Segoe UI', system-ui, sans-serif";
 const PIXEL_FONT = "'Silkscreen', 'Courier New', monospace";
 const NEUTRAL = '#dcd0ff';
 const FIT = '#ffd45e';
@@ -53,7 +51,6 @@ function strokeColor(kind: SigilKind | null): string {
 
 /** A place to draw sigils with no run at stake, showing how the recognizer reads each stroke. */
 export function PracticeScreen({ onBack, onPlay }: { onBack(): void; onPlay(): void }) {
-  const pixel = usePixelArt();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const padRef = useRef<HTMLDivElement>(null);
   const stroke = useRef<{ points: Pt[]; pointer: number } | null>(null);
@@ -98,9 +95,9 @@ export function PracticeScreen({ onBack, onPlay }: { onBack(): void; onPlay(): v
     const ctx = canvas.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, size.w, size.h);
-    ctx.lineJoin = pixel ? 'miter' : 'round';
-    ctx.lineCap = pixel ? 'square' : 'round';
-    const font = (px: number) => `800 ${px}px ${pixel ? PIXEL_FONT : UI_FONT}`;
+    ctx.lineJoin = 'miter';
+    ctx.lineCap = 'square';
+    const font = (px: number) => `800 ${px}px ${PIXEL_FONT}`;
     const label = (text: string, x: number, y: number, color: string) => {
       ctx.font = font(12);
       ctx.textAlign = 'center';
@@ -138,13 +135,8 @@ export function PracticeScreen({ onBack, onPlay }: { onBack(): void; onPlay(): v
       const color = live ? strokeColor(live.kind) : NEUTRAL;
       ctx.strokeStyle = color;
       ctx.lineWidth = live?.tier === 'perfect' ? 7 : 5;
-      if (!pixel) {
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 14;
-      }
       path(drawing.points);
       ctx.stroke();
-      ctx.shadowBlur = 0;
       return;
     }
     if (!last || !report) return;
@@ -164,14 +156,7 @@ export function PracticeScreen({ onBack, onPlay }: { onBack(): void; onPlay(): v
     path(a.points);
     ctx.stroke();
     ctx.fillStyle = color;
-    for (const p of a.points) {
-      if (pixel) ctx.fillRect(Math.round(p.x) - 2, Math.round(p.y) - 2, 4, 4);
-      else {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 2.4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
+    for (const p of a.points) ctx.fillRect(Math.round(p.x) - 2, Math.round(p.y) - 2, 4, 4);
 
     // The shape the recognizer fitted for the sigil in focus.
     const first = a.points[0];
@@ -233,7 +218,7 @@ export function PracticeScreen({ onBack, onPlay }: { onBack(): void; onPlay(): v
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(end.x - 5, end.y - 5, 10, 10);
     if (Math.hypot(end.x - first.x, end.y - first.y) > 36) label('end', end.x, end.y + 20, '#ffffff');
-  }, [size, pixel, target, last, report, live]);
+  }, [size, target, last, report, live]);
 
   useEffect(() => paint(), [paint]);
 

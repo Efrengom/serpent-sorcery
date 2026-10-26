@@ -1,0 +1,274 @@
+/* The development inspector (?inspector): a list, the stage and a panel, in the game's pixel look. */
+
+.inspector {
+  --insp-ink: #0d0718;
+  --insp-panel: #1d1233;
+  --insp-panel-2: #26183f;
+  --insp-edge: #47336e;
+  --insp-hi: #5d4a8e;
+  --insp-text: #e8e0ff;
+  --insp-dim: #a99cc9;
+  --insp-gold: #ffd45e;
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 300px;
+  background: var(--insp-ink);
+  color: var(--insp-text);
+  font-family: 'Pixelify Sans', 'Silkscreen', 'Courier New', monospace;
+  font-size: 15px;
+}
+
+.inspector button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.insp-list,
+.insp-panel {
+  overflow-y: auto;
+  background: var(--insp-panel);
+  scrollbar-color: var(--insp-edge) transparent;
+}
+
+.insp-list {
+  border-right: 3px solid var(--insp-edge);
+  padding: 12px 10px 20px;
+}
+
+.insp-brand {
+  font-family: 'Silkscreen', 'Courier New', monospace;
+  color: var(--insp-gold);
+  font-size: 1.15rem;
+  margin: 0 4px 10px;
+}
+
+.insp-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+  font: inherit;
+  color: var(--insp-text);
+  background: var(--insp-ink);
+  border: 3px solid var(--insp-edge);
+  outline: none;
+}
+
+.insp-search:focus {
+  border-color: var(--insp-hi);
+}
+
+.insp-list h3 {
+  font-family: 'Silkscreen', 'Courier New', monospace;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--insp-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 14px 4px 4px;
+}
+
+.insp-list nav button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 4px 8px;
+  background: none;
+  border: 0;
+  border-left: 3px solid transparent;
+}
+
+.insp-list nav button:hover {
+  background: var(--insp-panel-2);
+}
+
+.insp-list nav button.on {
+  background: var(--insp-panel-2);
+  border-left-color: var(--insp-gold);
+  color: var(--insp-gold);
+}
+
+.insp-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.insp-canvas,
+.insp-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.insp-canvas {
+  cursor: grab;
+  touch-action: none;
+}
+
+.insp-canvas:active {
+  cursor: grabbing;
+}
+
+.insp-overlay {
+  pointer-events: none;
+}
+
+.insp-status {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+  font-size: 0.85rem;
+}
+
+.insp-status span {
+  background: rgba(13, 7, 24, 0.82);
+  border: 2px solid var(--insp-edge);
+  padding: 2px 8px;
+}
+
+.insp-status .insp-paused {
+  color: var(--insp-gold);
+  border-color: var(--insp-gold);
+}
+
+.insp-panel {
+  border-left: 3px solid var(--insp-edge);
+  padding: 14px 14px 24px;
+}
+
+.insp-panel h2 {
+  font-family: 'Silkscreen', 'Courier New', monospace;
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  color: var(--insp-gold);
+  margin: 0;
+}
+
+.insp-group {
+  color: var(--insp-dim);
+  font-size: 0.8rem;
+  margin: 2px 0 10px;
+}
+
+.insp-notes {
+  margin: 0 0 6px;
+}
+
+.insp-notes p {
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+
+.insp-notes div {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.insp-notes dt {
+  color: var(--insp-dim);
+}
+
+.insp-notes dd {
+  margin: 0;
+}
+
+.insp-section {
+  border-top: 3px solid var(--insp-panel-2);
+  padding-top: 10px;
+  margin-top: 12px;
+}
+
+.insp-section h4 {
+  font-family: 'Silkscreen', 'Courier New', monospace;
+  font-size: 0.75rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--insp-dim);
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.insp-section kbd,
+.insp-keys {
+  font-family: 'Silkscreen', 'Courier New', monospace;
+  font-size: 0.7rem;
+}
+
+.insp-section kbd {
+  border: 2px solid var(--insp-edge);
+  padding: 0 4px;
+  text-transform: none;
+}
+
+.insp-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.insp-row.wrap {
+  flex-wrap: wrap;
+}
+
+.insp-btn {
+  padding: 4px 9px;
+  background: var(--insp-panel-2);
+  border: 2px solid var(--insp-edge);
+  box-shadow: inset 0 -2px 0 var(--insp-ink);
+  line-height: 1.2;
+}
+
+.insp-btn:hover {
+  border-color: var(--insp-hi);
+}
+
+.insp-btn.on {
+  background: var(--insp-gold);
+  border-color: var(--insp-gold);
+  color: var(--insp-ink);
+}
+
+.insp-hint {
+  color: var(--insp-dim);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  margin: 2px 0 0;
+}
+
+.insp-keys {
+  color: var(--insp-dim);
+  line-height: 1.6;
+  margin: 18px 0 0;
+}
+
+/* A narrow window stacks the list, the stage and the panel. */
+@media (max-width: 899px) {
+  .inspector {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 28vh minmax(0, 1fr) 34vh;
+  }
+  .insp-list {
+    border-right: 0;
+    border-bottom: 3px solid var(--insp-edge);
+  }
+  .insp-panel {
+    border-left: 0;
+    border-top: 3px solid var(--insp-edge);
+  }
+}

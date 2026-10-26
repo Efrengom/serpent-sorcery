@@ -3,7 +3,7 @@ import type { HudSnapshot } from '../game/engine';
 import { ICON_PATHS } from '../game/icons';
 import { formatTime } from '../game/math';
 import { RELICS } from '../game/relics';
-import { PixelIcon, RelicIcon, usePixelArt } from './art';
+import { PixelIcon, RelicIcon } from './art';
 import { useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 
@@ -42,7 +42,6 @@ function UltimateCard({ ult, keyLabel, onCast }: { ult: HudSnapshot['ultimate'];
 }
 
 export function Hud({ hud, muted, onPause, onToggleMute, onUltimate }: Props) {
-  const pixel = usePixelArt();
   const muteKey = useKeyLabel('mute');
   const pauseKey = useKeyLabel('pause');
   const ultKey = useKeyLabel('ultimate');
@@ -126,7 +125,7 @@ export function Hud({ hud, muted, onPause, onToggleMute, onUltimate }: Props) {
               title={`Mute (${muteKey})`}
               aria-label={muted ? 'Unmute' : 'Mute'}
             >
-              {pixel ? <PixelIcon name={muted ? 'soundOff' : 'soundOn'} scale={2} /> : muted ? '🔇' : '🔊'}
+              <PixelIcon name={muted ? 'soundOff' : 'soundOn'} scale={2} />
             </button>
             <button
               className="icon-btn"
@@ -136,7 +135,7 @@ export function Hud({ hud, muted, onPause, onToggleMute, onUltimate }: Props) {
               title={`Pause (${pauseKey})`}
               aria-label="Pause"
             >
-              {pixel ? <PixelIcon name="pause" scale={3} /> : '❚❚'}
+              <PixelIcon name="pause" scale={3} />
             </button>
           </div>
         </div>

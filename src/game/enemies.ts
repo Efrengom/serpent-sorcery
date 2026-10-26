@@ -66,11 +66,11 @@ export function eliteChance(depth: number, cursed: boolean, heat = 0): number {
 
 const ELITE_KINDS: EliteKind[] = ['shielded', 'swift', 'splitting'];
 
-/** Makes a fresh enemy elite: tougher, bigger, worth more, with one modifier. */
-function makeElite(world: World, e: Enemy): void {
+/** Makes a fresh enemy elite: tougher, bigger, worth more, with one modifier (rolled, unless the inspector picks it). */
+export function makeElite(world: World, e: Enemy, kind?: EliteKind): void {
   // Snakes can't split cleanly; everything else can roll any modifier.
   const kinds = SERPENT[e.kind] ? ELITE_KINDS.filter((k) => k !== 'splitting') : ELITE_KINDS;
-  e.elite = kinds[Math.floor(world.rng() * kinds.length) % kinds.length];
+  e.elite = kind ?? kinds[Math.floor(world.rng() * kinds.length) % kinds.length];
   e.hp *= ELITE.hpMult;
   e.maxHp = e.hp;
   e.xp = Math.round(e.xp * ELITE.xpMult);

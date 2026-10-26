@@ -16,14 +16,12 @@ interface Props {
   /** Wizard and curses for the next run; a restart picks up the latest choice. */
   setup: RunSetup;
   muted: boolean;
-  pixelArt: boolean;
   options: GameOptions;
   onOptions(patch: Partial<GameOptions>): void;
   volume: ComponentProps<typeof VolumeControls>;
   totalCurrency: number;
   onCommitRun(result: RunResult): CommitOutcome;
   onToggleMute(): void;
-  onToggleArt(): void;
   onExit(to: 'title' | 'shop'): void;
 }
 
@@ -35,14 +33,12 @@ export function GameView({
   meta,
   setup,
   muted,
-  pixelArt,
   options,
   onOptions,
   volume,
   totalCurrency,
   onCommitRun,
   onToggleMute,
-  onToggleArt,
   onExit,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -56,8 +52,8 @@ export function GameView({
   const [over, setOver] = useState<{ result: RunResult; outcome: CommitOutcome } | null>(null);
 
   // Keep latest callbacks/props reachable from the long-lived Game without re-creating it.
-  const latest = useRef({ meta, setup, pixelArt, options, onCommitRun, onToggleMute, onToggleArt });
-  latest.current = { meta, setup, pixelArt, options, onCommitRun, onToggleMute, onToggleArt };
+  const latest = useRef({ meta, setup, options, onCommitRun, onToggleMute });
+  latest.current = { meta, setup, options, onCommitRun, onToggleMute };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -77,9 +73,7 @@ export function GameView({
         },
         onHud: setHud,
         onToggleMute: () => latest.current.onToggleMute(),
-        onToggleArt: () => latest.current.onToggleArt(),
       },
-      latest.current.pixelArt,
       latest.current.setup,
       latest.current.options,
     );
@@ -94,10 +88,6 @@ export function GameView({
       if (handle.__serpent === game) delete handle.__serpent;
     };
   }, []);
-
-  useEffect(() => {
-    gameRef.current?.setPixelArt(pixelArt);
-  }, [pixelArt]);
 
   useEffect(() => {
     gameRef.current?.setOptions(options);
@@ -149,11 +139,9 @@ export function GameView({
       />
       {phase === 'paused' && (
         <PauseMenu
-          pixelArt={pixelArt}
           relics={hud?.relics ?? []}
           onResume={() => gameRef.current?.resume()}
           onEndRun={() => gameRef.current?.endRun()}
-          onToggleArt={onToggleArt}
           options={options}
           onOptions={onOptions}
           volume={volume}

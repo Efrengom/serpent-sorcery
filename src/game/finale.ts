@@ -63,7 +63,8 @@ export function updateFinale(world: World, dt: number): void {
   }
 }
 
-function riseAscendant(world: World, x: number, y: number): Enemy {
+/** The Ascendant rises where the finale gathered (the inspector raises one on its own). */
+export function riseAscendant(world: World, x: number, y: number): Enemy {
   const f = world.finale!;
   f.stage = 'fight';
   f.t = 0;

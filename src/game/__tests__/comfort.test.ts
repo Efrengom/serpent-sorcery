@@ -23,7 +23,6 @@ describe('key bindings', () => {
     expect(map.get('ArrowLeft')).toBe('left');
     expect(map.get('Escape')).toBe('pause');
     expect(map.get('KeyM')).toBe('mute');
-    expect(map.get('KeyP')).toBe('art');
   });
 
   it('moves a key that was already in use, leaving its old slot empty', () => {
@@ -69,12 +68,14 @@ describe('key bindings', () => {
     expect(b.left).toEqual([null, 'KeyJ']);
     expect(b.right).toEqual(['KeyL', null]);
     expect(b.pause).toEqual(['Escape', 'Space']);
-    // KeyI was already taken, so mute ends up with nothing; art was missing and gets P back.
+    // KeyI was already taken, so mute ends up with nothing; ultimate was missing and gets Q back (pause has Space).
     expect(b.mute).toEqual([null, null]);
-    expect(b.art).toEqual(['KeyP', null]);
+    expect(b.ultimate).toEqual([null, 'KeyQ']);
     // A missing action doesn't get a default key that something else already uses.
-    const taken = sanitizeBindings({ ...copyBindings(DEFAULT_BINDINGS), up: ['KeyP', null], art: undefined });
-    expect(taken.art).toEqual([null, null]);
+    const taken = sanitizeBindings({ ...copyBindings(DEFAULT_BINDINGS), up: ['KeyM', null], mute: undefined });
+    expect(taken.mute).toEqual([null, null]);
+    // A save from before the art style was dropped: its old art key is simply ignored.
+    expect(sanitizeBindings({ ...copyBindings(DEFAULT_BINDINGS), art: ['KeyP', null] })).toEqual(DEFAULT_BINDINGS);
   });
 
   it('labels keys the way a keyboard does', () => {
@@ -160,8 +161,8 @@ function contrast(a: number[], b: number[], m: number[]): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 const over = (fg: number[], alpha: number, bg: number[]) => fg.map((c, i) => c * alpha + bg[i] * (1 - alpha));
-/** Floor tones: the classic arena's mid gradient per area, and the pixel floors' main stone. */
-const FLOORS = ['#24153d', '#2b130e', PX.stone1, '#3a1610'];
+/** Floor tones: each map's pixel floor's main stone (the Ruins, Ember Depths, Hollows and Catacombs; see pixel/floor.ts). */
+const FLOORS = [PX.stone1, '#3a1610', '#0e1f1d', '#19233a'];
 
 describe('colorblind-safe warnings', () => {
   it('stand out from every floor by at least 7:1 under every kind of colour vision', () => {
