@@ -10,7 +10,7 @@ import { stormAngle, ULTIMATES } from '../ultimates';
 import { WIZARDS } from '../wizards';
 import { FINALE } from '../finale';
 import { SITE_INFO, SITES } from '../sites';
-import type { Blast, BuffId, Enemy, GestureView, GroundFx, World } from '../world';
+import type { Blast, BuffId, Enemy, GestureView, GroundFx, PickupKind, World } from '../world';
 import { BUFF_INFO, HEAL_COLOR } from '../breakables';
 import { fillIcon } from '../icons';
 import { bayer, blit, createCanvas, gridSprite, type Sprite } from './bake';
@@ -550,6 +550,17 @@ function eyesAt(
   }
 }
 
+/** A rounded dark pit round each of a pair of 2×2 eyes placed as `eyesAt` places them. */
+function eyeSockets(ctx: CanvasRenderingContext2D, x: number, y: number, heading: number, dist: number, spread: number): void {
+  for (const side of [-1, 1]) {
+    const a = heading + side * spread;
+    const ex = Math.round(x + Math.cos(a) * dist - 0.5);
+    const ey = Math.round(y + Math.sin(a) * dist - 0.5);
+    px(ctx, ex - 1, ey, PX.ink, 4, 2);
+    px(ctx, ex, ey - 1, PX.ink, 2, 4);
+  }
+}
+
 /** `n` frames cycling `rate` times a second, offset per foe. */
 function cycle(time: number, rate: number, e: Enemy, n: number): number {
   return ((Math.floor(time * rate + e.wobble * 3) % n) + n) % n;
@@ -653,11 +664,11 @@ function drawChaser(ctx: CanvasRenderingContext2D, e: Enemy, world: World, quiet
   const by = Math.round(e.y / P);
   // An imp gathering itself to leap smoulders.
   if (imp && e.state === 'windup') pixels(ctx, circlePixels(bx, by, e.r / P + 3, (X, Y) => bayer(X, Y) < 0.5), PX.hostile2);
-  blit(ctx, chaser(frame, flash, imp), bx, by);
-  if (flash) return;
-  // Glowing eyes shift a pixel toward where it is heading.
+  // The face, and the glowing eyes in it, shift a pixel toward where it is heading.
   const ox = Math.round(Math.cos(e.heading) * 1.4);
   const oy = Math.round(Math.sin(e.heading) * 1.4);
+  blit(ctx, chaser(frame, flash, imp, ox, oy), bx, by);
+  if (flash) return;
   for (const ex of [bx - 2 + ox, bx + 1 + ox]) {
     px(ctx, ex, by - 1 + oy, PX.amberHi);
     px(ctx, ex, by + oy, PX.amber);
@@ -769,7 +780,11 @@ function drawBrute(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quiet:
   if (!flash) {
     if (e.kind === 'thornback') eyesAt(ctx, x, y, e.heading, R, 0.22, 1, hot ? PX.thorn3 : PX.amberHi, hot ? PX.white : PX.amberHi);
     else if (golemKind) eyesAt(ctx, x, y, e.heading, R * 0.55, 0.45, 2, hot ? PX.rimeGlow : PX.ice2, PX.white);
-    else eyesAt(ctx, x, y, e.heading, R * 0.5, 0.6, 2, hot ? PX.crackHot : PX.amber, PX.amberHi);
+    else {
+      // Set in dark sockets and brighter than any crack, so they read as eyes, not more cracks.
+      eyeSockets(ctx, x, y, e.heading, R * 0.5, 0.6);
+      eyesAt(ctx, x, y, e.heading, R * 0.5, 0.6, 2, hot ? PX.white : PX.amberHi, PX.white);
+    }
   }
   // With safe warnings every attacker gets its "!" from drawWarningMarks instead.
   if (e.state === 'windup' && !safe) blit(ctx, exclaim(), x, y - R - 8);
@@ -1703,6 +1718,57 @@ function iconSprite(id: BuffId | 'heal', size: number, color: string): Sprite {
   return s;
 }
 
+/**
+ * Pickups too fine to come out of their path at this size, drawn by hand: two hearts (the HUD's
+ * heart, and a bigger one) and the Lodestone's horseshoe magnet with silver poles.
+ */
+const PICKUP_ROWS: Partial<Record<PickupKind, string[]>> = {
+  heal: ['.kk...kk.', 'kwrk.krrk', 'kwrrkrrdk', 'krrrrrrdk', '.krrrrdk.', '..krrdk..', '...kdk...', '....k....'],
+  bigHeal: [
+    '.kkk...kkk.',
+    'kWwrk.krrrk',
+    'kwrrrkrrrdk',
+    'krrrrrrrrdk',
+    'krrrrrrrrdk',
+    '.krrrrrrdk.',
+    '..krrrrdk..',
+    '...krrdk...',
+    '....kdk....',
+    '.....k.....',
+  ],
+  lodestone: [
+    'kkkk...kkkk',
+    'kWWk...kWWk',
+    'kssk...kssk',
+    'kkkk...kkkk',
+    'kLpk...kLdk',
+    'kLpk...kLdk',
+    'kLpk...kLdk',
+    'kLppk.kppdk',
+    '.kLpppppdk.',
+    '..kkdddkk..',
+    '....kkk....',
+  ],
+};
+const PICKUP_COLORS: Record<string, string> = {
+  k: PX.ink,
+  W: PX.white,
+  w: PX.hurt2,
+  r: PX.hurt1,
+  d: PX.hurt0,
+};
+const MAGNET_COLORS: Record<string, string> = { k: PX.ink, W: PX.eye, s: PX.golem3, L: PX.xp2, p: PX.xp1, d: PX.xp0 };
+
+function pickupSprite(kind: PickupKind, rows: string[]): Sprite {
+  const key = `drawn:${kind}`;
+  let s = iconSprites.get(key);
+  if (!s) {
+    s = gridSprite(rows, kind === 'lodestone' ? MAGNET_COLORS : PICKUP_COLORS);
+    iconSprites.set(key, s);
+  }
+  return s;
+}
+
 /** Hearts and buff runes bobbing on the floor, each with a dithered halo. */
 export function drawPickups(ctx: CanvasRenderingContext2D, world: World, t: number, quiet: boolean): void {
   for (const p of world.pickups) {
@@ -1714,7 +1780,8 @@ export function drawPickups(ctx: CanvasRenderingContext2D, world: World, t: numb
     const size = p.kind === 'bigHeal' ? 11 : heal ? 8 : 9;
     const halo = quiet ? 0.3 : 0.25 + 0.15 * Math.sin(t * 5 + p.id);
     pixels(ctx, circlePixels(x, y, size * 0.75 + 1, (X, Y) => bayer(X, Y) < halo), color);
-    blit(ctx, iconSprite(heal ? 'heal' : (p.kind as BuffId), size, color), x, y);
+    const rows = PICKUP_ROWS[p.kind];
+    blit(ctx, rows ? pickupSprite(p.kind, rows) : iconSprite(heal ? 'heal' : (p.kind as BuffId), size, color), x, y);
   }
 }
 

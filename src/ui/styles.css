@@ -1,3 +1,13 @@
+/* Silkscreen Bold's own W is nearly solid and reads as a heart. This face, layered over Google's
+   (declared later, so it wins), swaps in a clearer W for W and w alone; scripts/make-bold-w.mjs
+   draws it. */
+@font-face {
+  font-family: 'Silkscreen';
+  font-weight: 700;
+  src: url('./fonts/silkscreen-bold-w.ttf') format('truetype');
+  unicode-range: U+0057, U+0077;
+}
+
 :root {
   --bg: #0a0614;
   --bg2: #170d2a;
