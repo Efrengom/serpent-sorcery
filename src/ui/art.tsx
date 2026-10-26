@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { SpellId } from '../game/config';
 import { buildLayout } from '../game/maps';
 import { RUINS } from '../game/maps/ruins';
@@ -7,11 +7,7 @@ import { PX } from '../game/pixel/palette';
 import { segmentFill, segmentOutline, wizardHead } from '../game/pixel/sprites';
 import { blit } from '../game/pixel/bake';
 import { RELICS, type RelicId } from '../game/relics';
-import { WIZARDS, type WizardId } from '../game/wizards';
-
-/** True when the pixel-art style is active; menus and HUD switch their art from this. */
-export const PixelArtContext = createContext(false);
-export const usePixelArt = () => useContext(PixelArtContext);
+import type { WizardId } from '../game/wizards';
 
 // ---------------------------------------------------------------- bitmap icons
 
@@ -200,10 +196,9 @@ const UPGRADE_ICON: Record<string, IconName> = {
   wisdom: 'eye',
 };
 
-/** Upgrade/meta glyph: the original symbol in classic style, a pixel icon in pixel style. */
+/** Upgrade/meta glyph: its pixel icon, or the plain symbol for one without an icon. */
 export function UpgradeGlyph({ id, glyph }: { id: string; glyph: string }) {
-  const pixel = usePixelArt();
-  if (pixel && UPGRADE_ICON[id]) return <PixelIcon name={UPGRADE_ICON[id]} scale={4} className="card-glyph-px" />;
+  if (UPGRADE_ICON[id]) return <PixelIcon name={UPGRADE_ICON[id]} scale={4} className="card-glyph-px" />;
   return <span className="card-glyph">{glyph}</span>;
 }
 
@@ -300,35 +295,19 @@ function relicBitmap(id: RelicId): Bitmap {
   return bitmap;
 }
 
-/** A relic's icon in its own colour: its vector shape, or in the pixel style that shape in pixels. */
+/** A relic's icon in its own colour: its vector shape in pixels. */
 export function RelicIcon({ id, size = 24 }: { id: RelicId; size?: number }) {
-  const pixel = usePixelArt();
-  const r = RELICS[id];
-  if (pixel) return <BitmapIcon icon={relicBitmap(id)} scale={Math.max(1, Math.round(size / RELIC_GRID))} className="relic-icon" />;
-  return (
-    <svg className="relic-icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ color: r.color }}>
-      <path d={r.icon} fill="currentColor" fillRule="evenodd" />
-    </svg>
-  );
+  return <BitmapIcon icon={relicBitmap(id)} scale={Math.max(1, Math.round(size / RELIC_GRID))} className="relic-icon" />;
 }
 
 /** A serpent coiled around a foe, for Constrict. */
 export function CoilIcon({ size = 26 }: { size?: number }) {
-  const pixel = usePixelArt();
-  if (pixel) return <PixelIcon name="coil" scale={Math.max(2, Math.round(size / 9))} />;
-  return (
-    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
-      <circle cx="20" cy="20" r="6" fill="#ff4f7b" />
-      <path d="M33 30 A14 14 0 1 1 30 10" fill="none" stroke="var(--coil)" strokeWidth="5" strokeLinecap="round" />
-      <circle cx="33" cy="30" r="3.5" fill="var(--coil)" />
-    </svg>
-  );
+  return <PixelIcon name="coil" scale={Math.max(2, Math.round(size / 9))} />;
 }
 
 /** Arcane Shard currency symbol. */
 export function Shard({ scale = 2 }: { scale?: number }) {
-  const pixel = usePixelArt();
-  return pixel ? <PixelIcon name="shard" scale={scale} className="shard-px" /> : <>✧</>;
+  return <PixelIcon name="shard" scale={scale} className="shard-px" />;
 }
 
 // ---------------------------------------------------------------- pixel sigils
@@ -397,9 +376,8 @@ export function PixelSigil({ spell, size, animate }: { spell: SpellId; size: num
 
 // ---------------------------------------------------------------- title screen pieces
 
-/** A wizard's serpent, small and static: pixel sprites in pixel style, vector shapes otherwise. */
+/** A wizard's serpent, small and static, in its pixel sprites. */
 export function WizardPortrait({ id }: { id: WizardId }) {
-  const pixel = usePixelArt();
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -413,22 +391,8 @@ export function WizardPortrait({ id }: { id: WizardId }) {
     ctx.fillStyle = PX.eye;
     ctx.fillRect(38, 14, 2, 2);
     ctx.fillRect(38, 19, 2, 2);
-  }, [id, pixel]);
-  if (pixel) return <canvas ref={ref} width={52} height={30} className="wizard-portrait px" aria-hidden="true" />;
-  const look = WIZARDS[id].look;
-  return (
-    <svg className="wizard-portrait" viewBox="0 0 120 70" aria-hidden="true">
-      {[14, 30, 46, 62].map((x, i) => (
-        <circle key={x} cx={x} cy={40 + Math.sin(i) * 5} r={7 + i * 1.5} fill={i % 2 ? look.bodyDark : look.body} stroke="#140a24" strokeWidth="3" />
-      ))}
-      <ellipse cx="86" cy="40" rx="17" ry="14" fill={look.body} stroke="#140a24" strokeWidth="3" />
-      <circle cx="93" cy="34" r="3.5" fill="#fff" />
-      <circle cx="93" cy="46" r="3.5" fill="#fff" />
-      <path d="M78 30 Q 60 6, 40 8 Q 62 22, 72 46 Z" fill={look.hat} stroke="#140a24" strokeWidth="3" />
-      <path d="M70 26 L 76 40" stroke={look.band} strokeWidth="4" />
-      <circle cx="40" cy="8" r="4" fill={look.band} />
-    </svg>
-  );
+  }, [id]);
+  return <canvas ref={ref} width={52} height={30} className="wizard-portrait px" aria-hidden="true" />;
 }
 
 /** The real game sprites, slithering on a tiny canvas that CSS scales up with crisp pixels. */
@@ -475,7 +439,7 @@ export function PixelTitleSerpent({ wizard = 'arcanist' }: { wizard?: WizardId }
   return <canvas ref={ref} width={150} height={44} className="pixel-title-serpent" aria-hidden="true" />;
 }
 
-/** Data URL of the Rune Plaza's pixel floor, used as the menu backdrop in pixel style. */
+/** Data URL of the Rune Plaza's pixel floor, used as the menus' backdrop. */
 let floorUrl: string | null = null;
 export function pixelFloorUrl(): string {
   if (!floorUrl) {

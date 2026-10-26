@@ -125,7 +125,6 @@ export interface GameEvents {
   onVictory(summary: VictorySummary): void;
   onHud(hud: HudSnapshot): void;
   onToggleMute(): void;
-  onToggleArt(): void;
 }
 
 function newRunId(): string {
@@ -170,17 +169,15 @@ export class Game {
     canvas: HTMLCanvasElement,
     private meta: MetaLevels,
     private readonly events: GameEvents,
-    pixelArt = false,
     private setup: RunSetup = DEFAULT_SETUP,
     options?: GameOptions,
   ) {
     this.world = this.makeWorld();
-    this.renderer = new Renderer(canvas, pixelArt);
+    this.renderer = new Renderer(canvas);
     this.input = new InputManager(canvas, {
       onPause: () => this.togglePause(),
       onUltimate: () => this.castUltimate(),
       onToggleMute: () => this.events.onToggleMute(),
-      onToggleArt: () => this.events.onToggleArt(),
       onGestureStart: (p) => this.beginGesture(p),
       onGestureEnd: (pts) => this.endGesture(pts),
       onGestureCancel: () => this.cancelGestureView(),
@@ -300,15 +297,6 @@ export class Game {
 
   getPhase(): Phase {
     return this.phase;
-  }
-
-  /** Switches between the classic and pixel-art renderers; safe mid-run. */
-  setPixelArt(on: boolean): void {
-    if (on === this.renderer.pixelArt) return;
-    // The view transform changes, so an in-progress stroke's screen points would no longer match.
-    this.input.cancelGesture();
-    this.renderer.setPixelArt(on);
-    this.syncView();
   }
 
   private setPhase(p: Phase): void {

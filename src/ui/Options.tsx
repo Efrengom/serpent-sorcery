@@ -15,7 +15,6 @@ import {
   type KeyBindings,
 } from '../game/keys';
 import { GAME_SPEED, type GameOptions } from '../game/options';
-import { usePixelArt } from './art';
 
 /** The player's key bindings, so hints like "Pause (Esc)" show the keys actually bound. */
 export const BindingsContext = createContext<KeyBindings>(DEFAULT_BINDINGS);
@@ -82,9 +81,8 @@ function Toggle({ label, hint, on, onChange, children }: { label: string; hint: 
 
 /** A tiny charge lane in the chosen warning style, next to its toggle. */
 function WarningPreview({ safe }: { safe: boolean }) {
-  const pixel = usePixelArt();
   return (
-    <svg className="warn-preview" viewBox="0 0 96 34" aria-hidden="true" shapeRendering={pixel ? 'crispEdges' : 'auto'}>
+    <svg className="warn-preview" viewBox="0 0 96 34" aria-hidden="true" shapeRendering="crispEdges">
       <defs>
         <pattern id="hazard" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <rect width="12" height="12" fill="#120c00" />

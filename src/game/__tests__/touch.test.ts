@@ -18,7 +18,6 @@ function setup() {
     onPause() {},
     onUltimate() {},
     onToggleMute() {},
-    onToggleArt() {},
     onGestureStart: (p) => {
       log.starts.push(p);
       return true;

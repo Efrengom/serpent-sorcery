@@ -8,8 +8,8 @@ Requires Node 18+.
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
-npm test           # unit tests (recognizer, progression, persistence, movement, touch, music, hit-stop, recap, spells, depth, clean casts, Constrict, options, practice, maps, terrain, camera, navigation, breakables, buffs, descent, hazards, every map's foes and bosses, the Ascendant, sites, the daily run, achievements, records)
+npm run dev        # http://localhost:5173 (add ?inspector to look at any sprite or effect without playing)
+npm test           # unit tests (recognizer, progression, persistence, movement, touch, music, hit-stop, recap, spells, depth, clean casts, Constrict, options, practice, maps, terrain, camera, navigation, breakables, buffs, descent, hazards, every map's foes and bosses, the Ascendant, sites, the daily run, achievements, records, the inspector)
 npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 npm run playtest   # ~6 min end-to-end play-test in a headless Edge/Chrome
@@ -31,7 +31,7 @@ On Windows PowerShell with script execution disabled, `npm` itself is blocked (`
 - the boss warning hushing the music, the Ruins' boss theme crossfading in, the freeze and slow motion when the boss dies, the victory sting and then the Hollows' music rising on the way down, the Hollows playing its own theme, and the development jukebox taking over and handing back
 - drawing an unlearned triangle, then learning the triangle and zigzag sigils from level-up cards and casting them with real strokes, the ward blocking a real hit, frost slowing a foe, and an evolution card turning Arcane Bolt into Arcane Lance
 - the boss's fall clearing the field and opening a way down (with an arrow while it's off-screen), and steering into it with a real key to reach Depth 2, the Mycelium Hollows, with its banner
-- the big map: the camera following the serpent and Steady camera centring it, the aim staying on the world point pressed while the view scrolls, steering into a pillar with a real key (a bounce, 8 damage, recorded as the pillar), the boss clearing marked half a minute early with an arrow at the edge of the view, the minimap turned off and on with real clicks (checked in canvas pixels), a screenshot of every landmark in both styles, and frame times while the view races across the whole map; then each deeper map's landmarks in both styles, its own theme playing, and frame times racing across it, ice on the Frozen Lake halving the turn rate, and brambles in the Hollows stinging and named in the recap
+- the big map: the camera following the serpent and Steady camera centring it, the aim staying on the world point pressed while the view scrolls, steering into a pillar with a real key (a bounce, 8 damage, recorded as the pillar), the boss clearing marked half a minute early with an arrow at the edge of the view, the minimap turned off and on with real clicks (checked in canvas pixels), a screenshot of every landmark, and frame times while the view races across the whole map; then each deeper map's landmarks, its own theme playing, and frame times racing across it, ice on the Frozen Lake halving the turn rate, and brambles in the Hollows stinging and named in the recap
 - the trail reading a real V's first leg as a line and the finished stroke as a V, a careful V casting as Perfect or Clean, and a real WASD circle around a brute showing the loop hint and then Constricting it
 - breakables: running into an urn smashes it for crystals, real Bolt strokes break a reliquary for a buff, the HUD chip counting down, Quickening speeding cooldowns by half, and a heart healing
 - an autopilot run with level-ups through death, foes spawning just outside the view (never on screen) and staying around the serpent, breakables giving at most 15% of the XP, music layers building as the arena fills, the death recap, the reward banked once, and an instant restart
@@ -56,7 +56,6 @@ Screenshots and `results.json` go to `playtest-output/`. Set `PLAYTEST_BROWSER` 
 | **Release** | Recognize the sigil and cast. |
 | **Esc** | Pause / resume (focus loss also pauses) |
 | **M** | Mute everything (volume sliders are on the title screen and pause menu) |
-| **P** | Switch art style (Classic / Pixel), even mid-run |
 | **Space** (or **Q**) | Cast your wizard's ultimate once it's charged (or click its card at the bottom of the screen) |
 | **Options** | Rebind every key above except Esc; see [Options](#options) |
 | **1 / 2 / 3 / 4** | Pick a level-up card (or a relic on the way down) |
@@ -122,7 +121,7 @@ Maps are data in `src/game/maps/`: a text grid (one character per 200×200 cell:
 - **Minimap** (on by default): the map in the bottom-right corner, with the visible area outlined, your serpent, elites, the boss and its clearing. Clicks and strokes pass straight through it.
 - **Steady camera** (off by default): keeps the serpent in the middle of the view, with no look-ahead or easing, for players who find a moving camera uncomfortable.
 - **Game speed**: 50 to 100% in 10% steps. It slows the whole run, but drawing happens in real time, so there's more time to draw. Shards and records count game time, so a slower run earns the same; the run summary notes the speed.
-- **Keys**: two keys per action (steer up, down, left, right, pause, mute, art style). Click a key, then press the new one. Backspace clears it, Esc cancels. A key does one thing: binding one that's in use moves it and says which action lost it. A steering direction left with no key gets a warning. Keys are physical positions, so they work the same on any keyboard layout. Esc always pauses and goes back. Hints across the game (How to Play, the pause menu, button tooltips) show the keys you've bound.
+- **Keys**: two keys per action (steer up, down, left, right, ultimate, pause, mute). Click a key, then press the new one. Backspace clears it, Esc cancels. A key does one thing: binding one that's in use moves it and says which action lost it. A steering direction left with no key gets a warning. Keys are physical positions, so they work the same on any keyboard layout. Esc always pauses and goes back. Hints across the game (How to Play, the pause menu, button tooltips) show the keys you've bound.
 
 ## Sigil practice
 
@@ -218,7 +217,7 @@ Winning a run, or reaching Depth 5 (the Ruins again), unlocks **heat**. Each hea
 
 ## Wizards
 
-Chosen on the **Wizard & Curses** screen (reached from the title) and remembered between runs. Each has its own colours in both art styles, and its own **ultimate**.
+Chosen on the **Wizard & Curses** screen (reached from the title) and remembered between runs. Each has its own colours and its own **ultimate**.
 
 | Wizard | Starting sigils | Perks | Ultimate | Unlock |
 | --- | --- | --- | --- | --- |
@@ -322,19 +321,28 @@ Effects are samples from Kenney's free CC0 packs (Impact, Sci-Fi, Interface and 
 - **Hit-stop:** the action freezes for a few hundredths of a second when you get hurt, kill a brute or rival snake, chain lightning through 4+ foes or hit 6+ with one Nova. Killing the boss freezes for 0.45 s and then plays out in slow motion. Small freezes are rationed so a busy fight doesn't stutter. Timings are `HIT_STOP` in `config.ts`.
 - **Death recap:** the game-over screen names the blow that ended the run, shows each spell's damage (overkill not counted), kills and casts, and what hurt you most.
 
-## Art styles
+## Art
 
-There are two complete looks, switched with **P**, the title-screen button or the pause menu. The choice is saved.
+Everything is pixel art. The view is drawn on a low-res canvas 320 art pixels tall (1 pixel = 2.5 world units), offset by the camera in whole pixels, and upscaled by a whole-number factor: ×2 at 1280×720, ×3 at 1920×1080. Very small windows fall back to fractional scaling.
 
-- **Classic** draws smooth vector art with soft glows. The floor and stonework are painted in 256-unit chunks at the screen's resolution the first time they come near the view, then cached (the view and a ring of chunks around it, at most 1.75 device pixels per world unit, so under about 64 MB even at 4K); one chunk ahead is painted per frame.
-- **Pixel** renders the view on a low-res canvas 320 art pixels tall (1 pixel = 2.5 world units), offset by the camera in whole pixels, and upscales it by a whole-number factor: ×2 at 1280×720, ×3 at 1920×1080. Very small windows fall back to fractional scaling.
-  - **Sprites** are generated in code with hard edges, a 1px outline and top-left rim lighting. Heads are drawn at 16 headings.
-  - **The floor** is painted per pixel in 256×256 chunks: flagstones, cracks, moss, the rune circle, torch light, and the stonework shaded from each solid's exact distance (rim-lit top-left, shadows cast down-right). Every detail is keyed by its position on the map, so chunks meet without seams. The chunks around the view are painted a band at a time within 3 ms a frame, ahead of need.
-  - **Effects** use per-pixel lines and circles plus ordered (Bayer) dithering: charge lanes, lightning, Nova, enemy shots, crystals, particles and portals.
-  - **Overlay:** the sigil trail and hurt flash are drawn on a screen-sized overlay that lines up with the same pixel grid.
-  - **HUD and menus** switch to pixel fonts (Silkscreen, Pixelify Sans), stepped panels and bitmap icons.
+- **Sprites** are generated in code with hard edges, a 1px outline and top-left rim lighting. Heads are drawn at 16 headings.
+- **The floor** is painted per pixel in 256×256 chunks: flagstones, cracks, moss, the rune circle, torch light, and the stonework shaded from each solid's exact distance (rim-lit top-left, shadows cast down-right). Every detail is keyed by its position on the map, so chunks meet without seams. The chunks around the view are painted a band at a time within 3 ms a frame, ahead of need.
+- **Effects** use per-pixel lines and circles plus ordered (Bayer) dithering: charge lanes, lightning, Nova, enemy shots, crystals, particles and portals.
+- **Overlay:** the sigil trail and hurt flash are drawn on a screen-sized overlay that lines up with the same pixel grid.
+- **HUD and menus** use pixel fonts (Silkscreen, Pixelify Sans), stepped panels and bitmap icons.
 
-The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite rasterizer), `sprites.ts`, `floor.ts` (chunked floor) and `draw.ts`. The classic floor is `src/game/classicFloor.ts`. The menu pieces are in `src/ui/art.tsx`. Pixel size is `PIXEL_ART.worldPerPixel` in `config.ts`.
+The pixel art lives in `src/game/pixel/`: `palette.ts`, `bake.ts` (sprite rasterizer), `sprites.ts`, `floor.ts` (chunked floor) and `draw.ts`. The menu pieces are in `src/ui/art.tsx`. Pixel size is `PIXEL_ART.worldPerPixel` in `config.ts`. (An earlier vector style, "Classic", was dropped; a save that had chosen it simply opens in pixel art.)
+
+## Inspector
+
+Open the dev server with `?inspector` (http://localhost:5173/?inspector) to look at any sprite or effect without playing. It is development only and isn't part of the production build.
+
+- **The list** on the left has the four serpents, every foe, every Archmage and the Ascendant, the five spells and four ultimates, breakables, pickups, crystals, portals, foes' shots, the way down, the Ascendant rising, the ground hazards and telegraphed blasts, the four sites, and each map's floor. Search filters it, and ↑ ↓ step through it. The address keeps the subject (`?inspector#foe:chaser`), so a reload or a link opens it again.
+- **The stage** in the middle is drawn by the game's own renderer on a real map with nothing else on it. **Idle**, nothing thinks or moves and only the animation runs. **Live**, the subject's own logic runs: a foe or Archmage hunts a serpent that circles and can't be hurt, and spells and ultimates are cast at three training dummies that take every blow and stand. Drag to pan, scroll or press + − to zoom (1× to 12×; 3× is the game's size at 1920×1080), double-click to recenter.
+- **The panel** on the right says what the subject is, with its numbers, then has time (pause, step, ¼× to 2×), the view (zoom, any map's floor or a plain backdrop, hitboxes, the art-pixel grid, safe warnings, less flashing, shake) and ways to pose it: turn and spin, hit, kill or break, an elite modifier, statuses (frozen, chilled, stunned, shocked, a viper burrowed, a rattler collapsed), an Archmage enraged, the Ascendant's phase, a breakable's variant, a spell's evolution, a site spent, the serpent's length, and each map's landmarks to jump to.
+- **Keys:** Space pause, . step, L idle or live, H hit, X kill, R reset, B hitboxes, G grid, 0 recenter.
+
+The catalog and the stage are `src/game/inspect.ts`, the screen `src/ui/Inspector.tsx`. Its lists are keyed by the game's own kinds (breakables, blasts, ground, shots, pickups), and a test checks it has every foe, Archmage, wizard, spell, ultimate and map, then puts every subject on its stage and runs it idle and live. Something new that it's missing, or that breaks it, fails the type check or `npm test`. In the console, `__inspector.stage()` is the stage and `__inspector.run(seconds)` steps it.
 
 ## Where to tune balance
 
@@ -387,10 +395,9 @@ src/game/            framework-free game code (no React)
   ultimates.ts       the four ultimates: casting, cooldown, and their effects each step
   grimoire.ts        the Grimoire's unlocks, waystone starts and heat
   hazards.ts         lava, brambles, ice, burning trails, vents and telegraphed blasts
-  hazardDraw.ts      the classic look of hazards, blasts and the way down
-  telegraph.ts       what both renderers need to preview attacks: lanes, aim lines, blasts in flight
+  telegraph.ts       what the renderer needs to preview attacks: lanes, aim lines, blasts in flight
   atlas.ts           the setup screen's map pictures
-  icons.ts           pickup and buff icons, shared by the canvas, pixel sprites and HUD
+  icons.ts           pickup and buff icons, shared by the pixel sprites and HUD
   input.ts           keyboard (following the key bindings), pointer capture, and the touch stick and drawing zones; clears on blur/resize/pause
   keys.ts            key bindings: defaults, rebinding, validation, key labels
   options.ts         comfort and accessibility options: shake, flashing, warnings, minimap, camera, game speed
@@ -406,14 +413,14 @@ src/game/            framework-free game code (no React)
   curses.ts          optional pre-run curses and the shard multiplier
   cast.ts            clean-cast grading from the recognizer's confidence
   constrict.ts       loop detection and the Constrict crush
-  render.ts          Canvas 2D renderer: camera transform, glow sprites, edge arrows, both styles
-  classicFloor.ts    the classic floor and stonework, painted in cached chunks
+  render.ts          the renderer: the low-res view and its upscale, edge arrows, text, the sigil trail overlay
   minimap.ts         the map overview in the corner
+  inspect.ts         the development inspector: every sprite and effect, and the stage it is shown on
   effects.ts         capped particles, floating text, screen shake, hit-stop
   audio.ts           WebAudio context, volumes, sample loading, music scheduling
   sfx.ts             sound-effect samples and the synthesized fallback
   music/             score (each map's themes and band as data), synth instruments, ambient beds, player, what plays when
-src/ui/              React screens, HUD and overlays
+src/ui/              React screens, HUD and overlays, and the development jukebox and inspector
 public/              the web manifest, home-screen icons and the offline service worker
 scripts/             the end-to-end play-test, the headless balance bot, the music mix report, and the icon renderer
 ```

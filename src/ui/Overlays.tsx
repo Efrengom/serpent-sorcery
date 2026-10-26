@@ -284,20 +284,16 @@ export function RelicList({ relics }: { relics: RelicId[] }) {
 }
 
 export function PauseMenu({
-  pixelArt,
   relics,
   onResume,
   onEndRun,
-  onToggleArt,
   options,
   onOptions,
   volume,
 }: {
-  pixelArt: boolean;
   relics: RelicId[];
   onResume(): void;
   onEndRun(): void;
-  onToggleArt(): void;
   options: GameOptions;
   onOptions(patch: Partial<GameOptions>): void;
   volume: ComponentProps<typeof VolumeControls>;
@@ -329,14 +325,9 @@ export function PauseMenu({
             Resume <KeyHint action="pause" />
           </button>
           <VolumeControls {...volume} />
-          <div className="menu-pair">
-            <button className="btn" onClick={onToggleArt}>
-              Art: {pixelArt ? 'Pixel' : 'Classic'} <KeyHint action="art" />
-            </button>
-            <button className="btn" onClick={() => setShowOptions(true)}>
-              Options
-            </button>
-          </div>
+          <button className="btn" onClick={() => setShowOptions(true)}>
+            Options
+          </button>
           <button className="btn danger" onClick={onEndRun}>
             End run &amp; bank shards
           </button>

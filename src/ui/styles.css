@@ -14,8 +14,8 @@
   --violet: #d6c4ff;
   --hostile: #ff5a36;
   --hp: #ff4f7b;
-  --title-font: 'Cinzel', 'Palatino Linotype', Georgia, serif;
-  --ui-font: 'Nunito', 'Segoe UI', system-ui, sans-serif;
+  --title-font: 'Silkscreen', 'Courier New', monospace;
+  --ui-font: 'Pixelify Sans', 'Silkscreen', 'Courier New', monospace;
   color-scheme: dark;
 }
 
@@ -226,60 +226,12 @@ kbd {
   justify-content: center;
 }
 
-.runes-bg {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.35;
-  background-image: radial-gradient(circle at 50% 46%, transparent 230px, rgba(165, 140, 255, 0.18) 231px, transparent 234px),
-    radial-gradient(circle at 50% 46%, transparent 300px, rgba(165, 140, 255, 0.12) 301px, transparent 304px);
-  animation: breathe 6s ease-in-out infinite;
-}
-
-@keyframes breathe {
-  50% {
-    opacity: 0.6;
-  }
-}
-
 .title-wrap {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-}
-
-.title-serpent {
-  width: min(460px, 80vw);
-  height: auto;
-  filter: drop-shadow(0 0 18px rgba(47, 211, 181, 0.35));
-}
-
-.serpent-body {
-  stroke-dasharray: 8 0;
-  animation: slither 3s ease-in-out infinite;
-}
-
-@keyframes slither {
-  50% {
-    transform: translateY(4px);
-  }
-}
-
-.serpent-hat {
-  transform-origin: 418px 76px;
-  animation: hat 2.4s ease-in-out infinite;
-}
-
-@keyframes hat {
-  50% {
-    transform: rotate(-4deg);
-  }
-}
-
-.hat-star {
-  filter: drop-shadow(0 0 6px #ffd45e);
 }
 
 .game-title {
@@ -745,60 +697,6 @@ kbd {
 .dot.gold {
   background: var(--gold);
   box-shadow: 0 0 8px var(--gold);
-}
-
-/* sigil icon */
-
-.sigil-icon {
-  flex: none;
-  overflow: visible;
-}
-
-.sigil-icon path,
-.sigil-icon circle {
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.sigil-glow {
-  stroke-width: 7;
-  opacity: 0.3;
-}
-
-.sigil-core {
-  stroke-width: 3;
-}
-
-.sigil-arrow {
-  stroke-width: 2.5;
-}
-
-.sigil-dot {
-  fill: currentColor !important;
-  stroke: none !important;
-}
-
-.sigil-animate .sigil-core,
-.sigil-animate .sigil-glow {
-  stroke-dasharray: 100;
-  animation: draw 2.4s ease-in-out infinite;
-}
-
-@keyframes draw {
-  0% {
-    stroke-dashoffset: 100;
-  }
-  55%,
-  85% {
-    stroke-dashoffset: 0;
-    opacity: 1;
-  }
-  100% {
-    stroke-dashoffset: 0;
-    opacity: 0;
-  }
 }
 
 /* shop */
@@ -2042,8 +1940,9 @@ kbd {
 }
 
 /* ================================================================ pixel-art style
-   Everything below only applies when the Art style setting is "Pixel". Panels and buttons
-   use hard 3px borders with stepped bevels instead of rounded corners and soft glows. */
+   The app always carries the pixel class; these rules layer the pixel look over the base ones.
+   Panels and buttons use hard 3px borders with stepped bevels instead of rounded corners and
+   soft glows. */
 
 .app.pixel {
   --title-font: 'Silkscreen', 'Courier New', monospace;
@@ -2080,10 +1979,6 @@ kbd {
     linear-gradient(rgba(13, 7, 24, 0.8), rgba(13, 7, 24, 0.9)),
     var(--pixel-floor) center / cover no-repeat;
   image-rendering: pixelated;
-}
-
-.app.pixel .runes-bg {
-  display: none;
 }
 
 .app.pixel .pixel-title-serpent {
@@ -3031,9 +2926,6 @@ kbd {
   }
   .title-screen .tagline {
     margin-bottom: 1.2em;
-  }
-  .title-serpent {
-    width: min(320px, 70vw);
   }
   .game-title {
     font-size: clamp(2.4rem, 6vw, 4.2rem);

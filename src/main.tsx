@@ -1,11 +1,21 @@
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './ui/App';
 import './ui/styles.css';
 
+// Development only: ?inspector opens the sprite and effect inspector instead of the game. In a
+// production build the branch is dead, so the inspector isn't built at all.
+const Inspector = import.meta.env.DEV && new URLSearchParams(location.search).has('inspector') ? lazy(() => import('./ui/Inspector')) : null;
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {Inspector ? (
+      <Suspense fallback={null}>
+        <Inspector />
+      </Suspense>
+    ) : (
+      <App />
+    )}
   </StrictMode>,
 );
 

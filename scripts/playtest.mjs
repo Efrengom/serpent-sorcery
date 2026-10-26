@@ -17,7 +17,6 @@
 //   npm run playtest                       # ~5 minutes
 //   AUTOPILOT_SECONDS=60 npm run playtest  # shorter autopilot run
 //   PLAYTEST_BROWSER=/path/to/chrome npm run playtest
-//   PLAYTEST_PIXEL=1 npm run playtest      # run everything in the pixel-art style
 //
 // Screenshots and results.json are written to playtest-output/.
 import fs from 'node:fs';
@@ -261,10 +260,6 @@ async function clickButton(text) {
 
 try {
   // ============================================================== Part A: controls
-  if (process.env.PLAYTEST_PIXEL) {
-    await page.keyboard.press('KeyP');
-    await sleep(100);
-  }
   await page.keyboard.press('Enter');
   await sleep(700);
   let s = await state();
@@ -1088,7 +1083,7 @@ try {
       savedOff,
     });
 
-    // Each landmark, in both styles, and the slowest frames while the view races across the map.
+    // Each landmark, and the slowest frames while the view races across the map.
     const landmarks = [
       ['plaza', 3200, 2100, -Math.PI / 2],
       ['colonnade', 2600, 590, 0],
@@ -1096,53 +1091,45 @@ try {
       ['colossus', 5150, 2470, -0.4],
       ['gate', 3200, 3350, -Math.PI / 2],
     ];
-    const frameTimes = {};
-    for (let pass = 0; pass < 2; pass++) {
-      const pixel = await page.evaluate(() => document.querySelector('.app').classList.contains('pixel'));
-      const name = pixel ? 'pixel' : 'classic';
-      for (const [id, x, y, h] of landmarks) {
-        await page.evaluate(
-          ([x, y, h]) => {
-            const w = window.__serpent.debug().world;
-            w.snake.reset(x, y, h);
-            w.invuln = 0;
-            w.hp = w.stats.maxHp;
-          },
-          [x, y, h],
-        );
-        await sleep(450);
-        await page.screenshot({ path: path.join(OUT, `21-map-${id}-${name}.png`) });
-      }
-      frameTimes[name] = await page.evaluate(async () => {
-        const w = window.__serpent.debug().world;
-        w.invuln = 1e9;
-        w.snake.reset(200, 960, 0);
-        const times = [];
-        let last = performance.now();
-        await new Promise((done) => {
-          const tick = (t) => {
-            times.push(t - last);
-            last = t;
-            // About three times the serpent's own speed, along a lane that is open end to end.
-            w.snake.x += 7;
-            w.snake.y = 960;
-            w.snake.heading = 0;
-            if (w.snake.x < 6100 && times.length < 1200) requestAnimationFrame(tick);
-            else done();
-          };
-          requestAnimationFrame(tick);
-        });
-        times.shift();
-        times.sort((a, b) => a - b);
-        return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), max: +times[times.length - 1].toFixed(1) };
-      });
-      // Switch art style (the second switch puts it back).
-      await page.keyboard.press('KeyP');
-      await sleep(300);
+    for (const [id, x, y, h] of landmarks) {
+      await page.evaluate(
+        ([x, y, h]) => {
+          const w = window.__serpent.debug().world;
+          w.snake.reset(x, y, h);
+          w.invuln = 0;
+          w.hp = w.stats.maxHp;
+        },
+        [x, y, h],
+      );
+      await sleep(450);
+      await page.screenshot({ path: path.join(OUT, `21-map-${id}.png`) });
     }
-    check('frame times stay smooth while the view races across the whole map, in both styles', Object.values(frameTimes).every((f) => f.p95 < 34 && f.max < 120), frameTimes);
+    const frameTimes = await page.evaluate(async () => {
+      const w = window.__serpent.debug().world;
+      w.invuln = 1e9;
+      w.snake.reset(200, 960, 0);
+      const times = [];
+      let last = performance.now();
+      await new Promise((done) => {
+        const tick = (t) => {
+          times.push(t - last);
+          last = t;
+          // About three times the serpent's own speed, along a lane that is open end to end.
+          w.snake.x += 7;
+          w.snake.y = 960;
+          w.snake.heading = 0;
+          if (w.snake.x < 6100 && times.length < 1200) requestAnimationFrame(tick);
+          else done();
+        };
+        requestAnimationFrame(tick);
+      });
+      times.shift();
+      times.sort((a, b) => a - b);
+      return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), max: +times[times.length - 1].toFixed(1) };
+    });
+    check('frame times stay smooth while the view races across the whole map', frameTimes.p95 < 34 && frameTimes.max < 120, frameTimes);
 
-    // The deeper maps: each one's landmarks in both styles, and frame times across each.
+    // The deeper maps: each one's landmarks, and frame times across each.
     const tours = (
       await page.evaluate(async () => {
         const { MAP_ORDER } = await import('/src/game/maps/index.ts');
@@ -1163,72 +1150,66 @@ try {
       }, id);
       await sleep(900);
       deepThemes[id] = (await audioState()).theme;
-      for (let pass = 0; pass < 2; pass++) {
-        const pixel = await page.evaluate(() => document.querySelector('.app').classList.contains('pixel'));
-        const name = pixel ? 'pixel' : 'classic';
-        for (const [spot, x, y, h] of tour) {
-          await page.evaluate(([x, y, h]) => window.__serpent.debug().world.snake.reset(x, y, h), [x, y, h]);
-          await sleep(450);
-          await page.screenshot({ path: path.join(OUT, `24-${id}-${spot}-${name}.png`) });
-        }
-        if (pass === 0 && id === 'catacombs') {
-          // On the Frozen Lake the head turns at half rate; off it, at full.
-          const ice = await page.evaluate(async () => {
-            const w = window.__serpent.debug().world;
-            w.snake.reset(6700, 2200, 0);
-            await new Promise((r) => setTimeout(r, 150));
-            const on = w.snake.turnMult;
-            w.snake.reset(4000, 2000, -Math.PI / 2);
-            await new Promise((r) => setTimeout(r, 150));
-            return { on, off: w.snake.turnMult };
+      for (const [spot, x, y, h] of tour) {
+        await page.evaluate(([x, y, h]) => window.__serpent.debug().world.snake.reset(x, y, h), [x, y, h]);
+        await sleep(450);
+        await page.screenshot({ path: path.join(OUT, `24-${id}-${spot}.png`) });
+      }
+      if (id === 'catacombs') {
+        // On the Frozen Lake the head turns at half rate; off it, at full.
+        const ice = await page.evaluate(async () => {
+          const w = window.__serpent.debug().world;
+          w.snake.reset(6700, 2200, 0);
+          await new Promise((r) => setTimeout(r, 150));
+          const on = w.snake.turnMult;
+          w.snake.reset(4000, 2000, -Math.PI / 2);
+          await new Promise((r) => setTimeout(r, 150));
+          return { on, off: w.snake.turnMult };
+        });
+        check('ice on the Catacombs halves the serpent’s turn rate, and only on the ice', ice.on === 0.5 && ice.off === 1, ice);
+      }
+      if (id === 'hollows') {
+        // Brambles sting (recorded by name) even with the serpent otherwise untouchable by foes.
+        const thorns = await page.evaluate(async () => {
+          const w = window.__serpent.debug().world;
+          w.invuln = 0;
+          const hp = w.hp;
+          w.snake.reset(1000, 2300, Math.PI / 2);
+          await new Promise((r) => setTimeout(r, 250));
+          const out = { lost: Math.round(hp - w.hp), taken: w.recap.taken['wall:bramble'] ?? 0 };
+          w.invuln = 1e9;
+          w.hp = w.stats.maxHp;
+          return out;
+        });
+        check('brambles in the Hollows sting on touch, and the recap names them', thorns.lost === 5 && thorns.taken === 5, thorns);
+      }
+      if (lane) {
+        deepTimes[id] = await page.evaluate(async ([y, x0, x1]) => {
+          const w = window.__serpent.debug().world;
+          w.snake.reset(x0, y, 0);
+          const times = [];
+          let last = performance.now();
+          await new Promise((done) => {
+            const tick = (t) => {
+              times.push(t - last);
+              last = t;
+              w.snake.x += 7;
+              w.snake.y = y;
+              w.snake.heading = 0;
+              if (w.snake.x < x1 && times.length < 1400) requestAnimationFrame(tick);
+              else done();
+            };
+            requestAnimationFrame(tick);
           });
-          check('ice on the Catacombs halves the serpent’s turn rate, and only on the ice', ice.on === 0.5 && ice.off === 1, ice);
-        }
-        if (pass === 0 && id === 'hollows') {
-          // Brambles sting (recorded by name) even with the serpent otherwise untouchable by foes.
-          const thorns = await page.evaluate(async () => {
-            const w = window.__serpent.debug().world;
-            w.invuln = 0;
-            const hp = w.hp;
-            w.snake.reset(1000, 2300, Math.PI / 2);
-            await new Promise((r) => setTimeout(r, 250));
-            const out = { lost: Math.round(hp - w.hp), taken: w.recap.taken['wall:bramble'] ?? 0 };
-            w.invuln = 1e9;
-            w.hp = w.stats.maxHp;
-            return out;
-          });
-          check('brambles in the Hollows sting on touch, and the recap names them', thorns.lost === 5 && thorns.taken === 5, thorns);
-        }
-        if (lane) {
-          deepTimes[`${id}-${name}`] = await page.evaluate(async ([y, x0, x1]) => {
-            const w = window.__serpent.debug().world;
-            w.snake.reset(x0, y, 0);
-            const times = [];
-            let last = performance.now();
-            await new Promise((done) => {
-              const tick = (t) => {
-                times.push(t - last);
-                last = t;
-                w.snake.x += 7;
-                w.snake.y = y;
-                w.snake.heading = 0;
-                if (w.snake.x < x1 && times.length < 1400) requestAnimationFrame(tick);
-                else done();
-              };
-              requestAnimationFrame(tick);
-            });
-            times.shift();
-            times.sort((a, b) => a - b);
-            return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), max: +times[times.length - 1].toFixed(1) };
-          }, lane);
-        }
-        await page.keyboard.press('KeyP');
-        await sleep(300);
+          times.shift();
+          times.sort((a, b) => a - b);
+          return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), max: +times[times.length - 1].toFixed(1) };
+        }, lane);
       }
     }
     check('every deeper map plays its own theme', Object.entries(deepThemes).every(([id, theme]) => theme === id), deepThemes);
     check(
-      'every deeper map has a landmark tour, and frame times stay smooth racing across each, in both styles',
+      'every deeper map has a landmark tour, and frame times stay smooth racing across each',
       tours.every((t) => t.tour.length >= 3 && t.lane) && Object.values(deepTimes).every((f) => f.p95 < 34 && f.max < 120),
       { maps: tours.map((t) => t.id), deepTimes },
     );
@@ -2295,10 +2276,6 @@ try {
     const fight = await audioState();
     check('Azhdaha, the Archmage Ascendant, rises with its own bar and theme', !!risen && /Azhdaha/.test(risen.bar ?? '') && fight.theme === 'finale' && /^boss/.test(fight.scene), { risen, fight });
     await page.screenshot({ path: path.join(OUT, '31-ascendant.png') });
-    await page.keyboard.press('KeyP');
-    await sleep(400);
-    await page.screenshot({ path: path.join(OUT, '31-ascendant-pixel.png') });
-    await page.keyboard.press('KeyP');
     const phase = await page.evaluate(async () => {
       const b = window.__serpent.debug().world.boss;
       b.hp = b.maxHp * 0.6;
@@ -2379,11 +2356,7 @@ try {
       return out.length;
     });
     await sleep(300);
-    await page.screenshot({ path: path.join(OUT, '32-sites-classic.png') });
-    await page.keyboard.press('KeyP');
-    await sleep(400);
-    await page.screenshot({ path: path.join(OUT, '32-sites-pixel.png') });
-    await page.keyboard.press('KeyP');
+    await page.screenshot({ path: path.join(OUT, '32-sites.png') });
     /** Steers into site i with a real key, and waits for what it does. */
     const steerInto = async (i, until) => {
       await page.evaluate((i) => {

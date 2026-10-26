@@ -36,19 +36,3 @@ export function fillIcon(ctx: CanvasRenderingContext2D, id: BuffId | 'heal', x: 
   ctx.fill(p);
   ctx.restore();
 }
-
-/** Strokes an icon's outline, `width` in screen units. */
-export function strokeIcon(ctx: CanvasRenderingContext2D, id: BuffId | 'heal', x: number, y: number, size: number, width: number): void {
-  let p = paths.get(id);
-  if (!p) {
-    p = new Path2D(ICON_PATHS[id]);
-    paths.set(id, p);
-  }
-  ctx.save();
-  ctx.translate(x - size / 2, y - size / 2);
-  ctx.scale(size / 24, size / 24);
-  ctx.lineWidth = (width * 24) / size;
-  ctx.lineJoin = 'round';
-  ctx.stroke(p);
-  ctx.restore();
-}
