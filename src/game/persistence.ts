@@ -93,6 +93,8 @@ export interface SaveData {
     bindings: KeyBindings;
     /** Touch screens: the right thumb steers. */
     steerRight: boolean;
+    /** Spells aim at the nearest foe (on by default on a phone or tablet). */
+    autoAim: boolean;
   };
   /** Id of the last run whose reward was banked; guarantees one award per run. */
   lastRunId: string;
@@ -206,6 +208,7 @@ export function sanitizeSave(input: unknown): SaveData {
       gameSpeed: clampSpeed(num(settings.gameSpeed, d.settings.gameSpeed, 0, 1)),
       bindings: sanitizeBindings(settings.bindings),
       steerRight: typeof settings.steerRight === 'boolean' ? settings.steerRight : d.settings.steerRight,
+      autoAim: typeof settings.autoAim === 'boolean' ? settings.autoAim : d.settings.autoAim,
     },
     lastRunId: typeof o.lastRunId === 'string' ? o.lastRunId.slice(0, 64) : '',
   };
@@ -213,8 +216,8 @@ export function sanitizeSave(input: unknown): SaveData {
 
 /** The options a run and its renderer use, taken from the settings. */
 export function optionsOf(settings: SaveData['settings']): GameOptions {
-  const { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings, steerRight } = settings;
-  return { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings, steerRight };
+  const { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings, steerRight, autoAim } = settings;
+  return { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings, steerRight, autoAim };
 }
 
 export function parseSave(raw: string | null | undefined): SaveData {

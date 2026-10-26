@@ -39,7 +39,7 @@ const SPEEDS = [0.25, 0.5, 1, 2];
 const SPEED_NAMES: Record<number, string> = { 0.25: '¼', 0.5: '½' };
 const BACKDROPS = { floor: null, dark: '#0a0614', light: '#8c86a0' } as const;
 type Backdrop = keyof typeof BACKDROPS;
-const NO_GESTURE: GestureView = { active: false, points: [], target: null, fade: null, reading: null };
+const NO_GESTURE: GestureView = { active: false, points: [], target: null, lock: null, fade: null, reading: null };
 const ELITE_NAMES: Record<EliteKind, string> = { shielded: 'Shielded', swift: 'Swift', splitting: 'Splitting' };
 const TURN = TAU / 16;
 

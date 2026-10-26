@@ -1,6 +1,7 @@
 import { ASPECTS, BUFFS, DUOS, EFFECTS, EVOLUTIONS, HIT_STOP, SNAKE, SPELLS, type SpellId } from './config';
 import { damageBreakable, eachBreakableNear } from './breakables';
 import { damageEnemy, enemyDistance, enemyHitTest } from './combat';
+import { inView } from './camera';
 import { addShake, burst, floater, hitStop } from './effects';
 import type { SigilKind } from './gesture';
 import { angleDiff, clamp, dist, dist2, TAU, type Vec } from './math';
@@ -132,6 +133,43 @@ function castBolt(world: World, aim: number, power: number): void {
     life: 0.25,
   });
   world.sfx('bolt');
+}
+
+/**
+ * Auto-aim's pick: the nearest foe in view that a bolt from the head could reach (nothing solid in
+ * between), else the nearest in view behind stone. Foes underground or in a pile of bones can't be
+ * hit, so they're passed over. Null when no foe is in view.
+ */
+export function autoAimTarget(world: World): Enemy | null {
+  const s = world.snake;
+  let best: Enemy | null = null;
+  let bestSight = false;
+  let bestD = Infinity;
+  for (const e of world.enemies) {
+    if (e.dead || e.hidden || e.pile > 0 || !inView(world.camera, e.x, e.y)) continue;
+    const sight = e.nav.sight;
+    const d = dist2(s.x, s.y, e.x, e.y);
+    if ((sight && !bestSight) || (sight === bestSight && d < bestD)) {
+      best = e;
+      bestSight = sight;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+/**
+ * Where auto-aim sends a cast: at its pick (or `e`). A foe right against the head is too close to
+ * give a direction (casts would fall back to the heading), so the point is carried out along the
+ * line to it.
+ */
+export function autoAimPoint(world: World, e: Enemy | null = autoAimTarget(world)): Vec | null {
+  if (!e) return null;
+  const s = world.snake;
+  const d = dist(s.x, s.y, e.x, e.y);
+  if (d >= SNAKE.aimMinDistance || d < 1e-6) return { x: e.x, y: e.y };
+  const k = (SNAKE.aimMinDistance + 1) / d;
+  return { x: s.x + (e.x - s.x) * k, y: s.y + (e.y - s.y) * k };
 }
 
 /** The nearest living foe to (x, y) within `range`, skipping those in `skip`. */

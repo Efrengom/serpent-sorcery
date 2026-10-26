@@ -35,6 +35,8 @@ import { Renderer } from './render';
 import { afterSigil, hasRelic, offerRelics, takeRelic, updateRelics, type RelicId } from './relics';
 import { shardMultiplier } from './curses';
 import {
+  autoAimPoint,
+  autoAimTarget,
   castSpell,
   regenPerSecond,
   SIGIL_TO_SPELL,
@@ -160,9 +162,11 @@ export class Game {
   private riftRelics = false;
   private runId = newRunId();
   private intensity = new IntensityTracker();
-  private readonly gesture: GestureView = { active: false, points: [], target: null, fade: null, reading: null };
+  private readonly gesture: GestureView = { active: false, points: [], target: null, lock: null, fade: null, reading: null };
   /** Seconds until the stroke being drawn is read again (live trail tint). */
   private readTimer = 0;
+  /** Where on the map the stroke being drawn began: the aim, unless auto-aim finds a foe. */
+  private pressTarget: Vec | null = null;
   private options: GameOptions = defaultOptions();
 
   constructor(
@@ -531,14 +535,31 @@ export class Game {
     if (this.phase !== 'playing') return false;
     const t = this.renderer.screenToWorld(p);
     const b = this.world.map.bounds;
-    this.gesture.target = { x: clamp(t.x, b.minX, b.maxX), y: clamp(t.y, b.minY, b.maxY) };
+    this.pressTarget = { x: clamp(t.x, b.minX, b.maxX), y: clamp(t.y, b.minY, b.maxY) };
+    this.gesture.target = this.aimTarget();
     this.gesture.active = true;
     return true;
   }
 
+  /**
+   * Where a cast would go now: with auto-aim, the foe it picks (when one is in view), which the
+   * view marks as locked; otherwise where the stroke began.
+   */
+  private aimTarget(): Vec | null {
+    const press = this.pressTarget;
+    this.gesture.lock = null;
+    if (!this.options.autoAim) return press;
+    const e = autoAimTarget(this.world);
+    if (!e) return press;
+    this.gesture.lock = { x: e.x, y: e.y, r: e.r };
+    return autoAimPoint(this.world, e);
+  }
+
   private cancelGestureView(): void {
     this.gesture.active = false;
+    this.pressTarget = null;
     this.gesture.target = null;
+    this.gesture.lock = null;
     this.gesture.points = [];
     this.gesture.reading = null;
   }
@@ -552,7 +573,7 @@ export class Game {
   }
 
   private endGesture(points: Pt[]): void {
-    const target = this.gesture.target;
+    const target = this.aimTarget();
     this.cancelGestureView();
     if (this.phase !== 'playing') return;
     const w = this.world;
@@ -657,6 +678,8 @@ export class Game {
     }
     this.gesture.active = this.input.isDrawing && this.phase === 'playing';
     this.gesture.points = this.input.points;
+    // With auto-aim the marker rides the foe a cast would go to, switching as foes come and go.
+    if (this.gesture.active && this.options.autoAim) this.gesture.target = this.aimTarget();
     if (this.gesture.active && this.gesture.points.length > 3) {
       this.readTimer -= dt;
       if (this.readTimer <= 0) {
