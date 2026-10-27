@@ -2253,6 +2253,41 @@ try {
       window.__serpent.debug().world.enemies.length = 0;
       delete window.__aimFoe;
     });
+    // With no foe about, auto-aim sends a Bolt at a reliquary on the steering side instead.
+    const relic = await page.evaluate(() => {
+      const w = window.__serpent.debug().world;
+      w.breakables.length = 0;
+      w.cooldowns.bolt = 0;
+      const b = { id: 9999, slot: 0, size: 'large', look: 'reliquary', x: w.snake.x - 230, y: w.snake.y, r: 28, hp: 400, maxHp: 400, flash: 0, lastNovaId: -1, variant: 0 };
+      w.breakables.push(b);
+      return { x: window.__serpent.renderer.worldToScreen(b).x };
+    });
+    await touch('touchStart', [[520, 200, 3]]);
+    for (let i = 1; i <= 8; i++) {
+      await touch('touchMove', [[520 + i * 26, 200 - i * 4, 3]]);
+      await sleep(25);
+    }
+    await touch('touchEnd', []);
+    await sleep(450);
+    relic.hp = await page.evaluate(() => window.__serpent.debug().world.breakables.find((b) => b.id === 9999)?.hp ?? 0);
+    check('auto-aim sends a Bolt at a reliquary on the steering side when no foe is about', relic.hp < 400 && relic.x < 812 * 0.42, relic);
+    // The fullscreen button: a tap goes fullscreen, and another comes back, with the run playing on.
+    const tapFullscreen = async () => {
+      const b = await page.$eval('.hud [data-fullscreen]', (el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      });
+      await page.touchscreen.tap(b.x, b.y);
+      await sleep(400);
+      return page.evaluate(() => ({ full: !!document.fullscreenElement, label: document.querySelector('.hud [data-fullscreen]')?.getAttribute('aria-label'), phase: window.__serpent.getPhase() }));
+    };
+    const fsIn = await tapFullscreen();
+    const fsOut = await tapFullscreen();
+    check(
+      'the fullscreen button takes a phone fullscreen with a tap and back with another, while the run plays on',
+      fsIn.full && fsIn.label === 'Leave fullscreen' && !fsOut.full && fsOut.label === 'Fullscreen' && fsIn.phase === 'playing' && fsOut.phase === 'playing',
+      { fsIn, fsOut },
+    );
     // The ultimate's card answers a tap.
     await page.evaluate(() => (window.__serpent.debug().world.ult.cooldown = 0));
     await sleep(150);

@@ -261,7 +261,7 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
         />
         <Toggle
           label="Auto-aim"
-          hint="Bolt, Lightning and Frost Field go to the nearest foe in view instead of where you start drawing. On by default on phones and tablets, where the steering thumb covers its side of the screen."
+          hint="Bolt, Lightning and Frost Field go to the nearest foe in view instead of where you start drawing; Bolt and Frost Field to an urn or reliquary if it’s nearer. On by default on phones and tablets, where the steering thumb covers its side of the screen."
           on={options.autoAim}
           onChange={(autoAim) => onChange({ autoAim })}
         />

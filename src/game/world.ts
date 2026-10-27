@@ -487,7 +487,7 @@ export interface GestureView {
   active: boolean;
   points: Pt[];
   target: Vec | null;
-  /** The foe auto-aim has locked onto (where it is, and how big), shown with brackets round it. */
+  /** What auto-aim has locked onto (where it is, and how big), shown with brackets round it. */
   lock: { x: number; y: number; r: number } | null;
   /** Live reading of the stroke so far, or null if it isn't a sigil (yet). */
   reading: SigilReading | null;

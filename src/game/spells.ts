@@ -6,9 +6,9 @@ import { addShake, burst, floater, hitStop } from './effects';
 import type { SigilKind } from './gesture';
 import { angleDiff, clamp, dist, dist2, TAU, type Vec } from './math';
 import { COLORS } from './palette';
-import { castRay, clearanceAt, pushOut } from './terrain';
+import { castRay, clearanceAt, clearPath, pushOut } from './terrain';
 import { zeroSlow } from './ultimates';
-import type { Enemy, World } from './world';
+import type { Breakable, Enemy, World } from './world';
 
 export const SIGIL_TO_SPELL: Record<SigilKind, SpellId> = {
   line: 'bolt',
@@ -135,41 +135,56 @@ function castBolt(world: World, aim: number, power: number): void {
   world.sfx('bolt');
 }
 
+/** What auto-aim can pick: a foe, or a breakable for a spell that breaks them. */
+export type AimTarget = Enemy | Breakable;
+
+/** Spells that break breakables, so auto-aim may send them at one (Lightning only strikes foes). */
+const BREAKS: readonly SpellId[] = ['bolt', 'frost'];
+
 /**
- * Auto-aim's pick: the nearest foe in view that a bolt from the head could reach (nothing solid in
+ * Auto-aim's pick for `spell` (null while the stroke isn't known yet: anything a spell could hit):
+ * the nearest foe or breakable in view that a bolt from the head could reach (nothing solid in
  * between), else the nearest in view behind stone. Foes underground or in a pile of bones can't be
- * hit, so they're passed over. Null when no foe is in view.
+ * hit, so they're passed over, and breakables only count for spells that break them. Null when
+ * nothing is in view.
  */
-export function autoAimTarget(world: World): Enemy | null {
+export function autoAimTarget(world: World, spell: SpellId | null = null): AimTarget | null {
   const s = world.snake;
-  let best: Enemy | null = null;
+  let best: AimTarget | null = null;
   let bestSight = false;
   let bestD = Infinity;
-  for (const e of world.enemies) {
-    if (e.dead || e.hidden || e.pile > 0 || !inView(world.camera, e.x, e.y)) continue;
-    const sight = e.nav.sight;
-    const d = dist2(s.x, s.y, e.x, e.y);
+  const consider = (t: AimTarget, sight: boolean) => {
+    const d = dist2(s.x, s.y, t.x, t.y);
     if ((sight && !bestSight) || (sight === bestSight && d < bestD)) {
-      best = e;
+      best = t;
       bestSight = sight;
       bestD = d;
+    }
+  };
+  for (const e of world.enemies) {
+    if (e.dead || e.hidden || e.pile > 0 || !inView(world.camera, e.x, e.y)) continue;
+    consider(e, e.nav.sight);
+  }
+  if (spell === null || BREAKS.includes(spell)) {
+    for (const b of world.breakables) {
+      if (inView(world.camera, b.x, b.y)) consider(b, clearPath(world.map.index, s.x, s.y, b.x, b.y));
     }
   }
   return best;
 }
 
 /**
- * Where auto-aim sends a cast: at its pick (or `e`). A foe right against the head is too close to
- * give a direction (casts would fall back to the heading), so the point is carried out along the
+ * Where auto-aim sends a cast: at its pick (or `t`). Something right against the head is too close
+ * to give a direction (casts would fall back to the heading), so the point is carried out along the
  * line to it.
  */
-export function autoAimPoint(world: World, e: Enemy | null = autoAimTarget(world)): Vec | null {
-  if (!e) return null;
+export function autoAimPoint(world: World, t: AimTarget | null = autoAimTarget(world)): Vec | null {
+  if (!t) return null;
   const s = world.snake;
-  const d = dist(s.x, s.y, e.x, e.y);
-  if (d >= SNAKE.aimMinDistance || d < 1e-6) return { x: e.x, y: e.y };
+  const d = dist(s.x, s.y, t.x, t.y);
+  if (d >= SNAKE.aimMinDistance || d < 1e-6) return { x: t.x, y: t.y };
   const k = (SNAKE.aimMinDistance + 1) / d;
-  return { x: s.x + (e.x - s.x) * k, y: s.y + (e.y - s.y) * k };
+  return { x: s.x + (t.x - s.x) * k, y: s.y + (t.y - s.y) * k };
 }
 
 /** The nearest living foe to (x, y) within `range`, skipping those in `skip`. */

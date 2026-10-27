@@ -38,6 +38,7 @@ import {
   autoAimPoint,
   autoAimTarget,
   castSpell,
+  type AimTarget,
   regenPerSecond,
   SIGIL_TO_SPELL,
   spawnBolt,
@@ -536,23 +537,24 @@ export class Game {
     const t = this.renderer.screenToWorld(p);
     const b = this.world.map.bounds;
     this.pressTarget = { x: clamp(t.x, b.minX, b.maxX), y: clamp(t.y, b.minY, b.maxY) };
-    this.gesture.target = this.aimTarget();
     this.gesture.active = true;
+    this.showAim();
     return true;
   }
 
+  /** What auto-aim (when on) picks for `spell`, or for any spell while the stroke isn't known yet. */
+  private autoPick(spell: SpellId | null): AimTarget | null {
+    return this.options.autoAim ? autoAimTarget(this.world, spell) : null;
+  }
+
   /**
-   * Where a cast would go now: with auto-aim, the foe it picks (when one is in view), which the
-   * view marks as locked; otherwise where the stroke began.
+   * The marker while drawing: on what auto-aim would pick for the stroke as read so far (locked,
+   * with brackets round it), else where the stroke began.
    */
-  private aimTarget(): Vec | null {
-    const press = this.pressTarget;
-    this.gesture.lock = null;
-    if (!this.options.autoAim) return press;
-    const e = autoAimTarget(this.world);
-    if (!e) return press;
-    this.gesture.lock = { x: e.x, y: e.y, r: e.r };
-    return autoAimPoint(this.world, e);
+  private showAim(): void {
+    const pick = this.autoPick(this.gesture.reading?.spell ?? null);
+    this.gesture.lock = pick ? { x: pick.x, y: pick.y, r: pick.r } : null;
+    this.gesture.target = pick ? autoAimPoint(this.world, pick) : this.pressTarget;
   }
 
   private cancelGestureView(): void {
@@ -573,7 +575,7 @@ export class Game {
   }
 
   private endGesture(points: Pt[]): void {
-    const target = this.aimTarget();
+    const press = this.pressTarget;
     this.cancelGestureView();
     if (this.phase !== 'playing') return;
     const w = this.world;
@@ -607,6 +609,9 @@ export class Game {
       audio.play('cooldown');
       return;
     }
+    // Where the stroke began, unless auto-aim picks something for this spell.
+    const pick = this.autoPick(spell);
+    const target = pick ? autoAimPoint(w, pick) : press;
     // A cleanly drawn sigil is stronger.
     const tier = castTier(result.kind, result.score);
     castSpell(w, spell, target, castPower(tier));
@@ -678,8 +683,8 @@ export class Game {
     }
     this.gesture.active = this.input.isDrawing && this.phase === 'playing';
     this.gesture.points = this.input.points;
-    // With auto-aim the marker rides the foe a cast would go to, switching as foes come and go.
-    if (this.gesture.active && this.options.autoAim) this.gesture.target = this.aimTarget();
+    // With auto-aim the marker rides what a cast would go to, switching as foes come and go.
+    if (this.gesture.active && this.options.autoAim) this.showAim();
     if (this.gesture.active && this.gesture.points.length > 3) {
       this.readTimer -= dt;
       if (this.readTimer <= 0) {

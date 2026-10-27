@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SNAKE, TOUCH } from '../config';
+import { BREAKABLES, SNAKE, TOUCH } from '../config';
 import { spawnEnemy } from '../enemies';
 import type { Pt } from '../gesture';
 import { InputManager, type InputCallbacks } from '../input';
 import { defaultOptions } from '../options';
 import { defaultSave, optionsOf, parseSave } from '../persistence';
 import { emptyMetaLevels } from '../progression';
-import { autoAimPoint, autoAimTarget, castSpell } from '../spells';
+import { autoAimPoint, autoAimTarget, castSpell, updateBolts } from '../spells';
 import { createWorld } from '../world';
 
 /** An input manager on a 1000×600 canvas with no DOM: handlers are called directly. */
@@ -150,6 +150,7 @@ describe('auto-aim', () => {
   function arena() {
     const w = createWorld(emptyMetaLevels(), () => undefined, 5);
     w.enemies.length = 0;
+    w.breakables.length = 0;
     w.snake.reset(w.map.start.x, w.map.start.y, 0);
     w.camera.x = w.snake.x;
     w.camera.y = w.snake.y;
@@ -193,5 +194,23 @@ describe('auto-aim', () => {
     expect(Math.hypot(p.x - x, p.y - y)).toBeGreaterThan(SNAKE.aimMinDistance);
     expect(Math.abs(p.x - x)).toBeLessThan(1e-6);
     expect(p.y).toBeGreaterThan(y);
+  });
+
+  it('sends Bolt and Frost Field at breakables as well as foes, and Lightning only at foes', () => {
+    const w = arena();
+    const { x, y } = w.snake;
+    const foe = spawnEnemy(w, 'chaser', x + 300, y);
+    const hp = BREAKABLES.large.hp;
+    const reliquary = { id: 999, slot: -1, size: 'large' as const, look: 'reliquary' as const, x: x - 160, y, r: BREAKABLES.large.radius, hp, maxHp: hp, flash: 0, lastNovaId: -1, variant: 0 };
+    w.breakables.push(reliquary);
+    // Nearer than the foe, so the spells that break things go for it; Lightning can't, so it takes the foe.
+    expect(autoAimTarget(w, 'bolt')).toBe(reliquary);
+    expect(autoAimTarget(w, 'frost')).toBe(reliquary);
+    expect(autoAimTarget(w, null)).toBe(reliquary);
+    expect(autoAimTarget(w, 'lightning')).toBe(foe);
+    // A bolt sent there, behind the serpent, cracks it.
+    castSpell(w, 'bolt', autoAimPoint(w, autoAimTarget(w, 'bolt')));
+    for (let i = 0; i < 30; i++) updateBolts(w, 1 / 60);
+    expect(reliquary.hp).toBeLessThan(hp);
   });
 });

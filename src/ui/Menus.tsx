@@ -17,6 +17,7 @@ import type { SaveData } from '../game/persistence';
 import { META_IDS, META_UPGRADES, metaMaxLevel, metaNextCost, type MetaId } from '../game/progression';
 import { isWizardUnlocked, playableWizard, WIZARD_IDS, WIZARDS, type WizardId } from '../game/wizards';
 import { PixelIcon, PixelTitleSerpent, RelicIcon, Shard, UpgradeGlyph, WizardPortrait } from './art';
+import { useFullscreen } from './fullscreen';
 import { BindingsContext, KeyHint, useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 import { VolumeControls } from './VolumeControls';
@@ -72,6 +73,7 @@ export function TitleScreen({
   const heat = playableHeat(save.settings.heat, save.records.heatUnlocked);
   const start = startMaps(save.grimoire).includes(save.settings.startMap) ? save.settings.startMap : MAP_ORDER[0];
   const muteKey = useKeyLabel('mute');
+  const fullscreen = useFullscreen();
   return (
     <div className="screen title-screen">
       <div className="title-wrap">
@@ -153,9 +155,16 @@ export function TitleScreen({
           )}
         </div>
       </div>
-      <button className="icon-btn corner" onClick={onToggleMute} title={`Mute (${muteKey})`} aria-label="Toggle sound">
-        <PixelIcon name={save.settings.muted ? 'soundOff' : 'soundOn'} scale={2} />
-      </button>
+      <div className="corner-buttons">
+        {fullscreen && (
+          <button className="icon-btn" onClick={fullscreen.toggle} title={fullscreen.on ? 'Leave fullscreen' : 'Fullscreen'} aria-label={fullscreen.on ? 'Leave fullscreen' : 'Fullscreen'} data-fullscreen>
+            <PixelIcon name={fullscreen.on ? 'windowed' : 'fullscreen'} scale={2} />
+          </button>
+        )}
+        <button className="icon-btn" onClick={onToggleMute} title={`Mute (${muteKey})`} aria-label="Toggle sound">
+          <PixelIcon name={save.settings.muted ? 'soundOff' : 'soundOn'} scale={2} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -332,7 +341,8 @@ export function HowToPlay({
           </p>
           <p>
             With <b>Auto-aim</b> (in Options; on by default on phones and tablets) they go to the nearest foe in view
-            instead, wherever you draw, and the marker shows which.
+            instead, wherever you draw, and the marker shows which. Bolt and Frost Field go for urns and reliquaries
+            too, whichever is nearest.
           </p>
           <p>Max a spell's own upgrade and take two ranks of its partner, and a golden card evolves it.</p>
           <p>
