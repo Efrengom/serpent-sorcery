@@ -2325,6 +2325,129 @@ try {
     await page.goto(URL, { waitUntil: 'networkidle0' });
   }
 
+  // ============================================================== Part P: a run's panels on a phone
+  // Every decision in a run, the pause menu, victory and Run over fit a phone held either way
+  // without scrolling, filled with their longest content. The save is put back afterwards.
+  {
+    const saved = await page.evaluate((k) => localStorage.getItem(k), SAVE_KEY);
+    const PHONES = [
+      { name: 'sideways with the browser bar', width: 832, height: 330 },
+      { name: 'sideways fullscreen', width: 832, height: 384 },
+      { name: 'upright with the browser bar', width: 384, height: 720 },
+      { name: 'upright fullscreen', width: 384, height: 832 },
+    ];
+    const scrolls = [];
+    const fits = async (phone, panel) => {
+      await sleep(700);
+      const m = await page.evaluate(() => {
+        const o = document.querySelector('.overlay');
+        const doc = document.scrollingElement;
+        return o ? { over: Math.max(o.scrollHeight - o.clientHeight, doc.scrollHeight - innerHeight), wide: Math.max(o.scrollWidth - o.clientWidth, doc.scrollWidth - innerWidth) } : null;
+      });
+      if (!m || m.over > 1 || m.wide > 1) scrolls.push({ phone: phone.name, panel, ...(m ?? { missing: true }) });
+    };
+    const phase = (p, ms = 6000) => page.waitForFunction((p) => window.__serpent.getPhase() === p, { timeout: ms }, p).catch(() => undefined);
+    for (const phone of PHONES) {
+      await page.setViewport({ width: phone.width, height: phone.height, hasTouch: true, isMobile: true });
+      await page.goto(`${URL}?nosites`, { waitUntil: 'networkidle0' });
+      await clickButton('Play');
+      await sleep(600);
+      await page.evaluate(() => {
+        const w = window.__serpent.debug().world;
+        w.invuln = 1e9;
+        w.spawnAcc = -1e9;
+      });
+      // A level-up of the four longest cards the game has.
+      await page.evaluate(async () => {
+        const { xpToNext } = await import('/src/game/progression.ts');
+        const w = window.__serpent.debug().world;
+        w.xp = xpToNext(w.level) + 0.5;
+      });
+      await phase('levelup');
+      await page.evaluate(async () => {
+        const prog = await import('/src/game/progression.ts');
+        const cfg = await import('/src/game/config.ts');
+        const g = window.__serpent;
+        const w = g.debug().world;
+        const all = [
+          ...prog.UPGRADE_IDS.map((id) => prog.describeChoice(id, w.upgrades, w.meta, w.mods)),
+          ...Object.keys(cfg.ASPECTS).map((id) => prog.aspectChoice(id)),
+          ...Object.keys(cfg.DUOS).map((id) => prog.duoChoice(id)),
+          ...cfg.SPELL_IDS.map((id) => prog.evolveChoice(id)),
+        ].sort((a, b) => (b.description + b.name).length - (a.description + a.name).length);
+        const pick = [];
+        for (const c of all) if (pick.length < 4 && !pick.some((p) => p.kind === c.kind && c.kind !== 'upgrade')) pick.push(c);
+        g.offer = pick;
+        g.emitOffer();
+      });
+      await fits(phone, 'level-up');
+      await page.evaluate(() => window.__serpent.skipLevelUp());
+      await sleep(300);
+      // A shrine with its three longest pacts, and a merchant selling the longest relic.
+      const longest = await page.evaluate(async () => {
+        const { PACTS } = await import('/src/game/sites.ts');
+        const { RELICS, KNOWN_RELICS } = await import('/src/game/relics.ts');
+        const len = (o) => (o.name + (o.description ?? '') + (o.boon ?? '') + (o.bane ?? '')).length;
+        return { pacts: Object.keys(PACTS).sort((a, b) => len(PACTS[b]) - len(PACTS[a])).slice(0, 3), relics: [...KNOWN_RELICS].sort((a, b) => len(RELICS[b]) - len(RELICS[a])) };
+      });
+      for (const [panel, kind, offer] of [
+        ['shrine', 'shrine', longest.pacts],
+        ['merchant', 'merchant', ['draught', `relic:${longest.relics[0]}`, 'empower']],
+      ]) {
+        await page.evaluate(
+          (kind, offer) => {
+            const w = window.__serpent.debug().world;
+            w.sites.push({ id: 90 + w.sites.length, kind, x: w.snake.x + Math.cos(w.snake.heading) * 90, y: w.snake.y + Math.sin(w.snake.heading) * 90, spent: false, inside: false, offer, sold: [] });
+          },
+          kind,
+          offer,
+        );
+        await phase('event');
+        await fits(phone, panel);
+        await page.evaluate(() => window.__serpent.chooseSite(null));
+        await sleep(500);
+      }
+      // The pause menu, carrying eight relics.
+      await page.evaluate((relics) => (window.__serpent.debug().world.relics = relics.slice(0, 8)), longest.relics);
+      await page.evaluate(() => window.__serpent.pause());
+      await fits(phone, 'pause, eight relics');
+      await page.evaluate(() => window.__serpent.resume());
+      await sleep(300);
+      // The way down's three longest relics.
+      await page.evaluate(async () => {
+        const { beginDescent } = await import('/src/game/descent.ts');
+        const w = window.__serpent.debug().world;
+        beginDescent(w, w.snake.x + Math.cos(w.snake.heading) * 60, w.snake.y + Math.sin(w.snake.heading) * 60);
+      });
+      await phase('relic');
+      await page.evaluate((relics) => window.__serpent.events.onRelicOffer({ relics: relics.slice(0, 3), nextMap: 'Mycelium Hollows', depth: 2, draft: null }), longest.relics);
+      await fits(phone, 'relics');
+      await page.evaluate(() => window.__serpent.chooseRelic(null));
+      await sleep(1500);
+      // Victory after a run that used everything, then Run over for it.
+      await page.evaluate(async () => {
+        const { winRun } = await import('/src/game/finale.ts');
+        const w = window.__serpent.debug().world;
+        for (const id of ['bolt', 'lightning', 'nova', 'ward', 'frost', 'constrict', 'ultimate']) Object.assign(w.recap.spells[id], { casts: 120, kills: 340, damage: 5366588 });
+        Object.assign(w.recap, { blocked: 14, depth: 5, map: 'Ember Depths', elitesSlain: 23, breakables: 61, healed: 340, buffs: 12 });
+        w.recap.spells.hazard.kills = 9;
+        w.recap.casts = { perfect: 80, clean: 300, rough: 90 };
+        Object.assign(w, { kills: 4321, bossKills: 5, level: 48, time: 1654 });
+        winRun(w, w.snake.x, w.snake.y);
+      });
+      await phase('victory', 9000);
+      await sleep(1100);
+      await fits(phone, 'victory');
+      await page.evaluate(() => window.__serpent.claimVictory());
+      await sleep(1800);
+      await fits(phone, 'Run over');
+    }
+    check('every decision in a run, the pause menu, victory and Run over fit a phone held either way without scrolling, at their longest', scrolls.length === 0, { phones: PHONES.length, scrolls });
+    await page.evaluate((k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)), SAVE_KEY, saved);
+    await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });
+    await page.goto(URL, { waitUntil: 'networkidle0' });
+  }
+
   // ============================================================== Part V: the Archmage Ascendant and a won run
   {
     await page.goto(`${URL}?depth=4`, { waitUntil: 'networkidle0' });
