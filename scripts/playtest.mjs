@@ -2325,9 +2325,10 @@ try {
     await page.goto(URL, { waitUntil: 'networkidle0' });
   }
 
-  // ============================================================== Part P: a run's panels on a phone
-  // Every decision in a run, the pause menu, victory and Run over fit a phone held either way
-  // without scrolling, filled with their longest content. The save is put back afterwards.
+  // ============================================================== Part P: the title and a run's panels on a phone
+  // The title screen, every decision in a run, the pause menu, victory and Run over fit a phone
+  // held either way without scrolling, filled with their longest content. The save is put back
+  // afterwards.
   {
     const saved = await page.evaluate((k) => localStorage.getItem(k), SAVE_KEY);
     const PHONES = [
@@ -2349,7 +2350,28 @@ try {
     const phase = (p, ms = 6000) => page.waitForFunction((p) => window.__serpent.getPhase() === p, { timeout: ms }, p).catch(() => undefined);
     for (const phone of PHONES) {
       await page.setViewport({ width: phone.width, height: phone.height, hasTouch: true, isMobile: true });
+      // The title, with its longest summaries: three curses, heat, a later start, today's daily played.
       await page.goto(`${URL}?nosites`, { waitUntil: 'networkidle0' });
+      await page.evaluate(async (k) => {
+        const { dailyDate } = await import('/src/game/daily.ts');
+        const sv = JSON.parse(localStorage.getItem(k));
+        sv.currency = 12640;
+        Object.assign(sv.records, { totalRuns: 312, bestTime: 3600, bestLevel: 61, bestKills: 12345, deepest: 9, wins: 4, heatUnlocked: 10, dailyDate: dailyDate(new Date()), dailyBest: 98765 });
+        sv.grimoire = ['way:hollows', 'way:catacombs', 'way:ember'];
+        Object.assign(sv.settings, { curses: ['frenzy', 'glass', 'swarm'], heat: 7, startMap: 'ember' });
+        localStorage.setItem(k, JSON.stringify(sv));
+      }, SAVE_KEY);
+      await page.reload({ waitUntil: 'networkidle0' });
+      await sleep(500);
+      const title = await page.evaluate(() => {
+        const s = document.querySelector('.title-screen');
+        const doc = document.scrollingElement;
+        return { over: Math.max(s.scrollHeight - s.clientHeight, doc.scrollHeight - innerHeight), wide: Math.max(s.scrollWidth - s.clientWidth, doc.scrollWidth - innerWidth) };
+      });
+      if (title.over > 1 || title.wide > 1) scrolls.push({ phone: phone.name, panel: 'title', ...title });
+      // Back to a plain save for the run (the curses and heat would change it).
+      await page.evaluate((k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)), SAVE_KEY, saved);
+      await page.reload({ waitUntil: 'networkidle0' });
       await clickButton('Play');
       await sleep(600);
       await page.evaluate(() => {
@@ -2442,7 +2464,7 @@ try {
       await sleep(1800);
       await fits(phone, 'Run over');
     }
-    check('every decision in a run, the pause menu, victory and Run over fit a phone held either way without scrolling, at their longest', scrolls.length === 0, { phones: PHONES.length, scrolls });
+    check('the title, every decision in a run, the pause menu, victory and Run over fit a phone held either way without scrolling, at their longest', scrolls.length === 0, { phones: PHONES.length, scrolls });
     await page.evaluate((k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)), SAVE_KEY, saved);
     await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });
     await page.goto(URL, { waitUntil: 'networkidle0' });

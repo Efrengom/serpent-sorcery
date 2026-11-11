@@ -81,49 +81,52 @@ export function TitleScreen({
         <h1 className="game-title">Serpent Sorcery</h1>
         <p className="tagline">One hand steers the serpent. The other draws the spells.</p>
         <div className="menu-buttons">
-          <button className="btn primary big" onClick={onPlay} autoFocus>
+          <button className="btn primary big title-play" onClick={onPlay} autoFocus>
             Play <kbd>Enter</kbd>
           </button>
-          <button className="btn setup-btn" onClick={onSetup}>
-            Wizard &amp; Curses
-            <span className="setup-summary">
-              {WIZARDS[wizard].name} · {curses.length === 0 ? 'no curses' : `${curses.length} ${curses.length === 1 ? 'curse' : 'curses'}, shards ×${shardMultiplier(curses).toFixed(2)}`}
-              {heat > 0 && ` · Heat ${heat}`}
-              {start !== MAP_ORDER[0] && ` · from the ${MAPS[start].name}`}
-            </span>
-          </button>
-          <button className="btn" onClick={onShop}>
-            Permanent Upgrades{' '}
-            <span className="shards">
-              {save.currency} <Shard />
-            </span>
-          </button>
-          <div className="menu-pair">
-            <button className="btn setup-btn daily-btn" data-daily onClick={onDaily}>
-              Daily Run
+          {/* The rest of the menu: a column on a desktop, a grid of tiles on a phone. */}
+          <div className="title-menu">
+            <button className="btn setup-btn" onClick={onSetup}>
+              Wizard &amp; Curses
               <span className="setup-summary">
-                {WIZARDS[daily.wizard].name} · {CURSES[daily.curse].name}
-                {save.records.dailyDate === daily.date && ` · best ${save.records.dailyBest}`}
+                {WIZARDS[wizard].name} · {curses.length === 0 ? 'no curses' : `${curses.length} ${curses.length === 1 ? 'curse' : 'curses'}, shards ×${shardMultiplier(curses).toFixed(2)}`}
+                {heat > 0 && ` · Heat ${heat}`}
+                {start !== MAP_ORDER[0] && ` · from the ${MAPS[start].name}`}
               </span>
             </button>
-            <button className="btn setup-btn" data-records onClick={onRecords}>
-              Hall of Records
-              <span className="setup-summary">
-                {save.achievements.length} / {ACHIEVEMENT_IDS.length} achievements
+            <button className="btn" onClick={onShop}>
+              Permanent Upgrades{' '}
+              <span className="shards">
+                {save.currency} <Shard />
               </span>
             </button>
-          </div>
-          <div className="menu-pair">
-            <button className={`btn${firstTime ? ' pulse' : ''}`} onClick={onHowTo}>
-              How to Play
+            <div className="menu-pair">
+              <button className="btn setup-btn daily-btn" data-daily onClick={onDaily}>
+                Daily Run
+                <span className="setup-summary">
+                  {WIZARDS[daily.wizard].name} · {CURSES[daily.curse].name}
+                  {save.records.dailyDate === daily.date && ` · best ${save.records.dailyBest}`}
+                </span>
+              </button>
+              <button className="btn setup-btn" data-records onClick={onRecords}>
+                Hall of Records
+                <span className="setup-summary">
+                  {save.achievements.length} / {ACHIEVEMENT_IDS.length} achievements
+                </span>
+              </button>
+            </div>
+            <div className="menu-pair">
+              <button className={`btn${firstTime ? ' pulse' : ''}`} onClick={onHowTo}>
+                How to Play
+              </button>
+              <button className="btn" onClick={onPractice}>
+                Practice Sigils
+              </button>
+            </div>
+            <button className="btn" onClick={onOptions}>
+              Options
             </button>
-            <button className="btn" onClick={onPractice}>
-              Practice Sigils
-            </button>
           </div>
-          <button className="btn" onClick={onOptions}>
-            Options
-          </button>
         </div>
         <VolumeControls {...volume} />
         <div className="records">

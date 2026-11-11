@@ -4020,3 +4020,164 @@ kbd {
     align-items: start;
   }
 }
+
+/* ================================================================ phones: the title screen
+   The title fits a phone held either way without scrolling. Play stays big; the rest of the menu
+   becomes a grid of tiles, each with its summary line. Sideways it is two columns: the serpent,
+   title, Play, volume and records on the left, the tiles on the right. */
+
+.title-menu {
+  display: contents;
+}
+
+@media (max-height: 500px), (max-width: 559px) {
+  .app.pixel .title-screen {
+    padding: 10px 14px;
+  }
+  .app .title-wrap {
+    width: 100%;
+    max-width: 880px;
+  }
+  .app.pixel .title-wrap .pixel-title-serpent {
+    width: 220px;
+    height: 64px;
+  }
+  .app.pixel .title-wrap .game-title {
+    font-size: 1.45rem;
+    margin: 2px 0 4px;
+    white-space: nowrap;
+    text-shadow:
+      2px 2px 0 #b9761a,
+      4px 4px 0 var(--px-ink);
+  }
+  .app .title-screen .tagline {
+    font-size: 0.72rem;
+    margin: 0 0 6px;
+  }
+  .app.pixel .title-play {
+    font-size: 1rem;
+    padding: 0.55em 1.6em;
+  }
+  .app .title-menu {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .app .title-menu .menu-pair {
+    display: contents;
+  }
+  .app.pixel .title-menu .btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 50px;
+    padding: 5px 8px;
+    font-size: 0.66rem;
+    line-height: 1.25;
+    white-space: normal;
+  }
+  .app .title-menu .setup-summary {
+    font-size: 0.56rem;
+  }
+  .app .title-menu .shards {
+    font-size: 0.7rem;
+  }
+  .app.pixel .title-wrap > .volume-controls {
+    width: 100%;
+    max-width: 320px;
+    margin: 6px 0 0;
+    gap: 4px;
+  }
+  .app .title-wrap .volume-row {
+    grid-template-columns: 54px 1fr 34px;
+    font-size: 0.68rem;
+  }
+  .app .title-screen .records {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px 12px;
+    margin: 6px 0 0;
+    font-size: 0.56rem;
+  }
+  .app .title-screen .records div {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 4px;
+  }
+  .app .title-screen .records b {
+    font-size: 0.72rem;
+  }
+}
+
+/* Sideways: two columns, the tiles on the right below the corner buttons. */
+@media (max-height: 500px) {
+  .app.pixel .title-screen {
+    padding: 6px 14px;
+  }
+  .app.pixel .title-wrap .pixel-title-serpent {
+    width: 190px;
+    height: 55px;
+  }
+  .app .title-wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    grid-template-rows: auto auto auto auto 1fr auto;
+    grid-template-areas:
+      'art menu'
+      'title menu'
+      'tagline menu'
+      'play menu'
+      'volume menu'
+      'records menu';
+    justify-items: center;
+    align-items: center;
+    column-gap: 18px;
+  }
+  .app .title-wrap .menu-buttons {
+    display: contents;
+  }
+  .app .title-wrap .pixel-title-serpent {
+    grid-area: art;
+  }
+  .app .title-wrap .game-title {
+    grid-area: title;
+  }
+  .app .title-wrap .tagline {
+    grid-area: tagline;
+  }
+  .app .title-wrap .title-play {
+    grid-area: play;
+  }
+  .app .title-wrap > .volume-controls {
+    grid-area: volume;
+  }
+  .app .title-wrap .records {
+    grid-area: records;
+  }
+  .app .title-wrap .title-menu {
+    grid-area: menu;
+    align-self: stretch;
+    align-content: center;
+    width: 100%;
+    padding-top: 42px;
+  }
+  .app.pixel .title-wrap .title-menu .btn {
+    min-height: 44px;
+  }
+}
+
+/* A very short screen (sideways, under the browser's bar) drops the tagline to keep some room spare. */
+@media (max-height: 360px) {
+  .app .title-screen .tagline {
+    display: none;
+  }
+}
+
+/* Upright: room above the serpent for the corner buttons. */
+@media (max-width: 559px) {
+  .app.pixel .title-screen {
+    padding-top: 54px;
+  }
+}
