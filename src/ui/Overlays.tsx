@@ -109,16 +109,18 @@ export function LevelUpPanel({
               onClick={() => pick(c)}
             >
               <span className="card-key">{i + 1}</span>
-              {c.pair ? (
-                <span className="card-pair">
-                  <SigilIcon spell={c.pair[0]} size={40} />
-                  <SigilIcon spell={c.pair[1]} size={40} />
-                </span>
-              ) : c.spell ? (
-                <SigilIcon spell={c.spell} size={48} />
-              ) : (
-                <UpgradeGlyph id={c.id} glyph={c.glyph} />
-              )}
+              <span className="card-icon">
+                {c.pair ? (
+                  <span className="card-pair">
+                    <SigilIcon spell={c.pair[0]} size={40} />
+                    <SigilIcon spell={c.pair[1]} size={40} />
+                  </span>
+                ) : c.spell ? (
+                  <SigilIcon spell={c.spell} size={48} />
+                ) : (
+                  <UpgradeGlyph id={c.id} glyph={c.glyph} />
+                )}
+              </span>
               <span className="card-name">{c.name}</span>
               <span className="card-level">{cardKind(c)}</span>
               <span className="card-pips">
@@ -185,7 +187,9 @@ export function RelicPanel({ offer, onChoose }: { offer: RelicOffer; onChoose(re
             return (
               <button key={id} className="upgrade-card relic" data-relic={id} style={{ '--spell': r.color } as CSSProperties} disabled={!armed} onClick={() => onChoose(id)}>
                 <span className="card-key">{i + 1}</span>
-                <RelicIcon id={id} size={52} />
+                <span className="card-icon">
+                  <RelicIcon id={id} size={52} />
+                </span>
                 <span className="card-name">{r.name}</span>
                 <span className="card-level">{r.map ? `Relic of the ${MAPS[r.map].name}` : 'Relic'}</span>
                 <span className="card-desc">{r.description}</span>
@@ -249,7 +253,7 @@ export function SitePanel({ offer, onChoose }: { offer: SiteOffer; onChoose(choi
               onClick={() => onChoose(c.id)}
             >
               <span className="card-key">{i + 1}</span>
-              {c.relic ? <RelicIcon id={c.relic} size={44} /> : <UpgradeGlyph id={`site:${c.id}`} glyph={SITE_GLYPH[c.id] ?? '✧'} />}
+              <span className="card-icon">{c.relic ? <RelicIcon id={c.relic} size={44} /> : <UpgradeGlyph id={`site:${c.id}`} glyph={SITE_GLYPH[c.id] ?? '✧'} />}</span>
               <span className="card-name">{c.name}</span>
               {offer.kind === 'merchant' && <span className="card-level">{c.affordable ? `${c.cost} shards` : `${c.cost} shards · too dear`}</span>}
               <span className="card-desc">{c.description}</span>
@@ -266,20 +270,27 @@ export function SitePanel({ offer, onChoose }: { offer: SiteOffer; onChoose(choi
   );
 }
 
-/** The relics a run carries, with what each does. */
+/**
+ * The relics a run carries, with what each does. On a phone only their icons and names show, and
+ * a tap on one reads out what it does underneath.
+ */
 export function RelicList({ relics }: { relics: RelicId[] }) {
+  const [open, setOpen] = useState<RelicId | null>(null);
   if (relics.length === 0) return null;
   return (
-    <ul className="relic-list">
-      {relics.map((id) => (
-        <li key={id} data-relic={id}>
-          <RelicIcon id={id} size={22} />
-          <span>
-            <b>{RELICS[id].name}</b> {RELICS[id].description}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <div className="relics-carried">
+      <ul className="relic-list">
+        {relics.map((id) => (
+          <li key={id} data-relic={id} className={open === id ? 'open' : undefined} onClick={() => setOpen(open === id ? null : id)}>
+            <RelicIcon id={id} size={22} />
+            <span>
+              <b>{RELICS[id].name}</b> <span className="relic-desc">{RELICS[id].description}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="relic-detail">{open ? RELICS[open].description : 'Tap a relic to read what it does.'}</p>
+    </div>
   );
 }
 
@@ -316,33 +327,36 @@ export function PauseMenu({
     );
   }
   return (
-    <div className="overlay">
+    <div className="overlay pause">
       <div className="overlay-inner">
-        <h2 className="overlay-title">Paused</h2>
-        <p className="overlay-sub">The depths hold their breath.</p>
-        <div className="menu-buttons">
-          <button className="btn primary" onClick={onResume} autoFocus>
-            Resume <KeyHint action="pause" />
-          </button>
-          <VolumeControls {...volume} />
-          <button className="btn" onClick={() => setShowOptions(true)}>
-            Options
-          </button>
-          <button className="btn danger" onClick={onEndRun}>
-            End run &amp; bank shards
-          </button>
+        <div className="pause-main">
+          <h2 className="overlay-title">Paused</h2>
+          <p className="overlay-sub">The depths hold their breath.</p>
+          <div className="menu-buttons">
+            <button className="btn primary" onClick={onResume} autoFocus>
+              Resume <KeyHint action="pause" />
+            </button>
+            <button className="btn" onClick={() => setShowOptions(true)}>
+              Options
+            </button>
+            <button className="btn danger" onClick={onEndRun}>
+              End run &amp; bank shards
+            </button>
+          </div>
         </div>
-        <RelicList relics={relics} />
-        <ul className="mini-help">
-          <li>
-            <b>{steer}</b> steer — the serpent never stops
-          </li>
-          <li>
-            <b>Hold left mouse</b> draw a sigil, release to cast
-          </li>
-          <li>
-            <b>Touch:</b> one thumb steers from its side, the other hand draws
-          </li>
+        <div className="pause-side">
+          <VolumeControls {...volume} />
+          <RelicList relics={relics} />
+          <ul className="mini-help">
+            <li className="mouse-only">
+              <b>{steer}</b> steer — the serpent never stops
+            </li>
+            <li className="mouse-only">
+              <b>Hold left mouse</b> draw a sigil, release to cast
+            </li>
+            <li className="touch-only">
+              <b>Touch:</b> one thumb steers from its side, the other hand draws
+            </li>
           <li>
             {options.autoAim ? (
               <>
@@ -354,7 +368,8 @@ export function PauseMenu({
               </>
             )}
           </li>
-        </ul>
+          </ul>
+        </div>
       </div>
     </div>
   );
@@ -541,16 +556,18 @@ export function GameOverPanel({
             </div>
           )}
         </div>
-        {result.recap && <RunRecapView recap={result.recap} ultimate={ULTIMATES[ultimateFor(result.wizard ?? 'arcanist')].name} />}
-        {result.relics && result.relics.length > 0 && (
-          <p className="recap-relics" title="Relics carried">
-            {result.relics.map((id) => (
-              <span key={id} title={RELICS[id].name}>
-                <RelicIcon id={id} size={20} />
-              </span>
-            ))}
-          </p>
-        )}
+        <div className="gameover-detail">
+          {result.recap && <RunRecapView recap={result.recap} ultimate={ULTIMATES[ultimateFor(result.wizard ?? 'arcanist')].name} />}
+          {result.relics && result.relics.length > 0 && (
+            <p className="recap-relics" title="Relics carried">
+              {result.relics.map((id) => (
+                <span key={id} title={RELICS[id].name}>
+                  <RelicIcon id={id} size={20} />
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
         <div className="reward">
           <span className="reward-gain">
             +{result.reward} <Shard scale={4} />

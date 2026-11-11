@@ -3633,40 +3633,551 @@ kbd {
   grid-template-columns: 30px 96px 1fr 40px;
 }
 
-/*
- * Overlays on a short (landscape phone) screen: tighter panels, smaller titles and cards, and
- * anchored to the top so a panel taller than the screen scrolls instead of losing its top.
- */
-@media (max-height: 500px) {
-  .overlay {
+/* ================================================================ phones: the run's panels
+   Every decision in a run, the pause menu and Run over fit a phone's screen without scrolling.
+   Held sideways (a short screen) the headers shrink, a card sets its icon beside its name, and the
+   pause menu and Run over split into two columns; held upright (a narrow screen) the cards become
+   rows. A touch screen drops the keyboard hints. */
+
+.pause-main,
+.pause-side,
+.gameover-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.gameover-detail {
+  width: 100%;
+}
+
+.relic-detail {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .app button kbd,
+  .app .card-key,
+  .app .mouse-only {
+    display: none;
+  }
+}
+
+@media (pointer: fine) {
+  .app .touch-only {
+    display: none;
+  }
+}
+
+@media (max-height: 500px), (max-width: 559px) {
+  /* Darker behind the panel, so the HUD it covers doesn't compete with it. */
+  .app.pixel .overlay {
     padding: 8px;
-    place-items: start center;
+    place-items: safe center;
+    background: rgba(13, 7, 24, 0.9);
   }
-  .overlay-inner {
-    padding: 10px 16px;
+  .app.pixel .overlay-inner {
+    padding: 12px 16px;
   }
-  .overlay-title {
+  .app.pixel .overlay-inner.wide {
+    width: 100%;
+    max-width: 920px;
+    padding: 0;
+  }
+  .app.pixel .overlay-title {
     font-size: 1.5rem;
     margin: 0;
   }
-  .eyebrow {
-    font-size: 0.68rem;
+  .app .eyebrow {
+    font-size: 0.64rem;
   }
-  .overlay-sub {
+  .app .overlay-sub {
     margin: 0 0 0.5em;
-    font-size: 0.82rem;
-  }
-  .upgrade-card {
-    padding: 8px 10px;
-    gap: 3px;
-  }
-  .upgrade-card .card-name {
-    font-size: 1rem;
-  }
-  .upgrade-card .card-desc {
     font-size: 0.8rem;
   }
-  .upgrade-card svg {
-    max-height: 30px;
+  .app .menu-buttons,
+  .app .volume-controls {
+    min-width: 0;
+  }
+  .app .menu-buttons {
+    gap: 8px;
+  }
+  .app.pixel .overlay.gameover .menu-buttons .btn {
+    padding: 0.55em 0.9em;
+    font-size: 0.72rem;
+  }
+  .app .level-tools {
+    margin-top: 8px;
+    gap: 6px;
+  }
+  .app.pixel .opt-note {
+    font-size: 0.72rem;
+    margin: 6px 0 0;
+  }
+
+  /* A card: its icon beside its name and kind, the pips and the description under them. */
+  .app.pixel .upgrade-card,
+  .app.pixel .cards.armed .upgrade-card:hover {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'icon name'
+      'icon level'
+      'pips pips'
+      'desc desc';
+    align-items: center;
+    justify-items: start;
+    gap: 2px 8px;
+    padding: 8px 10px;
+    text-align: left;
+    transform: none;
+  }
+  .app .card-icon {
+    grid-area: icon;
+    display: flex;
+    gap: 2px;
+  }
+  .app .card-key {
+    top: 4px;
+    left: auto;
+    right: 6px;
+  }
+  .app .card-icon svg,
+  .app .card-icon canvas {
+    width: 30px;
+    height: 30px;
+  }
+  .app .card-icon .card-pair svg {
+    width: 24px;
+    height: 24px;
+  }
+  .app .card-name {
+    grid-area: name;
+  }
+  .app .card-level {
+    grid-area: level;
+  }
+  .app .card-pips {
+    grid-area: pips;
+    min-height: 0;
+  }
+  .app .card-pips:empty {
+    display: none;
+  }
+  .app.pixel .card-name {
+    font-size: 0.82rem;
+    line-height: 1.2;
+  }
+  .app.pixel .card-level {
+    font-size: 0.6rem;
+  }
+  .app.pixel .upgrade-card .card-desc {
+    grid-area: desc;
+    font-size: 0.78rem;
+    line-height: 1.3;
+  }
+
+  /* Run over and the victory panel: small stats, a smaller reward, a tight recap. */
+  .app .stats {
+    gap: 6px;
+    margin: 4px 0 6px;
+  }
+  .app.pixel .stat {
+    min-width: 0;
+    padding: 4px 9px;
+    box-shadow:
+      inset 0 0 0 2px var(--px-hi),
+      3px 3px 0 rgba(0, 0, 0, 0.45);
+  }
+  .app .stat-label {
+    font-size: 0.55rem;
+  }
+  .app.pixel .stat-value {
+    font-size: 1.05rem;
+  }
+  .app .stat-badge {
+    top: -9px;
+    right: -10px;
+    font-size: 0.5rem;
+    white-space: nowrap;
+  }
+  .app .reward {
+    margin-bottom: 6px;
+  }
+  .app.pixel .reward-gain {
+    font-size: 1.4rem;
+  }
+  .app .reward-total {
+    font-size: 0.7rem;
+  }
+  .app .recap {
+    max-width: none;
+    margin: 0;
+    gap: 4px;
+  }
+  .app .recap-cause {
+    font-size: 0.76rem;
+  }
+  .app.pixel .recap-spells {
+    grid-template-columns: 20px minmax(0, auto) minmax(20px, 1fr) auto;
+    gap: 2px 8px;
+    padding: 5px 9px;
+  }
+  .app .recap-spells svg,
+  .app .recap-spells canvas {
+    width: 20px;
+    height: 20px;
+  }
+  .app.pixel .recap-name {
+    font-size: 0.72rem;
+  }
+  .app.pixel .recap-sub {
+    font-size: 0.6rem;
+  }
+  .app.pixel .recap-num {
+    font-size: 0.8rem;
+  }
+  .app .recap-taken {
+    font-size: 0.66rem;
+  }
+  .app .recap-relics {
+    margin: 4px 0 0;
+  }
+  .app .daily-score {
+    margin: 2px 0 0;
+    font-size: 0.76rem;
+  }
+  .app .earned-achievements {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1px 10px;
+    margin-top: 4px;
+    font-size: 0.72rem;
+  }
+  .app .earned-achievements .eyebrow {
+    flex-basis: 100%;
+  }
+
+  /* The pause menu's relics: icons and names in a grid, a tap reading one out underneath. */
+  .app .relics-carried {
+    width: 100%;
+  }
+  .app .relic-list {
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    max-width: none;
+    margin: 6px 0 0;
+    gap: 4px 8px;
+    font-size: 0.7rem;
+  }
+  .app .relic-list li {
+    align-items: center;
+    cursor: pointer;
+  }
+  .app .relic-list li.open b {
+    color: var(--gold);
+  }
+  .app .relic-list .relic-desc {
+    display: none;
+  }
+  .app .relic-detail {
+    display: block;
+    min-height: 2.6em;
+    margin: 4px 0 0;
+    font-size: 0.7rem;
+    line-height: 1.3;
+    color: var(--ink-dim);
+  }
+  .app .mini-help {
+    margin: 6px 0 0;
+    font-size: 0.74rem;
+    line-height: 1.5;
+  }
+}
+
+/* Sideways: cards side by side, and the pause menu and Run over in two columns. */
+@media (max-height: 500px) {
+  .app .cards {
+    width: 100%;
+    grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+    gap: 10px;
+  }
+  .app.pixel .overlay.pause .overlay-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: center;
+    gap: 6px 22px;
+    max-width: 760px;
+    width: 100%;
+  }
+  .app .overlay.pause .pause-side {
+    align-items: stretch;
+    text-align: left;
+  }
+  /* Run over: the summary on the left (title, stats in a small grid, reward, achievements and the
+     buttons), the recap on the right. */
+  .app.pixel .overlay.gameover .overlay-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    grid-template-rows: auto auto auto auto auto 1fr auto;
+    grid-template-areas:
+      'eyebrow detail'
+      'title detail'
+      'stats detail'
+      'reward detail'
+      'daily detail'
+      'earned detail'
+      'buttons detail';
+    justify-items: center;
+    column-gap: 18px;
+    max-width: 860px;
+    width: 100%;
+    padding: 10px 16px;
+  }
+  .app .overlay.gameover .stats {
+    display: grid;
+    grid-template-columns: repeat(3, auto);
+    gap: 5px;
+    margin: 4px 0 6px;
+  }
+  .app.pixel .overlay.gameover .stat {
+    padding: 2px 7px;
+  }
+  .app.pixel .overlay.gameover .stat-label {
+    font-size: 0.5rem;
+  }
+  .app.pixel .overlay.gameover .stat-value {
+    font-size: 0.85rem;
+  }
+  .app .overlay.gameover .recap {
+    margin: 0;
+  }
+  .app .overlay.gameover .earned-achievements {
+    align-self: start;
+    margin-top: 2px;
+    font-size: 0.66rem;
+  }
+  .app.pixel .overlay.gameover .menu-buttons {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .app.pixel .overlay.gameover .menu-buttons .btn {
+    padding: 0.55em 0.7em;
+    font-size: 0.66rem;
+  }
+  /* Each spell on one line: its name, then its kills and casts. */
+  .app.pixel .overlay.gameover .recap-name {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 6px;
+  }
+  .app .overlay.gameover .eyebrow {
+    grid-area: eyebrow;
+  }
+  .app .overlay.gameover .overlay-title {
+    grid-area: title;
+  }
+  .app .overlay.gameover .stats {
+    grid-area: stats;
+  }
+  .app .overlay.gameover .reward {
+    grid-area: reward;
+  }
+  .app .overlay.gameover .daily-score {
+    grid-area: daily;
+  }
+  .app .overlay.gameover .earned-achievements {
+    grid-area: earned;
+  }
+  .app .overlay.gameover .menu-buttons {
+    grid-area: buttons;
+    align-self: end;
+  }
+  .app .overlay.gameover .gameover-detail {
+    grid-area: detail;
+    align-self: start;
+  }
+}
+
+/* Upright: a card is a row, its icon beside everything else; the recap's bars give way. */
+@media (max-width: 559px) {
+  .app.pixel .recap-spells {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+  }
+  .app .cards {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .app.pixel .upgrade-card,
+  .app.pixel .cards.armed .upgrade-card:hover {
+    grid-template-areas:
+      'icon name'
+      'icon level'
+      'icon pips'
+      'icon desc';
+    align-items: start;
+  }
+}
+
+/* ================================================================ phones: the title screen
+   The title fits a phone held either way without scrolling. Play stays big; the rest of the menu
+   becomes a grid of tiles, each with its summary line. Sideways it is two columns: the serpent,
+   title, Play, volume and records on the left, the tiles on the right. */
+
+.title-menu {
+  display: contents;
+}
+
+@media (max-height: 500px), (max-width: 559px) {
+  .app.pixel .title-screen {
+    padding: 10px 14px;
+  }
+  .app .title-wrap {
+    width: 100%;
+    max-width: 880px;
+  }
+  .app.pixel .title-wrap .pixel-title-serpent {
+    width: 220px;
+    height: 64px;
+  }
+  .app.pixel .title-wrap .game-title {
+    font-size: 1.45rem;
+    margin: 2px 0 4px;
+    white-space: nowrap;
+    text-shadow:
+      2px 2px 0 #b9761a,
+      4px 4px 0 var(--px-ink);
+  }
+  .app .title-screen .tagline {
+    font-size: 0.72rem;
+    margin: 0 0 6px;
+  }
+  .app.pixel .title-play {
+    font-size: 1rem;
+    padding: 0.55em 1.6em;
+  }
+  .app .title-menu {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .app .title-menu .menu-pair {
+    display: contents;
+  }
+  .app.pixel .title-menu .btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 50px;
+    padding: 5px 8px;
+    font-size: 0.66rem;
+    line-height: 1.25;
+    white-space: normal;
+  }
+  .app .title-menu .setup-summary {
+    font-size: 0.56rem;
+  }
+  .app .title-menu .shards {
+    font-size: 0.7rem;
+  }
+  .app.pixel .title-wrap > .volume-controls {
+    width: 100%;
+    max-width: 320px;
+    margin: 6px 0 0;
+    gap: 4px;
+  }
+  .app .title-wrap .volume-row {
+    grid-template-columns: 54px 1fr 34px;
+    font-size: 0.68rem;
+  }
+  .app .title-screen .records {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px 12px;
+    margin: 6px 0 0;
+    font-size: 0.56rem;
+  }
+  .app .title-screen .records div {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 4px;
+  }
+  .app .title-screen .records b {
+    font-size: 0.72rem;
+  }
+}
+
+/* Sideways: two columns, the tiles on the right below the corner buttons. */
+@media (max-height: 500px) {
+  .app.pixel .title-screen {
+    padding: 6px 14px;
+  }
+  .app.pixel .title-wrap .pixel-title-serpent {
+    width: 190px;
+    height: 55px;
+  }
+  .app .title-wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    grid-template-rows: auto auto auto auto 1fr auto;
+    grid-template-areas:
+      'art menu'
+      'title menu'
+      'tagline menu'
+      'play menu'
+      'volume menu'
+      'records menu';
+    justify-items: center;
+    align-items: center;
+    column-gap: 18px;
+  }
+  .app .title-wrap .menu-buttons {
+    display: contents;
+  }
+  .app .title-wrap .pixel-title-serpent {
+    grid-area: art;
+  }
+  .app .title-wrap .game-title {
+    grid-area: title;
+  }
+  .app .title-wrap .tagline {
+    grid-area: tagline;
+  }
+  .app .title-wrap .title-play {
+    grid-area: play;
+  }
+  .app .title-wrap > .volume-controls {
+    grid-area: volume;
+  }
+  .app .title-wrap .records {
+    grid-area: records;
+  }
+  .app .title-wrap .title-menu {
+    grid-area: menu;
+    align-self: stretch;
+    align-content: center;
+    width: 100%;
+    padding-top: 42px;
+  }
+  .app.pixel .title-wrap .title-menu .btn {
+    min-height: 44px;
+  }
+}
+
+/* A very short screen (sideways, under the browser's bar) drops the tagline to keep some room spare. */
+@media (max-height: 360px) {
+  .app .title-screen .tagline {
+    display: none;
+  }
+}
+
+/* Upright: room above the serpent for the corner buttons. */
+@media (max-width: 559px) {
+  .app.pixel .title-screen {
+    padding-top: 54px;
   }
 }
