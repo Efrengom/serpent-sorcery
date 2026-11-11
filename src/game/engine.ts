@@ -481,7 +481,7 @@ export class Game {
   /** Spends a reroll on a fresh offer. */
   rerollLevelUp(): void {
     if (this.phase !== 'levelup') return;
-    const offer = rerollOffer(this.world, this.offerLevel, this.offerRng);
+    const offer = rerollOffer(this.world, this.offerLevel, this.offerRng, this.offer);
     if (!offer) return;
     this.offer = offer;
     audio.play('select');

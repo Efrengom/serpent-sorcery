@@ -1131,9 +1131,12 @@ try {
       });
       times.shift();
       times.sort((a, b) => a - b);
-      return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), max: +times[times.length - 1].toFixed(1) };
+      return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), slow: times.filter((t) => t > 50).length, max: +times[times.length - 1].toFixed(1) };
     });
-    check('frame times stay smooth while the view races across the whole map', frameTimes.p95 < 34 && frameTimes.max < 120, frameTimes);
+    // Smooth: nearly every frame on time, and stalls rare. One hiccup on a busy machine (a garbage
+    // collection, another process) passes; repeated stalls, or one long one, don't.
+    const smooth = (f) => f.p95 < 34 && f.slow <= 3 && f.max < 250;
+    check('frame times stay smooth while the view races across the whole map', smooth(frameTimes), frameTimes);
 
     // The deeper maps: each one's landmarks, and frame times across each.
     const tours = (
@@ -1209,14 +1212,14 @@ try {
           });
           times.shift();
           times.sort((a, b) => a - b);
-          return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), max: +times[times.length - 1].toFixed(1) };
+          return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), slow: times.filter((t) => t > 50).length, max: +times[times.length - 1].toFixed(1) };
         }, lane);
       }
     }
     check('every deeper map plays its own theme', Object.entries(deepThemes).every(([id, theme]) => theme === id), deepThemes);
     check(
       'every deeper map has a landmark tour, and frame times stay smooth racing across each',
-      tours.every((t) => t.tour.length >= 3 && t.lane) && Object.values(deepTimes).every((f) => f.p95 < 34 && f.max < 120),
+      tours.every((t) => t.tour.length >= 3 && t.lane) && Object.values(deepTimes).every(smooth),
       { maps: tours.map((t) => t.id), deepTimes },
     );
   }

@@ -34,11 +34,18 @@ export function rollOffer(world: World, level: number, rng: () => number): Upgra
   return rollUpgradeChoices(world.upgrades, world.meta, rng, world.cardCount, choiceContext(world, level), world.mods);
 }
 
-/** Spends a reroll on a fresh offer, or returns null when none are left. */
-export function rerollOffer(world: World, level: number, rng: () => number): UpgradeChoice[] | null {
+/**
+ * Spends a reroll on a fresh offer, or returns null when none are left. A draw of the very cards
+ * being rerolled is drawn again (a few times at most), since a reroll that shows the same offer
+ * feels like it did nothing.
+ */
+export function rerollOffer(world: World, level: number, rng: () => number, current: readonly UpgradeChoice[] = []): UpgradeChoice[] | null {
   if (world.rerolls <= 0) return null;
   world.rerolls--;
-  return rollOffer(world, level, rng);
+  const same = (offer: UpgradeChoice[]) => current.length > 0 && offer.length === current.length && offer.every((c) => current.some((o) => o.id === c.id));
+  let offer = rollOffer(world, level, rng);
+  for (let tries = 0; tries < 8 && same(offer); tries++) offer = rollOffer(world, level, rng);
+  return offer;
 }
 
 /**
