@@ -5,16 +5,7 @@ import { createCanvas, hexRgb } from './pixel/bake';
 import { clearanceAt } from './terrain';
 import { WIZARDS } from './wizards';
 import type { World } from './world';
-
-const HAZARD_RGB = { lava: '#d8461c', bramble: '#9a3aa8', ice: '#a8d8f0' } as const;
-
-/** Minimap colours per area: the ruins, the Ember Depths, the Mycelium Hollows, the Rimefrost Catacombs. */
-const STYLE = [
-  { floor: '#1d1233', stone: '#4f3f78', edge: '#9a88cc', frame: '#0d0718', landmark: '#e4d8ff' },
-  { floor: '#24100b', stone: '#6a3a26', edge: '#c87a4e', frame: '#120504', landmark: '#ffd8b0' },
-  { floor: '#0c1c1e', stone: '#2e5a52', edge: '#5fd8c0', frame: '#061012', landmark: '#ffc8f0' },
-  { floor: '#101a2c', stone: '#3e5878', edge: '#a8d0f0', frame: '#070c18', landmark: '#e8f4ff' },
-];
+import { MINIMAP_HAZARDS, MINIMAP_STYLE } from './minimap-style';
 
 /** Width in CSS pixels; the height follows the map's shape. */
 const WIDTH = 220;
@@ -28,7 +19,7 @@ export class Minimap {
   readonly w: number;
   readonly h: number;
   private readonly img: HTMLCanvasElement;
-  private readonly style: (typeof STYLE)[number];
+  private readonly style: (typeof MINIMAP_STYLE)[number];
 
   constructor(
     private readonly map: MapLayout,
@@ -37,7 +28,7 @@ export class Minimap {
   ) {
     this.w = width;
     this.h = Math.round((width * map.height) / map.width);
-    this.style = STYLE[area] ?? STYLE[0];
+    this.style = MINIMAP_STYLE[area] ?? MINIMAP_STYLE[0];
     // Chunky: one minimap pixel per 2 CSS px.
     const res = 0.5;
     const mw = Math.round(this.w * res);
@@ -48,7 +39,7 @@ export class Minimap {
     const img = g.createImageData(mw, mh);
     const [floor, stone, edge] = [this.style.floor, this.style.stone, this.style.edge].map(hexRgb);
     // Hazard ground in its own colour: lava, brambles, ice.
-    const zones = (['lava', 'bramble', 'ice'] as const).flatMap((k) => (map.zones[k] ? [{ index: map.zones[k]!, rgb: hexRgb(HAZARD_RGB[k]) }] : []));
+    const zones = (['lava', 'bramble', 'ice'] as const).flatMap((k) => (map.zones[k] ? [{ index: map.zones[k]!, rgb: hexRgb(MINIMAP_HAZARDS[k]) }] : []));
     for (let v = 0; v < mh; v++) {
       for (let u = 0; u < mw; u++) {
         const d = clearanceAt(map.index, (u + 0.5) * per, (v + 0.5) * per);
@@ -130,6 +121,3 @@ export class Minimap {
     ctx.fillRect(gx, gy, s, s);
   }
 }
-
-/** The minimap's colours, shared with the atlas on the setup screen. */
-export { STYLE as MINIMAP_STYLE, HAZARD_RGB as MINIMAP_HAZARDS };

@@ -258,9 +258,15 @@ async function clickButton(text) {
   return true;
 }
 
+/** The run loads on demand: wait until it is up (or give up after a while, for the checks to report). */
+async function runUp() {
+  await page.waitForFunction(() => window.__serpent?.getPhase?.(), { timeout: 15000 }).catch(() => undefined);
+}
+
 try {
   // ============================================================== Part A: controls
   await page.keyboard.press('Enter');
+  await runUp();
   await sleep(700);
   let s = await state();
   check('Enter on title starts a run', s.phase === 'playing', { phase: s.phase });
@@ -1636,6 +1642,7 @@ try {
   await page.reload({ waitUntil: 'networkidle0' });
   check('purchase persists across reload', JSON.stringify((await readSave()).meta) === JSON.stringify(shopAfter.meta));
   await page.keyboard.press('Enter');
+  await runUp();
   await sleep(500);
   const stats = await page.evaluate(() => window.__serpent.debug().world.stats);
   check('permanent upgrade applies to the next run', stats.maxHp > 100 || stats.damageMult > 1 || stats.pickupRadius > 110 || stats.xpMult > 1, {
@@ -1686,6 +1693,7 @@ try {
     const chosen = (await readSave()).settings;
     check('picking a wizard and a curse with real clicks saves them', chosen.wizard === 'frostcoil' && chosen.curses.join() === 'glass', { wizard: chosen.wizard, curses: chosen.curses });
     await page.keyboard.press('Enter');
+    await runUp();
     await sleep(600);
     const run = await page.evaluate(() => {
       const w = window.__serpent.debug().world;
@@ -1776,7 +1784,27 @@ try {
     check('each unlocked wizard card names its ultimate', ultLine.some((t) => /Starfall/.test(t)) && ultLine.some((t) => /Absolute Zero/.test(t)), { ultLine });
     await page.screenshot({ path: path.join(OUT, '18-setup-heat.png') });
     await page.keyboard.press('Enter');
-    await sleep(800);
+    // The run loads on demand, so wait for the offer to take input rather than a fixed time.
+    // The panel shows it's ready (its cards light up) a moment before its keys are listened for, so
+    // give it that moment too.
+    const relicReady = (n) =>
+      page.waitForFunction((n) => document.querySelector('.relic-offer .cards.armed') && new RegExp(`relic ${n} of`).test(document.querySelector('.relic-offer .eyebrow')?.textContent ?? ''), { timeout: 10000 }, n).then(
+        () => sleep(200).then(() => 'ready'),
+        () => 'timed out',
+      );
+    const offerState = () =>
+      page.evaluate(() => {
+        const card = document.querySelector('.upgrade-card.relic[data-relic="rimewalker"]');
+        const r = card?.getBoundingClientRect();
+        return {
+          eyebrow: document.querySelector('.relic-offer .eyebrow')?.textContent,
+          armed: !!document.querySelector('.relic-offer .cards.armed'),
+          disabled: card?.disabled,
+          atCentre: r ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.className : null,
+          taken: [...window.__serpent.debug().world.relics],
+        };
+      });
+    const waits = [await relicReady(1)];
 
     // A waystone start catches up: a relic for each map skipped (the Catacombs' own first), then a draft.
     const relic1 = await page.evaluate(() => ({
@@ -1785,8 +1813,10 @@ try {
       eyebrow: document.querySelector('.relic-offer .eyebrow')?.textContent,
     }));
     check('a waystone start offers a relic for each map skipped, the Catacombs’ own first', relic1.phase === 'relic' && relic1.relics.length === 3 && relic1.relics[0] === 'rimewalker' && /relic 1 of 2/.test(relic1.eyebrow ?? ''), relic1);
+    const beforeClick = await offerState();
     await page.click('.upgrade-card.relic[data-relic="rimewalker"]');
-    await sleep(800);
+    const afterClick = await offerState();
+    waits.push(await relicReady(2));
     await page.keyboard.press('Digit1');
     await sleep(800);
     const offerIds = () => page.evaluate(() => [...document.querySelectorAll('.levelup .upgrade-card')].map((c) => c.dataset.card));
@@ -1796,7 +1826,7 @@ try {
         return { phase: window.__serpent.getPhase(), rerolls: w.rerolls, banishes: w.banishes, banished: [...w.banished], relics: [...w.relics], hp: w.hp, eyebrow: document.querySelector('.levelup .eyebrow')?.textContent };
       });
     const d0 = await tools();
-    check('then it drafts the level-ups through the usual panel', d0.phase === 'levelup' && /Waystone draft · 1 of 24/.test(d0.eyebrow ?? '') && d0.relics.length === 2 && d0.relics[0] === 'rimewalker', d0);
+    check('then it drafts the level-ups through the usual panel', d0.phase === 'levelup' && /Waystone draft · 1 of 24/.test(d0.eyebrow ?? '') && d0.relics.length === 2 && d0.relics[0] === 'rimewalker', { ...d0, waits, beforeClick, afterClick });
     await page.screenshot({ path: path.join(OUT, '19-draft.png') });
 
     // Reroll, banish and skip on a real offer.
@@ -1931,6 +1961,7 @@ try {
     check('Esc leaves the options screen', !!(await page.$('.title-screen')));
 
     await page.keyboard.press('Enter');
+    await runUp();
     await sleep(600);
     const view = await page.evaluate(() => {
       const v = window.__serpent.renderer.view;
@@ -2095,6 +2126,8 @@ try {
   // ============================================================== Part G: sigil practice room
   {
     await clickButton('Practice Sigils');
+    // The practice room loads on demand.
+    await page.waitForSelector('.practice-canvas', { timeout: 10000 });
     await sleep(300);
     const pad = await page.$eval('.practice-canvas', (c) => {
       const r = c.getBoundingClientRect();
@@ -2163,6 +2196,7 @@ try {
     await page.setViewport({ width: 812, height: 375, hasTouch: true, isMobile: true });
     await page.reload({ waitUntil: 'networkidle0' });
     await clickButton('Play');
+    await runUp();
     await sleep(900);
     const layout = await page.evaluate(() => {
       const r = window.__serpent.renderer;
@@ -2373,6 +2407,7 @@ try {
       await page.evaluate((k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)), SAVE_KEY, saved);
       await page.reload({ waitUntil: 'networkidle0' });
       await clickButton('Play');
+      await runUp();
       await sleep(600);
       await page.evaluate(() => {
         const w = window.__serpent.debug().world;
@@ -2474,6 +2509,7 @@ try {
   {
     await page.goto(`${URL}?depth=4`, { waitUntil: 'networkidle0' });
     await clickButton('Play');
+    await runUp();
     await sleep(900);
     const runs0 = (await readSave()).records.totalRuns;
     await page.evaluate(async () => {
@@ -2563,6 +2599,7 @@ try {
   // ============================================================== Part S: shrines, merchants, chests and rifts
   {
     await clickButton('Play');
+    await runUp();
     await sleep(900);
     const spots = await page.evaluate(async () => {
       const w = window.__serpent.debug().world;

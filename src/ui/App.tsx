@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { audio } from '../game/audio';
 import { buyMeta, buyUnlock, commitRunResult, loadSave, optionsOf, writeSave, type RunResult, type SaveData } from '../game/persistence';
 import { grimoireSetup, playableHeat, startMaps, type UnlockId } from '../game/grimoire';
@@ -12,13 +12,18 @@ import type { MetaId } from '../game/progression';
 import { playableWizard, type WizardId } from '../game/wizards';
 import type { RunSetup } from '../game/world';
 import { pixelFloorUrl } from './art';
-import { GameView } from './GameView';
 import { Jukebox } from './Jukebox';
 import { HowToPlay, RecordsScreen, SetupScreen, ShopScreen, TitleScreen } from './Menus';
 import { BindingsContext, OptionsScreen } from './Options';
-import { PracticeScreen } from './Practice';
 
 type Screen = 'title' | 'howto' | 'shop' | 'setup' | 'options' | 'practice' | 'records' | 'game';
+
+// The run and the practice room load on demand, so the title shows sooner on a phone. Both are
+// fetched as soon as the title is up, so Play is still instant.
+const loadGame = () => import('./GameView');
+const loadPractice = () => import('./Practice');
+const GameView = lazy(() => loadGame().then((m) => ({ default: m.GameView })));
+const PracticeScreen = lazy(() => loadPractice().then((m) => ({ default: m.PracticeScreen })));
 
 /** The development jukebox, shown with ?jukebox in the address. */
 const JUKEBOX = import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).has('jukebox');
@@ -35,6 +40,14 @@ export function App() {
     saveRef.current = save;
     writeSave(save);
   }, [save]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void loadGame();
+      void loadPractice();
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     audio.setMuted(save.settings.muted);
@@ -218,7 +231,11 @@ export function App() {
       {screen === 'howto' && <HowToPlay onBack={toTitle} onPlay={play} onPractice={() => setScreen('practice')} safeWarnings={options.safeWarnings} />}
       {screen === 'options' && <OptionsScreen options={options} onChange={setOptions} onBack={toTitle} />}
       {screen === 'records' && <RecordsScreen save={save} onBack={toTitle} />}
-      {screen === 'practice' && <PracticeScreen onBack={toTitle} onPlay={play} />}
+      {screen === 'practice' && (
+        <Suspense fallback={null}>
+          <PracticeScreen onBack={toTitle} onPlay={play} />
+        </Suspense>
+      )}
       {screen === 'shop' && <ShopScreen save={save} onBuy={buy} onBuyUnlock={buyGrimoire} onBack={() => setScreen('title')} onPlay={play} />}
       {screen === 'setup' && (
         <SetupScreen
@@ -234,19 +251,21 @@ export function App() {
         />
       )}
       {screen === 'game' && (
-        <GameView
-          key={gameKey}
-          meta={save.meta}
-          setup={setup}
-          muted={save.settings.muted}
-          options={options}
-          onOptions={setOptions}
-          volume={volume}
-          totalCurrency={save.currency}
-          onCommitRun={commitRun}
-          onToggleMute={toggleMute}
-          onExit={setScreen}
-        />
+        <Suspense fallback={null}>
+          <GameView
+            key={gameKey}
+            meta={save.meta}
+            setup={setup}
+            muted={save.settings.muted}
+            options={options}
+            onOptions={setOptions}
+            volume={volume}
+            totalCurrency={save.currency}
+            onCommitRun={commitRun}
+            onToggleMute={toggleMute}
+            onExit={setScreen}
+          />
+        </Suspense>
       )}
       {JUKEBOX && <Jukebox />}
     </div>

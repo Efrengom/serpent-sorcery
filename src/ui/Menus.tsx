@@ -3,7 +3,7 @@ import { drawAtlasPicture } from '../game/atlas';
 import { DUOS, HEAT, SPELL_IDS, SPELLS, type DuoId } from '../game/config';
 import { playableHeat, startMaps, unlockBlocker, UNLOCKS, type UnlockDef, type UnlockId, type UnlockKind } from '../game/grimoire';
 import type { RelicId } from '../game/relics';
-import { ULTIMATES } from '../game/ultimates';
+import { ULTIMATES } from '../game/ultimate-info';
 import { CURSE_IDS, CURSES, shardMultiplier, type CurseId } from '../game/curses';
 import { MOVE_ACTIONS, primaryKeyLabel } from '../game/keys';
 import { MAP_ORDER, MAPS } from '../game/maps';
