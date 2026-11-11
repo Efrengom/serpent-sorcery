@@ -95,6 +95,8 @@ export interface SaveData {
     steerRight: boolean;
     /** Spells aim at the nearest foe (on by default on a phone or tablet). */
     autoAim: boolean;
+    /** The phone buzzes for hits, level-ups and such (on by default on a phone or tablet). */
+    vibration: boolean;
   };
   /** Id of the last run whose reward was banked; guarantees one award per run. */
   lastRunId: string;
@@ -209,6 +211,7 @@ export function sanitizeSave(input: unknown): SaveData {
       bindings: sanitizeBindings(settings.bindings),
       steerRight: typeof settings.steerRight === 'boolean' ? settings.steerRight : d.settings.steerRight,
       autoAim: typeof settings.autoAim === 'boolean' ? settings.autoAim : d.settings.autoAim,
+      vibration: typeof settings.vibration === 'boolean' ? settings.vibration : d.settings.vibration,
     },
     lastRunId: typeof o.lastRunId === 'string' ? o.lastRunId.slice(0, 64) : '',
   };
@@ -216,8 +219,8 @@ export function sanitizeSave(input: unknown): SaveData {
 
 /** The options a run and its renderer use, taken from the settings. */
 export function optionsOf(settings: SaveData['settings']): GameOptions {
-  const { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings, steerRight, autoAim } = settings;
-  return { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings, steerRight, autoAim };
+  const { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings, steerRight, autoAim, vibration } = settings;
+  return { shake, reduceFlashing, safeWarnings, minimap, steadyCamera, gameSpeed, bindings, steerRight, autoAim, vibration };
 }
 
 export function parseSave(raw: string | null | undefined): SaveData {

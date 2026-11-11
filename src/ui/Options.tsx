@@ -14,7 +14,8 @@ import {
   type KeyAction,
   type KeyBindings,
 } from '../game/keys';
-import { GAME_SPEED, type GameOptions } from '../game/options';
+import { buzzFor, canVibrate } from '../game/haptics';
+import { GAME_SPEED, touchFirst, type GameOptions } from '../game/options';
 import { PaneTabs, paneClass } from './PaneTabs';
 
 /** The player's key bindings, so hints like "Pause (Esc)" show the keys actually bound. */
@@ -222,6 +223,8 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
 
   // A phone shows one of these at a time; a larger screen shows the comfort settings and the keys side by side.
   const [pane, setPane] = useState<'display' | 'controls' | 'keys'>('display');
+  // Only a phone or tablet that can vibrate offers vibration.
+  const [vibrates] = useState(() => canVibrate() && touchFirst());
   return (
     <div className="options-grid">
       <PaneTabs
@@ -282,6 +285,18 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
             on={options.autoAim}
             onChange={(autoAim) => onChange({ autoAim })}
           />
+          {vibrates && (
+            <Toggle
+              label="Vibration"
+              hint="Short buzzes when you're hit, level up, cast your ultimate, go down a map, defeat an Archmage or fall."
+              on={options.vibration}
+              onChange={(vibration) => {
+                onChange({ vibration });
+                // A taste of it, as it comes on.
+                if (vibration) buzzFor('ultimate');
+              }}
+            />
+          )}
           <RangeRow
             label="Game speed"
             value={Math.round(options.gameSpeed * 100)}

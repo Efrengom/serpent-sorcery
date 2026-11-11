@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BREAKABLES, SNAKE, TOUCH } from '../config';
 import { spawnEnemy } from '../enemies';
 import type { Pt } from '../gesture';
+import { buzzFor, HAPTIC_GAP_MS, HAPTIC_PATTERNS } from '../haptics';
 import { InputManager, type InputCallbacks } from '../input';
 import { defaultOptions } from '../options';
 import { defaultSave, optionsOf, parseSave } from '../persistence';
@@ -212,5 +213,42 @@ describe('auto-aim', () => {
     castSpell(w, 'bolt', autoAimPoint(w, autoAimTarget(w, 'bolt')));
     for (let i = 0; i < 30; i++) updateBolts(w, 1 / 60);
     expect(reliquary.hp).toBeLessThan(hp);
+  });
+});
+
+describe('vibration', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const pointer = (coarse: boolean) => vi.stubGlobal('matchMedia', (q: string) => ({ matches: coarse && q === '(pointer: coarse)' }));
+
+  it('starts on for a phone or tablet and off for a mouse, and a choice is kept', () => {
+    pointer(true);
+    expect(defaultOptions().vibration).toBe(true);
+    expect(optionsOf(parseSave(JSON.stringify({ settings: {} })).settings).vibration).toBe(true);
+    expect(optionsOf(parseSave(JSON.stringify({ settings: { vibration: false } })).settings).vibration).toBe(false);
+    pointer(false);
+    expect(defaultOptions().vibration).toBe(false);
+    expect(optionsOf(parseSave(JSON.stringify({ settings: { vibration: 1 } })).settings).vibration).toBe(false);
+  });
+
+  it('buzzes for a hit, but a swarm biting at once is one buzz; a pattern always plays', () => {
+    const vibrate = vi.fn(() => true);
+    vi.stubGlobal('navigator', { vibrate });
+    const t = 1e9;
+    expect(buzzFor('hurt', t)).toBe(true);
+    expect(vibrate).toHaveBeenLastCalledWith(HAPTIC_PATTERNS.hurt);
+    // Bitten again straight away: no second buzz until the gap has passed.
+    expect(buzzFor('hurt', t + HAPTIC_GAP_MS / 2)).toBe(false);
+    expect(buzzFor('hurt', t + HAPTIC_GAP_MS + 1)).toBe(true);
+    // Falling right after a hit still buzzes its pattern.
+    expect(buzzFor('death', t + HAPTIC_GAP_MS + 2)).toBe(true);
+    expect(vibrate).toHaveBeenLastCalledWith(HAPTIC_PATTERNS.death);
+    // Everyday sounds don't buzz.
+    expect(buzzFor('kill', t + 10 * HAPTIC_GAP_MS)).toBe(false);
+    expect(vibrate).toHaveBeenCalledTimes(3);
+  });
+
+  it("does nothing where the device can't vibrate", () => {
+    vi.stubGlobal('navigator', {});
+    expect(buzzFor('death', 2e9)).toBe(false);
   });
 });

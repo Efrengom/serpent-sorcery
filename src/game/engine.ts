@@ -10,6 +10,7 @@ import { updateFinale, victoryReady } from './finale';
 import { chooseAtSite, riftKills, riftLeft, siteOffer, SITES, updateSites, type SiteOffer } from './sites';
 import { updateDirector, updateEnemies, updatePortals } from './enemies';
 import { onIce, updateHazards } from './hazards';
+import { buzzFor } from './haptics';
 import { burst, floater, updateEffects } from './effects';
 import { recognize, type Pt } from './gesture';
 import { InputManager } from './input';
@@ -53,7 +54,7 @@ import {
   updateWard,
 } from './spells';
 import { castUltimate, ULTIMATES, ultimateCooldown, updateUltimate } from './ultimates';
-import { createWorld, DEFAULT_SETUP, refreshStats, type GestureView, type RunSetup, type SigilReading, type TimedBuff, type World } from './world';
+import { createWorld, DEFAULT_SETUP, refreshStats, type GestureView, type RunSetup, type SfxName, type SigilReading, type TimedBuff, type World } from './world';
 
 export type Phase = 'playing' | 'paused' | 'levelup' | 'relic' | 'event' | 'victory' | 'dying' | 'gameover';
 
@@ -217,7 +218,11 @@ export class Game {
     const setup = { ...this.setup, startDepth: this.setup.startDepth ?? devStartDepth() };
     // A seeded run (the daily) deals the same offers to the same choices.
     this.offerRng = setup.seed !== undefined ? mulberry32((setup.seed ^ 0x5bd1e995) >>> 0) : Math.random;
-    return createWorld(this.meta, (name) => audio.play(name, name === 'pickup' ? this.world.pickupPitch : 0), setup.seed ?? Date.now(), setup);
+    const sound = (name: SfxName) => {
+      audio.play(name, name === 'pickup' ? this.world.pickupPitch : 0);
+      if (this.options.vibration) buzzFor(name);
+    };
+    return createWorld(this.meta, sound, setup.seed ?? Date.now(), setup);
   }
 
   start(): void {
