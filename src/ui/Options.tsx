@@ -15,6 +15,7 @@ import {
   type KeyBindings,
 } from '../game/keys';
 import { GAME_SPEED, type GameOptions } from '../game/options';
+import { PaneTabs, paneClass } from './PaneTabs';
 
 /** The player's key bindings, so hints like "Pause (Esc)" show the keys actually bound. */
 export const BindingsContext = createContext<KeyBindings>(DEFAULT_BINDINGS);
@@ -147,7 +148,7 @@ function KeyTable({ bindings, onChange }: { bindings: KeyBindings; onChange(b: K
 
   const unbound = unboundMoves(bindings);
   return (
-    <div className="keys">
+    <div className="key-panel">
       <div className="key-table" role="table" aria-label="Key bindings">
         {KEY_ACTIONS.map((action) => (
           <div key={action} className="key-row" role="row">
@@ -219,68 +220,85 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
     return () => document.removeEventListener('keydown', onKey, true);
   }, [onBack]);
 
+  // A phone shows one of these at a time; a larger screen shows the comfort settings and the keys side by side.
+  const [pane, setPane] = useState<'display' | 'controls' | 'keys'>('display');
   return (
     <div className="options-grid">
-      <section className="options-section">
-        <h3 className="setup-head">Comfort &amp; visibility</h3>
-        <RangeRow
-          label="Screen shake"
-          value={Math.round(options.shake * 100)}
-          min={0}
-          max={100}
-          step={10}
-          format={(v) => (v === 0 ? 'Off' : `${v}%`)}
-          onChange={(v) => onChange({ shake: v / 100 })}
-        />
-        <Toggle
-          label="Reduce flashing"
-          hint="Hit flashes, blinking and flickering lightning become steady or softer."
-          on={options.reduceFlashing}
-          onChange={(reduceFlashing) => onChange({ reduceFlashing })}
-        />
-        <Toggle
-          label="Colorblind-safe warnings"
-          hint="Charge lanes and aim lines become yellow-and-black hazard stripes, and every attacker shows a “!”."
-          on={options.safeWarnings}
-          onChange={(safeWarnings) => onChange({ safeWarnings })}
-        >
-          <WarningPreview safe={options.safeWarnings} />
-        </Toggle>
-        <Toggle label="Minimap" hint="The map in the corner, with the boss marked." on={options.minimap} onChange={(minimap) => onChange({ minimap })} />
-        <Toggle
-          label="Steady camera"
-          hint="Keeps your serpent centred, with no look-ahead."
-          on={options.steadyCamera}
-          onChange={(steadyCamera) => onChange({ steadyCamera })}
-        />
-        <Toggle
-          label="Steer with the right thumb"
-          hint="On a touch screen, one thumb steers from its side of the screen and the other draws. On: the right thumb steers."
-          on={options.steerRight}
-          onChange={(steerRight) => onChange({ steerRight })}
-        />
-        <Toggle
-          label="Auto-aim"
-          hint="Bolt, Lightning and Frost Field go to the nearest foe in view instead of where you start drawing; Bolt and Frost Field to an urn or reliquary if it’s nearer. On by default on phones and tablets, where the steering thumb covers its side of the screen."
-          on={options.autoAim}
-          onChange={(autoAim) => onChange({ autoAim })}
-        />
-        <RangeRow
-          label="Game speed"
-          value={Math.round(options.gameSpeed * 100)}
-          min={GAME_SPEED.min * 100}
-          max={GAME_SPEED.max * 100}
-          step={GAME_SPEED.step * 100}
-          format={(v) => `${v}%`}
-          onChange={(v) => onChange({ gameSpeed: v / 100 })}
-        />
-        <p className="opt-note">
-          A slower game leaves more time to draw, since drawing happens in real time. Shards and records count game time, so
-          nothing is lost.
-        </p>
+      <PaneTabs
+        label="Options"
+        pane={pane}
+        onPane={setPane}
+        tabs={[
+          { id: 'display', name: 'Display' },
+          { id: 'controls', name: 'Controls' },
+          // Nothing to rebind on a touch screen.
+          { id: 'keys', name: 'Keys', className: 'mouse-only' },
+        ]}
+      />
+      <section className={`options-section ${pane === 'keys' ? 'phone-pane' : 'phone-pane pane-on'}`}>
+        <h3 className="setup-head pane-head">Comfort &amp; visibility</h3>
+        <div className={`options-part ${paneClass('display', pane)}`}>
+          <RangeRow
+            label="Screen shake"
+            value={Math.round(options.shake * 100)}
+            min={0}
+            max={100}
+            step={10}
+            format={(v) => (v === 0 ? 'Off' : `${v}%`)}
+            onChange={(v) => onChange({ shake: v / 100 })}
+          />
+          <Toggle
+            label="Reduce flashing"
+            hint="Hit flashes, blinking and flickering lightning become steady or softer."
+            on={options.reduceFlashing}
+            onChange={(reduceFlashing) => onChange({ reduceFlashing })}
+          />
+          <Toggle
+            label="Colorblind-safe warnings"
+            hint="Charge lanes and aim lines become yellow-and-black hazard stripes, and every attacker shows a “!”."
+            on={options.safeWarnings}
+            onChange={(safeWarnings) => onChange({ safeWarnings })}
+          >
+            <WarningPreview safe={options.safeWarnings} />
+          </Toggle>
+          <Toggle label="Minimap" hint="The map in the corner, with the boss marked." on={options.minimap} onChange={(minimap) => onChange({ minimap })} />
+          <Toggle
+            label="Steady camera"
+            hint="Keeps your serpent centred, with no look-ahead."
+            on={options.steadyCamera}
+            onChange={(steadyCamera) => onChange({ steadyCamera })}
+          />
+        </div>
+        <div className={`options-part ${paneClass('controls', pane)}`}>
+          <Toggle
+            label="Steer with the right thumb"
+            hint="On a touch screen, one thumb steers from its side of the screen and the other draws. On: the right thumb steers."
+            on={options.steerRight}
+            onChange={(steerRight) => onChange({ steerRight })}
+          />
+          <Toggle
+            label="Auto-aim"
+            hint="Bolt, Lightning and Frost Field go to the nearest foe in view instead of where you start drawing; Bolt and Frost Field to an urn or reliquary if it’s nearer. On by default on phones and tablets, where the steering thumb covers its side of the screen."
+            on={options.autoAim}
+            onChange={(autoAim) => onChange({ autoAim })}
+          />
+          <RangeRow
+            label="Game speed"
+            value={Math.round(options.gameSpeed * 100)}
+            min={GAME_SPEED.min * 100}
+            max={GAME_SPEED.max * 100}
+            step={GAME_SPEED.step * 100}
+            format={(v) => `${v}%`}
+            onChange={(v) => onChange({ gameSpeed: v / 100 })}
+          />
+          <p className="opt-note">
+            A slower game leaves more time to draw, since drawing happens in real time. Shards and records count game time, so
+            nothing is lost.
+          </p>
+        </div>
       </section>
-      <section className="options-section">
-        <h3 className="setup-head">Keys</h3>
+      <section className={`options-section options-keys ${paneClass('keys', pane)}`}>
+        <h3 className="setup-head pane-head">Keys</h3>
         <KeyTable bindings={options.bindings} onChange={(bindings) => onChange({ bindings })} />
         <p className="opt-note">Draw sigils with the left mouse button, or a finger on a touch screen. Esc always pauses and goes back.</p>
       </section>
@@ -290,7 +308,7 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
 
 export function OptionsScreen({ options, onChange, onBack }: { options: GameOptions; onChange(patch: Partial<GameOptions>): void; onBack(): void }) {
   return (
-    <div className="screen options">
+    <div className="screen options phone-menu">
       <h2 className="screen-title">Options</h2>
       <OptionsPanel options={options} onChange={onChange} onBack={onBack} />
       <div className="menu-buttons row">

@@ -2271,6 +2271,9 @@ try {
     await sleep(200);
     await clickButton('Options');
     await sleep(150);
+    // On a phone, Options shows one tab at a time; auto-aim is under Controls.
+    await page.evaluate(() => document.querySelector('[data-pane-tab="controls"]')?.click());
+    await sleep(100);
     const toggled = await clickButton('Auto-aim');
     await sleep(100);
     await clickButton('Back to pause');
@@ -2503,6 +2506,166 @@ try {
     await page.evaluate((k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)), SAVE_KEY, saved);
     await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });
     await page.goto(URL, { waitUntil: 'networkidle0' });
+  }
+
+  // ============================================================== Part Q: the menus on a phone
+  // Every menu behind the title's tiles, each of its tabs and the pause menu's Options fit a phone
+  // held either way, as a touch screen, without scrolling and without one part covering another,
+  // filled with their longest content. A sideways swipe turns How to Play's page. A larger screen
+  // shows each menu whole, with no tabs. The save is put back afterwards.
+  {
+    const saved = await page.evaluate((k) => localStorage.getItem(k), SAVE_KEY);
+    const PHONES = [
+      { name: 'sideways with the browser bar', width: 832, height: 330 },
+      { name: 'sideways fullscreen', width: 832, height: 384 },
+      { name: 'upright with the browser bar', width: 384, height: 720 },
+      { name: 'upright fullscreen', width: 384, height: 832 },
+    ];
+    const MENUS = [
+      ['Wizard & Curses', 'Wizard'],
+      ['Options', 'Options'],
+      ['Permanent Upgrades', 'Permanent Upgrades'],
+      ['Hall of Records', 'Hall of Records'],
+      ['How to Play', 'How to Play'],
+      ['Sigil Practice', 'Practice Sigils'],
+    ];
+    // Scrolling, and any laid-out part of the menu (looking through display: contents) that covers
+    // another, spills out of its own box or runs off the screen.
+    const layoutProblems = (sel) =>
+      page.evaluate((sel) => {
+        const root = document.querySelector(sel);
+        if (!root) return ['missing'];
+        const doc = document.scrollingElement;
+        const out = [];
+        const over = Math.max(root.scrollHeight - root.clientHeight, doc.scrollHeight - innerHeight);
+        const wide = Math.max(root.scrollWidth - root.clientWidth, doc.scrollWidth - innerWidth);
+        if (over > 1) out.push(`scrolls ${over}px`);
+        if (wide > 1) out.push(`${wide}px too wide`);
+        const items = [];
+        const walk = (el) => {
+          for (const c of el.children) {
+            const cs = getComputedStyle(c);
+            if (cs.display === 'contents') walk(c);
+            else if (cs.display !== 'none' && cs.position !== 'absolute' && cs.position !== 'fixed') {
+              const r = c.getBoundingClientRect();
+              if (r.width > 0 && r.height > 0) items.push({ el: c, r });
+            }
+          }
+        };
+        walk(root.matches('.overlay') ? root.querySelector('.overlay-inner') : root);
+        const name = (el) => (typeof el.className === 'string' && el.className ? el.className.split(' ').slice(0, 2).join('.') : el.tagName);
+        items.forEach(({ el, r }, i) => {
+          if (r.bottom > innerHeight + 1 || r.right > innerWidth + 1 || r.top < -1 || r.left < -1) out.push(`${name(el)} off the screen`);
+          if (el.scrollHeight > el.clientHeight + 2 && getComputedStyle(el).overflowY === 'visible') out.push(`${name(el)} spills ${el.scrollHeight - el.clientHeight}px`);
+          for (const { el: e2, r: b } of items.slice(i + 1)) {
+            const w = Math.min(r.right, b.right) - Math.max(r.left, b.left);
+            const h = Math.min(r.bottom, b.bottom) - Math.max(r.top, b.top);
+            if (w > 1 && h > 1) out.push(`${name(el)} covers ${name(e2)}`);
+          }
+        });
+        return out;
+      }, sel);
+    // Each visible tab in turn (or the menu as it is, with none), with what's wrong in each.
+    const everyTab = async (phone, menu, sel) => {
+      const tabs = await page.evaluate((sel) => [...document.querySelector(sel).querySelectorAll('[role=tab]')].filter((b) => b.offsetParent).length, sel);
+      for (let i = 0; i < Math.max(1, tabs); i++) {
+        let tab = '';
+        if (tabs) {
+          tab = await page.evaluate(
+            (sel, i) => {
+              const b = [...document.querySelector(sel).querySelectorAll('[role=tab]')].filter((b) => b.offsetParent)[i];
+              b.click();
+              return b.dataset.paneTab ?? '';
+            },
+            sel,
+            i,
+          );
+        }
+        await sleep(350);
+        const problems = await layoutProblems(sel);
+        if (problems.length) bad.push({ phone: phone.name, menu, tab, problems });
+        seen++;
+      }
+    };
+    const bad = [];
+    let seen = 0;
+    let keysOnTouch = 0;
+    let swiped = null;
+    for (const phone of PHONES) {
+      await page.setViewport({ width: phone.width, height: phone.height, hasTouch: true, isMobile: true });
+      // A finger for a pointer, as on a phone.
+      const cdp = await page.createCDPSession();
+      await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: 'coarse' }, { name: 'hover', value: 'none' }] });
+      await page.goto(`${URL}?nosites`, { waitUntil: 'networkidle0' });
+      await page.evaluate(async (k) => {
+        const { dailyDate } = await import('/src/game/daily.ts');
+        const sv = JSON.parse(localStorage.getItem(k));
+        sv.currency = 12640;
+        Object.assign(sv.records, { totalRuns: 312, bestTime: 3600, bestLevel: 61, bestKills: 12345, deepest: 9, wins: 4, heatUnlocked: 10, dailyDate: dailyDate(new Date()), dailyBest: 98765, breakables: 123456 });
+        sv.records.maps = ['ruins', 'hollows', 'catacombs', 'ember'];
+        sv.grimoire = ['way:hollows', 'way:catacombs', 'way:ember'];
+        Object.assign(sv.settings, { curses: ['frenzy', 'glass', 'swarm'], heat: 7, startMap: 'catacombs' });
+        localStorage.setItem(k, JSON.stringify(sv));
+      }, SAVE_KEY);
+      await page.reload({ waitUntil: 'networkidle0' });
+      for (const [menu, button] of MENUS) {
+        await clickButton(button);
+        // Sigil Practice loads on demand: wait for the menu to be up.
+        await page.waitForFunction(() => document.querySelector('.screen:not(.title-screen)'), { timeout: 10000 }).catch(() => undefined);
+        await sleep(400);
+        await everyTab(phone, menu, '.screen');
+        if (menu === 'Options') keysOnTouch += await page.evaluate(() => [...document.querySelectorAll('[data-pane-tab=keys]')].filter((b) => b.offsetParent).length);
+        if (menu === 'How to Play' && phone.width > phone.height) {
+          // A swipe to the left, from Steer, turns to Draw.
+          await page.evaluate(() => document.querySelector('[data-pane-tab=steer]').click());
+          await sleep(200);
+          const t = await page.touchscreen.touchStart(phone.width * 0.7, phone.height * 0.6);
+          await t.move(phone.width * 0.25, phone.height * 0.62);
+          await t.end();
+          await sleep(300);
+          swiped = await page.evaluate(() => document.querySelector('.pane-tab.on')?.dataset.paneTab ?? null);
+        }
+        await page.keyboard.press('Escape');
+        await sleep(300);
+      }
+      // The pause menu's Options, in a plain run.
+      await page.evaluate((k) => {
+        const sv = JSON.parse(localStorage.getItem(k));
+        Object.assign(sv.settings, { curses: [], heat: 0, startMap: 'ruins' });
+        localStorage.setItem(k, JSON.stringify(sv));
+      }, SAVE_KEY);
+      await page.reload({ waitUntil: 'networkidle0' });
+      await clickButton('Play');
+      await page.waitForFunction(() => window.__serpent);
+      await sleep(500);
+      await page.evaluate(() => {
+        const w = window.__serpent.debug().world;
+        w.invuln = 1e9;
+        w.spawnAcc = -1e9;
+        window.__serpent.pause();
+      });
+      await sleep(300);
+      await clickButton('Options');
+      await sleep(300);
+      await everyTab(phone, 'Options in the pause menu', '.overlay');
+      await cdp.send('Emulation.setEmulatedMedia', { features: [] });
+      await cdp.detach();
+    }
+    check('every menu, each of its tabs and the pause menu’s Options fit a phone held either way without scrolling or overlapping, at their longest', bad.length === 0 && seen >= PHONES.length * 18, { phones: PHONES.length, views: seen, bad });
+    check('a touch screen has no Keys tab, and a sideways swipe turns How to Play’s page', keysOnTouch === 0 && swiped === 'draw', { keysOnTouch, swiped });
+    await page.evaluate((k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)), SAVE_KEY, saved);
+    // A larger screen: no tabs, and Wizard & Curses shows the wizards, the curses and the maps at once.
+    await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });
+    await page.goto(URL, { waitUntil: 'networkidle0' });
+    await clickButton('Wizard');
+    await sleep(400);
+    const whole = await page.evaluate(() => ({
+      tabs: [...document.querySelectorAll('.pane-tab')].filter((b) => b.offsetParent).length,
+      parts: [...document.querySelectorAll('.setup .phone-pane')].filter((p) => p.offsetParent).length,
+    }));
+    check('a larger screen shows each menu whole, with no tabs', whole.tabs === 0 && whole.parts === 3, whole);
+    await page.keyboard.press('Escape');
+    await sleep(300);
   }
 
   // ============================================================== Part V: the Archmage Ascendant and a won run

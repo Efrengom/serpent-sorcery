@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type ComponentProps, type CSSProperties } from 'react';
+import { useContext, useEffect, useRef, useState, type ComponentProps, type CSSProperties, type ReactNode } from 'react';
 import { drawAtlasPicture } from '../game/atlas';
 import { DUOS, HEAT, SPELL_IDS, SPELLS, type DuoId } from '../game/config';
 import { playableHeat, startMaps, unlockBlocker, UNLOCKS, type UnlockDef, type UnlockId, type UnlockKind } from '../game/grimoire';
@@ -10,14 +10,15 @@ import { MAP_ORDER, MAPS } from '../game/maps';
 import type { MapId } from '../game/maps/types';
 import { formatTime } from '../game/math';
 import { SOUNDTRACKS, THEMES } from '../game/music/score';
-import { ACHIEVEMENT_IDS, ACHIEVEMENTS, type AchievementDef } from '../game/achievements';
-import { BEAST_IDS, BEASTS, bestiaryPages } from '../game/bestiary';
+import { ACHIEVEMENT_IDS, ACHIEVEMENTS, type AchievementDef, type AchievementId } from '../game/achievements';
+import { BEAST_IDS, BEASTS, bestiaryPages, type BeastId } from '../game/bestiary';
 import type { DailySetup } from '../game/daily';
 import type { SaveData } from '../game/persistence';
 import { META_IDS, META_UPGRADES, metaMaxLevel, metaNextCost, type MetaId } from '../game/progression';
 import { isWizardUnlocked, playableWizard, WIZARD_IDS, WIZARDS, type WizardId } from '../game/wizards';
 import { PixelIcon, PixelTitleSerpent, RelicIcon, Shard, UpgradeGlyph, WizardPortrait } from './art';
 import { useFullscreen } from './fullscreen';
+import { PaneTabs, paneClass } from './PaneTabs';
 import { BindingsContext, KeyHint, useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
 import { VolumeControls } from './VolumeControls';
@@ -175,13 +176,59 @@ export function TitleScreen({
 /** Achievements earned and to come, the bestiary of foes met, and the run records behind them. */
 export function RecordsScreen({ save, onBack }: { save: SaveData; onBack(): void }) {
   useKey(BACK, onBack);
-  const [tab, setTab] = useState<'achievements' | 'bestiary'>('achievements');
+  // A phone shows the records, the achievements or the bestiary; a larger screen always shows the
+  // records, above the achievements or the bestiary.
+  const [pane, setPaneState] = useState<'records' | 'achievements' | 'bestiary'>('records');
+  const tab = pane === 'bestiary' ? 'bestiary' : 'achievements';
+  // On a phone the achievements and foes are tiles; the one tapped is read out below them.
+  const [open, setOpen] = useState<string | null>(null);
+  const setPane = (p: typeof pane) => {
+    setPaneState(p);
+    setOpen(null);
+  };
   const r = save.records;
   const seen = BEAST_IDS.filter((id) => (r.bestiary[id] ?? 0) > 0).length;
+  const toggle = (id: string) => setOpen(open === id ? null : id);
+  let detail: ReactNode = tab === 'achievements' ? 'Tap an achievement to read it.' : 'Tap a foe to read about it.';
+  if (open && tab === 'achievements' && open in ACHIEVEMENTS) {
+    const a: AchievementDef = ACHIEVEMENTS[open as AchievementId];
+    const got = save.achievements.includes(open as AchievementId);
+    detail = (
+      <>
+        <b>{a.name}</b> {a.description}{' '}
+        <span className="achievement-reward">
+          {got ? 'Earned' : (a.progress?.(r) ?? 'Not yet')} · {a.reward} <Shard />
+        </span>
+      </>
+    );
+  } else if (open && tab === 'bestiary' && open in BEASTS) {
+    const b = BEASTS[open as BeastId];
+    const n = r.bestiary[open as BeastId] ?? 0;
+    detail =
+      n > 0 ? (
+        <>
+          <b>{b.name}</b> {b.lore} <span className="beast-count">{n.toLocaleString()} defeated</span>
+        </>
+      ) : (
+        <>
+          <b>???</b> Not yet met.
+        </>
+      );
+  }
   return (
-    <div className="screen records-screen">
+    <div className="screen records-screen phone-menu">
       <h2 className="screen-title">Hall of Records</h2>
-      <div className="records hall-records">
+      <PaneTabs
+        label="Hall of Records"
+        pane={pane}
+        onPane={setPane}
+        tabs={[
+          { id: 'records', name: 'Records', note: `${r.wins} ${r.wins === 1 ? 'win' : 'wins'}` },
+          { id: 'achievements', name: 'Achievements', note: `${save.achievements.length} / ${ACHIEVEMENT_IDS.length}` },
+          { id: 'bestiary', name: 'Bestiary', note: `${seen} / ${BEAST_IDS.length}` },
+        ]}
+      />
+      <div className={`records hall-records ${paneClass('records', pane)}`}>
         <div>
           <span>Wins</span>
           <b>{r.wins}</b>
@@ -204,20 +251,20 @@ export function RecordsScreen({ save, onBack }: { save: SaveData; onBack(): void
         </div>
       </div>
       <div className="shop-tabs" role="tablist">
-        <button role="tab" className={`btn small${tab === 'achievements' ? ' on' : ''}`} aria-selected={tab === 'achievements'} data-tab="achievements" onClick={() => setTab('achievements')}>
+        <button role="tab" className={`btn small${tab === 'achievements' ? ' on' : ''}`} aria-selected={tab === 'achievements'} data-tab="achievements" onClick={() => setPane('achievements')}>
           Achievements {save.achievements.length} / {ACHIEVEMENT_IDS.length}
         </button>
-        <button role="tab" className={`btn small${tab === 'bestiary' ? ' on' : ''}`} aria-selected={tab === 'bestiary'} data-tab="bestiary" onClick={() => setTab('bestiary')}>
+        <button role="tab" className={`btn small${tab === 'bestiary' ? ' on' : ''}`} aria-selected={tab === 'bestiary'} data-tab="bestiary" onClick={() => setPane('bestiary')}>
           Bestiary {seen} / {BEAST_IDS.length}
         </button>
       </div>
       {tab === 'achievements' ? (
-        <div className="achievement-grid">
+        <div className={`achievement-grid ${paneClass('achievements', pane)}`}>
           {ACHIEVEMENT_IDS.map((id) => {
             const a: AchievementDef = ACHIEVEMENTS[id];
             const got = save.achievements.includes(id);
             return (
-              <div key={id} className={`achievement${got ? ' earned' : ''}`} data-achievement={id}>
+              <div key={id} className={`achievement${got ? ' earned' : ''}${open === id ? ' open' : ''}`} data-achievement={id} onClick={() => toggle(id)}>
                 <span className="achievement-mark" aria-hidden="true">
                   {got ? '★' : '☆'}
                 </span>
@@ -231,7 +278,7 @@ export function RecordsScreen({ save, onBack }: { save: SaveData; onBack(): void
           })}
         </div>
       ) : (
-        <div className="bestiary">
+        <div className={`bestiary ${paneClass('bestiary', pane)}`}>
           {bestiaryPages().map((page) => (
             <section key={page.title} className="bestiary-page">
               <h3 className="setup-head">{page.title}</h3>
@@ -241,7 +288,7 @@ export function RecordsScreen({ save, onBack }: { save: SaveData; onBack(): void
                   const n = r.bestiary[id] ?? 0;
                   const known = n > 0;
                   return (
-                    <div key={id} className={`beast${known ? '' : ' unknown'}${b.boss ? ' boss' : ''}`} data-beast={id}>
+                    <div key={id} className={`beast${known ? '' : ' unknown'}${b.boss ? ' boss' : ''}${open === id ? ' open' : ''}`} data-beast={id} onClick={() => toggle(id)}>
                       <span className="beast-token" style={{ '--beast': known ? b.color : '#3a2e50' } as CSSProperties}>
                         {known ? b.glyph : '?'}
                       </span>
@@ -256,6 +303,7 @@ export function RecordsScreen({ save, onBack }: { save: SaveData; onBack(): void
           ))}
         </div>
       )}
+      {pane !== 'records' && <p className="records-detail">{detail}</p>}
       <div className="menu-buttons row">
         <button className="btn" onClick={onBack}>
           Back <kbd>Esc</kbd>
@@ -264,6 +312,10 @@ export function RecordsScreen({ save, onBack }: { save: SaveData; onBack(): void
     </div>
   );
 }
+
+/** How to Play's pages, which a phone shows one at a time. */
+const HOWTO_PAGES = ['steer', 'draw', 'aim', 'maps', 'tips'] as const;
+type HowToPage = (typeof HOWTO_PAGES)[number];
 
 export function HowToPlay({
   onBack,
@@ -281,22 +333,56 @@ export function HowToPlay({
   const bindings = useContext(BindingsContext);
   const [up, left, down, right] = (['up', 'left', 'down', 'right'] as const).map((a) => primaryKeyLabel(bindings, a));
   const steer = MOVE_ACTIONS.map((a) => primaryKeyLabel(bindings, a)).join('');
+  const [page, setPage] = useState<HowToPage>('steer');
+  // On a phone a sideways swipe turns the page, as well as the tabs.
+  const swipe = useRef<{ x: number; y: number } | null>(null);
   return (
-    <div className="screen howto">
+    <div
+      className="screen howto phone-menu"
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        swipe.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null;
+      }}
+      onTouchEnd={(e) => {
+        const from = swipe.current;
+        const t = e.changedTouches[0];
+        swipe.current = null;
+        if (!from || !t) return;
+        const dx = t.clientX - from.x;
+        if (Math.abs(dx) < 60 || Math.abs(dx) < 2 * Math.abs(t.clientY - from.y)) return;
+        const next = HOWTO_PAGES[HOWTO_PAGES.indexOf(page) + (dx < 0 ? 1 : -1)];
+        if (next) setPage(next);
+      }}
+    >
       <h2 className="screen-title">How to Play</h2>
+      <PaneTabs
+        label="How to Play"
+        pane={page}
+        onPane={setPage}
+        tabs={[
+          { id: 'steer', name: 'Steer' },
+          { id: 'draw', name: 'Draw' },
+          { id: 'aim', name: 'Aim' },
+          { id: 'maps', name: 'Maps' },
+          { id: 'tips', name: 'Tips' },
+        ]}
+      />
       <div className="howto-grid">
-        <section className="howto-card">
-          <h3>1 · Steer</h3>
-          <div className="keys">
+        <section className={`howto-card ${paneClass('steer', page)}`}>
+          <h3 className="pane-head">1 · Steer</h3>
+          <div className="keys mouse-only">
             <kbd className="k-w">{up}</kbd>
             <kbd className="k-a">{left}</kbd>
             <kbd className="k-s">{down}</kbd>
             <kbd className="k-d">{right}</kbd>
           </div>
-          <p>
+          <p className="mouse-only">
             Your serpent <b>never stops moving</b>. {steer === 'WSAD' ? 'WASD' : `${up} ${left} ${down} ${right}`} points it up, left,
             down or right; hold two keys for diagonals.
             Let go and it keeps its heading. Turns curve — reversing makes a U-turn.
+          </p>
+          <p className="touch-only">
+            Your serpent <b>never stops moving</b>; let go and it keeps its heading. Turns curve, and reversing makes a U-turn.
           </p>
           <p>
             <b>On a touch screen</b>, hold a thumb on the left of the screen and slide it the way to go (or the right, in
@@ -311,8 +397,8 @@ export function HowToPlay({
             left to close.
           </p>
         </section>
-        <section className="howto-card">
-          <h3>2 · Draw</h3>
+        <section className={`howto-card ${paneClass('draw', page)}`}>
+          <h3 className="pane-head">2 · Draw</h3>
           <p>
             <b>Hold the left mouse button</b> (or a finger) anywhere over the map, draw a sigil in one stroke, then <b>release</b> to cast.
             Size doesn't matter: lines, triangles and zigzags work in any direction, circles either way round, and a V
@@ -332,8 +418,8 @@ export function HowToPlay({
             ))}
           </div>
         </section>
-        <section className="howto-card">
-          <h3>3 · Aim</h3>
+        <section className={`howto-card ${paneClass('aim', page)}`}>
+          <h3 className="pane-head">3 · Aim</h3>
           <p>
             The spot where you <b>press down</b> becomes your target and gets a marker. On release, Bolt and Lightning fly
             from the serpent's <b>current</b> head toward that marker — so the stroke itself can be drawn anywhere.
@@ -353,14 +439,17 @@ export function HowToPlay({
             <b>Clean</b> ones 15%.
           </p>
           <p className="muted">Each spell has its own short cooldown. A messy stroke shows “Sigil unclear” and costs nothing.</p>
-          <p>
+          <p className="mouse-only">
             Each wizard also has an <b>ultimate</b> on a long cooldown: press <KeyHint action="ultimate" /> or click its card at the
             bottom of the screen once it's charged.
           </p>
+          <p className="touch-only">
+            Each wizard also has an <b>ultimate</b> on a long cooldown: tap its card at the bottom of the screen once it's charged.
+          </p>
         </section>
       </div>
-      <section className="howto-card howto-maps">
-        <h3>4 · Maps</h3>
+      <section className={`howto-card howto-maps ${paneClass('maps', page)}`}>
+        <h3 className="pane-head">4 · Maps</h3>
         <p>
           <b>Stone hurts, containers don't.</b> Run into small containers to smash them; break the big ones with spells. They
           drop crystals, health and buffs: Quickening, Empower, Swiftscale, Stoneskin, Lodestone and Shard Caches.
@@ -374,7 +463,7 @@ export function HowToPlay({
           ))}
         </ol>
       </section>
-      <ul className="tips">
+      <ul className={`tips ${paneClass('tips', page)}`}>
         <li>
           {safeWarnings ? (
             <>
@@ -394,7 +483,7 @@ export function HowToPlay({
           <span className="dot gold" /> Around 5:00 on each map a rival Archmage serpent arrives. Defeat it, then steer into the
           way down to the next map, where elites roam.
         </li>
-        <li>
+        <li className="mouse-only">
           <KeyHint action="pause" /> pause · <KeyHint action="mute" /> mute · keys and comfort settings are in Options
         </li>
       </ul>
@@ -402,7 +491,7 @@ export function HowToPlay({
         <button className="btn" onClick={onBack}>
           Back <kbd>Esc</kbd>
         </button>
-        <button className="btn" onClick={onPractice}>
+        <button className="btn howto-practice" onClick={onPractice}>
           Practice Sigils
         </button>
         <button className="btn primary" onClick={onPlay}>
@@ -447,12 +536,23 @@ export function SetupScreen({
   const heat = playableHeat(save.settings.heat, records.heatUnlocked);
   const starts = startMaps(save.grimoire);
   const start = starts.includes(save.settings.startMap) ? save.settings.startMap : MAP_ORDER[0];
+  const [pane, setPane] = useState<'wizard' | 'curses' | 'maps'>('wizard');
   return (
-    <div className="screen setup">
+    <div className="screen setup phone-menu">
       <h2 className="screen-title">Prepare Your Run</h2>
+      <PaneTabs
+        label="Prepare your run"
+        pane={pane}
+        onPane={setPane}
+        tabs={[
+          { id: 'wizard', name: 'Wizard', note: WIZARDS[chosen].name },
+          { id: 'curses', name: 'Curses', note: `${curses.length === 0 ? 'none' : `${curses.length} on`}${heat > 0 ? ` · heat ${heat}` : ''}` },
+          { id: 'maps', name: 'Maps', note: MAPS[start].name },
+        ]}
+      />
       <div className="setup-grid">
-        <section className="setup-section">
-          <h3 className="setup-head">Wizard</h3>
+        <section className={`setup-section ${paneClass('wizard', pane)}`}>
+          <h3 className="setup-head pane-head">Wizard</h3>
           <div className="wizard-list">
             {WIZARD_IDS.map((id) => {
               const w = WIZARDS[id];
@@ -493,7 +593,7 @@ export function SetupScreen({
             })}
           </div>
         </section>
-        <section className="setup-section">
+        <section className={`setup-section ${paneClass('curses', pane)}`}>
           <h3 className="setup-head">
             Curses <span className="setup-mult">Shards ×{mult.toFixed(2)}</span>
           </h3>
@@ -516,7 +616,7 @@ export function SetupScreen({
           <HeatPicker heat={heat} unlocked={records.heatUnlocked} cleared={records.heatCleared} onSet={onSetHeat} />
         </section>
       </div>
-      <section className="setup-section atlas">
+      <section className={`setup-section atlas ${paneClass('maps', pane)}`}>
         <h3 className="setup-head">
           Maps <span className="setup-mult">{records.breakables} containers smashed</span>
         </h3>
@@ -541,7 +641,7 @@ export function SetupScreen({
           Back <kbd>Esc</kbd>
         </button>
         <button className="btn primary" onClick={onPlay}>
-          Begin as {WIZARDS[chosen].name} <kbd>Enter</kbd>
+          Begin<span className="begin-as"> as {WIZARDS[chosen].name}</span> <kbd>Enter</kbd>
         </button>
       </div>
     </div>
@@ -663,12 +763,16 @@ function UnlockIcon({ def }: { def: UnlockDef }) {
   return <UpgradeGlyph id={def.id} glyph={def.kind === 'waystone' ? '⟱' : def.kind === 'ultimate' ? '✸' : TOOL_GLYPH[def.id]} />;
 }
 
+/** The shop's parts: the stat lines, then the Grimoire's groups. A phone shows one at a time, the ultimate with the tools. */
+type ShopPane = 'stats' | Exclude<UnlockKind, 'ultimate'>;
+const shopPaneOf = (kind: UnlockKind): ShopPane => (kind === 'ultimate' ? 'tool' : kind);
+
 /** The Grimoire: one-time unlocks that widen what a run can find and do. */
-function GrimoireGrid({ save, onBuy }: { save: SaveData; onBuy(id: UnlockId): void }) {
+function GrimoireGrid({ save, onBuy, pane }: { save: SaveData; onBuy(id: UnlockId): void; pane: ShopPane }) {
   return (
     <div className="grimoire">
       {UNLOCK_GROUPS.map((g) => (
-        <section key={g.kind} className="grimoire-group">
+        <section key={g.kind} className={`grimoire-group ${paneClass(shopPaneOf(g.kind), pane)}`}>
           <h3 className="setup-head">{g.title}</h3>
           <div className="shop-grid">
             {UNLOCKS.filter((u) => u.kind === g.kind).map((u) => {
@@ -689,7 +793,8 @@ function GrimoireGrid({ save, onBuy }: { save: SaveData; onBuy(id: UnlockId): vo
                   >
                     {blocker ?? (
                       <>
-                        Learn · {u.cost} <Shard />
+                        <span className="learn-word">Learn · </span>
+                        {u.cost} <Shard />
                       </>
                     )}
                   </button>
@@ -717,28 +822,48 @@ export function ShopScreen({
   onPlay(): void;
 }) {
   useKey(BACK, onBack);
-  const [tab, setTab] = useState<'stats' | 'grimoire'>('stats');
+  // A larger screen has two tabs, the stat lines and the whole Grimoire; a phone has one per group.
+  const [pane, setPane] = useState<ShopPane>('stats');
+  const tab = pane === 'stats' ? 'stats' : 'grimoire';
+  const learned = (pane: ShopPane) => {
+    const all = UNLOCKS.filter((u) => shopPaneOf(u.kind) === pane);
+    return `${all.filter((u) => save.grimoire.includes(u.id)).length} / ${all.length}`;
+  };
+  const ranks = META_IDS.reduce((n, id) => n + save.meta[id], 0);
+  const maxRanks = META_IDS.reduce((n, id) => n + metaMaxLevel(id), 0);
   return (
-    <div className="screen shop">
+    <div className="screen shop phone-menu">
       <h2 className="screen-title">Permanent Upgrades</h2>
       <p className="screen-sub">
-        Spend Arcane Shards earned from runs. You have{' '}
+        <span className="shop-sub-text">Spend Arcane Shards earned from runs. You have</span>{' '}
         <span className="shards big">
           {save.currency} <Shard />
         </span>
       </p>
       <div className="shop-tabs" role="tablist">
-        <button role="tab" className={`btn small${tab === 'stats' ? ' on' : ''}`} aria-selected={tab === 'stats'} data-tab="stats" onClick={() => setTab('stats')}>
+        <button role="tab" className={`btn small${tab === 'stats' ? ' on' : ''}`} aria-selected={tab === 'stats'} data-tab="stats" onClick={() => setPane('stats')}>
           Stat lines
         </button>
-        <button role="tab" className={`btn small${tab === 'grimoire' ? ' on' : ''}`} aria-selected={tab === 'grimoire'} data-tab="grimoire" onClick={() => setTab('grimoire')}>
+        <button role="tab" className={`btn small${tab === 'grimoire' ? ' on' : ''}`} aria-selected={tab === 'grimoire'} data-tab="grimoire" onClick={() => tab === 'stats' && setPane('relic')}>
           Grimoire · {save.grimoire.length} / {UNLOCKS.length}
         </button>
       </div>
+      <PaneTabs
+        label="Permanent upgrades"
+        pane={pane}
+        onPane={setPane}
+        tabs={[
+          { id: 'stats', name: 'Stats', note: `${ranks} / ${maxRanks}` },
+          { id: 'relic', name: 'Relics', note: learned('relic') },
+          { id: 'duo', name: 'Duos', note: learned('duo') },
+          { id: 'tool', name: 'Tools', note: learned('tool') },
+          { id: 'waystone', name: 'Waystones', note: learned('waystone') },
+        ]}
+      />
       {tab === 'grimoire' ? (
-        <GrimoireGrid save={save} onBuy={onBuyUnlock} />
+        <GrimoireGrid save={save} onBuy={onBuyUnlock} pane={pane} />
       ) : (
-      <div className="shop-grid">
+      <div className={`shop-grid ${paneClass('stats', pane)}`}>
         {META_IDS.map((id) => {
           const def = META_UPGRADES[id];
           const level = save.meta[id];
@@ -770,7 +895,8 @@ export function ShopScreen({
                   'Mastered'
                 ) : (
                   <>
-                    Learn · {cost} <Shard />
+                    <span className="learn-word">Learn · </span>
+                    {cost} <Shard />
                   </>
                 )}
               </button>

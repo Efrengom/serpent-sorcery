@@ -42,6 +42,9 @@ body,
   background: var(--bg);
   color: var(--ink);
   font-family: var(--ui-font);
+  /* Pixelify Sans draws its fi and fl ligatures like an A ("Ares" for "fires"). Unlike
+     font-variant-ligatures, this isn't reset by the font shorthand, so it holds everywhere. */
+  font-feature-settings: 'liga' 0, 'clig' 0;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -491,6 +494,8 @@ kbd {
 
 /* The atlas: the four maps of a run on the setup screen, a silhouette until reached. */
 .atlas {
+  /* The full width (up to its max), not the narrow width of a centred column's item. */
+  width: 100%;
   max-width: 1100px;
   margin: 14px auto 0;
 }
@@ -3145,13 +3150,14 @@ kbd {
   font-weight: 700;
 }
 
-.keys {
+/* The key table in Options (How to Play's W/A/S/D cluster is .keys). */
+.key-panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.keys > .btn {
+.key-panel > .btn {
   align-self: flex-start;
 }
 
@@ -4179,5 +4185,871 @@ kbd {
 @media (max-width: 559px) {
   .app.pixel .title-screen {
     padding-top: 54px;
+  }
+}
+
+/* ================================================================ phones: the menus
+   The menus behind the title's tiles fit a phone without scrolling. Each puts a bar on top (Back,
+   the title, tabs where the menu has parts, and its main button) and shows one part at a time
+   below it. A larger screen hides the tabs and shows every part at once. */
+
+.pane-tabs {
+  display: none;
+}
+
+.options-part {
+  display: contents;
+}
+
+@media (max-height: 500px), (max-width: 559px) {
+  /* Closed parts stay hidden, whatever display a part's own phone layout gives it. */
+  .app .phone-pane:not(.pane-on),
+  .app .phone-menu .pane-head {
+    display: none !important;
+  }
+
+  /* -- the frame: a bar on top, the open part below */
+  .app.pixel .phone-menu.screen {
+    display: grid;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 8px 14px 10px;
+  }
+  .app.pixel .phone-menu.overlay-inner {
+    display: grid;
+    align-items: center;
+    gap: 8px 10px;
+    text-align: left;
+  }
+  .app .phone-menu > .setup-grid,
+  .app .phone-menu > .options-grid,
+  .app .phone-menu > .menu-buttons {
+    display: contents;
+  }
+  .app.pixel .phone-menu > .screen-title,
+  .app.pixel .phone-menu > .overlay-title {
+    grid-area: title;
+    margin: 0;
+    font-size: 1.05rem;
+    white-space: nowrap;
+    text-shadow: 2px 2px 0 var(--px-ink);
+  }
+  .app .phone-menu .pane-tabs {
+    grid-area: tabs;
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+  }
+  .app .phone-menu .phone-pane {
+    grid-area: pane;
+    align-self: safe center;
+    min-width: 0;
+    width: 100%;
+    margin: 0;
+  }
+  .app .phone-menu > .menu-buttons > .btn:not(.primary) {
+    grid-area: back;
+  }
+  .app .phone-menu > .menu-buttons > .btn.primary {
+    grid-area: go;
+  }
+  .app.pixel .phone-menu > .menu-buttons > .btn,
+  .app.pixel .phone-menu > .btn {
+    padding: 0.5em 0.9em;
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+  /* Options has one button, and it goes back. */
+  .app .options.phone-menu > .menu-buttons > .btn.primary,
+  .app .options-overlay.phone-menu > .btn.primary {
+    grid-area: back;
+  }
+
+  /* -- the tabs: a name, and under it what's chosen in that part */
+  .app.pixel .pane-tabs .pane-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    min-width: 0;
+    padding: 4px 10px;
+    font-size: 0.66rem;
+    line-height: 1.2;
+  }
+  .app.pixel .pane-tabs .pane-tab.on {
+    color: var(--gold);
+    border-color: var(--gold);
+  }
+  .app .pane-tab-note {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 400 0.68rem var(--ui-font);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink-dim);
+  }
+  .app .pane-tab.on .pane-tab-note {
+    color: #ffe9a8;
+  }
+
+  /* -- headings inside a part */
+  .app.pixel .phone-menu .setup-head {
+    margin: 0 0 6px;
+    font-size: 0.78rem;
+  }
+  .app .phone-menu .setup-mult {
+    font-size: 0.62rem;
+  }
+
+  /* -- Wizard & Curses: the wizards, each with its portrait beside its name */
+  .app .setup .wizard-list {
+    gap: 8px;
+  }
+  .app.pixel .setup .wizard-card {
+    display: grid;
+    grid-template-columns: 78px minmax(0, 1fr);
+    grid-template-areas:
+      'art name'
+      'art title'
+      'art sigils'
+      'perks perks'
+      'ult ult';
+    justify-items: start;
+    align-items: center;
+    gap: 1px 10px;
+    padding: 7px 10px 8px;
+    text-align: left;
+  }
+  .app.pixel .setup .wizard-card:hover:not(:disabled) {
+    transform: none;
+  }
+  .app.pixel .setup .wizard-portrait {
+    grid-area: art;
+    width: 78px;
+    height: 45px;
+  }
+  .app.pixel .setup .wizard-name {
+    grid-area: name;
+    font-size: 0.72rem;
+  }
+  .app .setup .wizard-title {
+    grid-area: title;
+    font-size: 0.6rem;
+  }
+  .app .setup .wizard-sigils {
+    grid-area: sigils;
+    margin: 0;
+  }
+  .app .setup .wizard-sigils svg {
+    width: 18px;
+    height: 18px;
+  }
+  .app .setup .wizard-perks,
+  .app .setup .wizard-lock {
+    grid-area: perks;
+    margin-top: 3px;
+    font-size: 0.62rem;
+    line-height: 1.3;
+  }
+  .app .setup .wizard-ult {
+    grid-area: ult;
+    font-size: 0.6rem;
+  }
+
+  /* -- the curses, then heat */
+  .app .setup .curse-list {
+    gap: 6px;
+  }
+  .app.pixel .setup .curse {
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 5px 10px;
+  }
+  .app.pixel .setup .curse-box {
+    width: 18px;
+    height: 18px;
+    font-size: 0.7rem;
+  }
+  .app.pixel .setup .curse-text b {
+    font-size: 0.66rem;
+  }
+  .app .setup .curse-text span {
+    font-size: 0.62rem;
+    line-height: 1.25;
+  }
+  .app .setup .curse-bonus {
+    font-size: 0.7rem;
+  }
+  .app .setup .heat {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 14px;
+    margin-top: 10px;
+  }
+  .app .setup .heat > .setup-head,
+  .app .setup .heat > .setup-head + .heat-desc {
+    grid-column: 1 / -1;
+  }
+  .app .setup .heat-picker {
+    gap: 8px;
+  }
+  .app.pixel .setup .heat-picker .btn {
+    padding: 0.3em 0.8em;
+    font-size: 0.8rem;
+  }
+  .app .setup .heat-level {
+    font-size: 1.2rem;
+  }
+  .app .setup .heat-desc {
+    margin: 0;
+    font-size: 0.62rem;
+    line-height: 1.3;
+  }
+
+  /* -- the maps of a run */
+  .app .setup .atlas {
+    max-width: none;
+  }
+  .app .setup .atlas-list {
+    gap: 8px;
+  }
+  .app.pixel .setup .atlas-card {
+    gap: 2px;
+    padding: 6px;
+  }
+  .app .setup .atlas-map {
+    margin-bottom: 2px;
+  }
+  .app .setup .atlas-depth {
+    font-size: 0.52rem;
+  }
+  .app .setup .atlas-name {
+    font-size: 0.7rem;
+  }
+  .app .setup .atlas-tip {
+    font-size: 0.6rem;
+    line-height: 1.3;
+  }
+  .app .setup .atlas-theme {
+    font-size: 0.56rem;
+  }
+  .app .setup .atlas-actions {
+    flex-wrap: nowrap;
+    gap: 4px;
+    margin-top: 2px;
+  }
+  .app.pixel .setup .atlas-actions .btn {
+    padding: 0.3em 0.5em;
+    font-size: 0.56rem;
+    white-space: nowrap;
+  }
+
+  /* -- Options: each setting a compact row */
+  .app.pixel .phone-menu .options-section {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .app .phone-menu .options-part.pane-on {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .app.pixel .phone-menu .opt-toggle {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 5px 8px;
+  }
+  .app .phone-menu .opt-switch {
+    width: 34px;
+    height: 20px;
+  }
+  .app .phone-menu .opt-switch i {
+    width: 12px;
+    height: 12px;
+  }
+  .app .phone-menu .opt-toggle.on .opt-switch i {
+    left: 16px;
+  }
+  .app .phone-menu .opt-text b {
+    font-size: 0.7rem;
+  }
+  .app .phone-menu .opt-text span,
+  .app .phone-menu .opt-note {
+    font-size: 0.62rem;
+    line-height: 1.25;
+  }
+  .app .phone-menu .warn-preview {
+    width: 64px;
+    height: 23px;
+  }
+  .app .phone-menu .opt-range {
+    grid-template-columns: 92px minmax(0, 1fr) 40px;
+    font-size: 0.7rem;
+  }
+}
+
+@media (pointer: coarse) {
+  .app.pixel .pane-tabs .pane-tab.mouse-only {
+    display: none;
+  }
+}
+
+/* Sideways: the bar is one row (Back, title, tabs, the main button) and the parts use the width. */
+@media (max-height: 500px) {
+  .app .phone-menu.screen,
+  .app .phone-menu.overlay-inner {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      'back title tabs go'
+      'pane pane pane pane';
+  }
+  /* The Wizard tab names the wizard, which leaves its tabs the room for their notes. */
+  .app .setup .begin-as {
+    display: none;
+  }
+  .app .setup .curse-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .app .setup .atlas-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+    .app .phone-menu .options-part.pane-on {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .app .phone-menu .options-part .opt-range,
+  .app .phone-menu .options-part .opt-note {
+    grid-column: 1 / -1;
+  }
+  .app .phone-menu .key-table {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 18px;
+  }
+  .app .phone-menu .key-row {
+    grid-template-columns: minmax(0, 1fr) 76px 76px;
+  }
+  .app.pixel .phone-menu .key-btn {
+    height: 26px;
+  }
+  .app .phone-menu .key-action {
+    font-size: 0.72rem;
+  }
+  .app .phone-menu .key-note {
+    min-height: 0;
+    font-size: 0.66rem;
+  }
+}
+
+/* Upright: the title and tabs on top, the buttons at the bottom within a thumb's reach. */
+@media (max-width: 559px) {
+  .app .phone-menu.screen,
+  .app .phone-menu.overlay-inner {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'title title title'
+      'tabs tabs tabs'
+      'pane pane pane'
+      'back . go';
+  }
+  .app.pixel .phone-menu > .screen-title,
+  .app.pixel .phone-menu > .overlay-title {
+    justify-self: center;
+  }
+  .app .phone-menu .phone-pane {
+    align-self: start;
+  }
+  .app .setup .wizard-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app .setup .atlas-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app.pixel .setup .atlas-card {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    grid-template-areas:
+      'map depth'
+      'map name'
+      'map tip'
+      'map theme'
+      'map actions';
+    align-content: start;
+    column-gap: 10px;
+  }
+  .app .setup .atlas-map {
+    grid-area: map;
+    align-self: start;
+  }
+  .app .setup .atlas-depth {
+    grid-area: depth;
+  }
+  .app .setup .atlas-name {
+    grid-area: name;
+  }
+  .app .setup .atlas-tip {
+    grid-area: tip;
+  }
+  .app .setup .atlas-theme {
+    grid-area: theme;
+  }
+  .app .setup .atlas-actions {
+    grid-area: actions;
+  }
+}
+
+/* Permanent Upgrades, the Hall of Records, How to Play and Sigil Practice on a phone. The Hall's
+   read-out of a tapped tile shows only there. */
+
+.records-detail {
+  display: none;
+}
+
+@media (max-height: 500px), (max-width: 559px) {
+  /* -- Permanent Upgrades: the shards in the bar; each upgrade a row, its button at the end */
+  .app .phone-menu .shop-tabs {
+    display: none;
+  }
+  .app.pixel .shop.phone-menu > .screen-sub {
+    grid-area: sub;
+    margin: 0;
+    white-space: nowrap;
+  }
+  .app .shop .shop-sub-text {
+    display: none;
+  }
+  /* The open group's cards (the tools' and the ultimate's together) share one grid. */
+  .app .shop.phone-menu .grimoire {
+    grid-area: pane;
+    align-self: safe center;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    max-width: none;
+  }
+  .app .shop.phone-menu .grimoire-group.pane-on,
+  .app .shop.phone-menu .grimoire-group .shop-grid {
+    display: contents;
+  }
+  .app .shop.phone-menu .grimoire-group .setup-head,
+  .app .shop.phone-menu .learn-word {
+    display: none;
+  }
+  .app .shop.phone-menu .shop-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+    gap: 6px;
+    max-width: none;
+    margin: 0;
+  }
+  .app.pixel .shop.phone-menu .shop-card {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'icon name buy'
+      'icon pips buy'
+      'icon desc buy'
+      'icon next buy';
+    align-items: center;
+    justify-items: start;
+    gap: 1px 10px;
+    padding: 6px 8px 6px 10px;
+    text-align: left;
+    line-height: 1.25;
+  }
+  .app .shop.phone-menu .shop-card > :first-child {
+    grid-area: icon;
+    justify-self: center;
+  }
+  .app .shop.phone-menu .shop-card > .card-glyph-px,
+  .app .shop.phone-menu .shop-card > .relic-icon {
+    width: 30px;
+    height: 30px;
+  }
+  .app .shop.phone-menu .card-pair {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .app .shop.phone-menu .card-pair svg {
+    width: 16px;
+    height: 16px;
+  }
+  .app .shop.phone-menu .card-glyph {
+    font-size: 1.3rem;
+  }
+  .app.pixel .shop.phone-menu .card-name {
+    grid-area: name;
+    font-size: 0.66rem;
+  }
+  .app .shop.phone-menu .card-pips {
+    grid-area: pips;
+    gap: 4px;
+    min-height: 0;
+    margin: 2px 0;
+  }
+  .app .shop.phone-menu .card-pips i {
+    width: 7px;
+    height: 7px;
+  }
+  .app .shop.phone-menu .card-desc {
+    grid-area: desc;
+    font-size: 0.62rem;
+  }
+  .app .shop.phone-menu .card-next {
+    grid-area: next;
+    font-size: 0.6rem;
+  }
+  .app.pixel .shop.phone-menu .shop-card > .btn {
+    grid-area: buy;
+    max-width: 96px;
+    padding: 0.45em 0.6em;
+    font-size: 0.56rem;
+    line-height: 1.25;
+    white-space: normal;
+  }
+
+  /* -- the Hall of Records: the records as tiles; achievements and foes as small tiles, tapped to read */
+  .app .records-screen.phone-menu .hall-records {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+  }
+  .app.pixel .records-screen.phone-menu .hall-records div {
+    align-items: center;
+    padding: 10px 6px;
+    background: var(--px-panel);
+    border: 3px solid var(--px-ink);
+    box-shadow: inset 0 0 0 2px var(--px-hi);
+    font-size: 0.66rem;
+    text-align: center;
+  }
+  .app .records-screen.phone-menu .hall-records b {
+    font-size: 1.1rem;
+  }
+  .app .records-screen.phone-menu .achievement-grid {
+    gap: 5px;
+    width: 100%;
+    margin: 0;
+  }
+  .app .records-screen.phone-menu .achievement {
+    grid-template-columns: 16px minmax(0, 1fr);
+    grid-template-rows: auto;
+    align-items: center;
+    padding: 5px 7px;
+    cursor: pointer;
+  }
+  .app .records-screen.phone-menu .achievement-mark {
+    grid-row: auto;
+    font-size: 13px;
+  }
+  .app .records-screen.phone-menu .achievement-name {
+    font-size: 0.62rem;
+    line-height: 1.2;
+  }
+  .app .records-screen.phone-menu .achievement .achievement-desc,
+  .app .records-screen.phone-menu .achievement .achievement-reward,
+  .app .records-screen.phone-menu .beast .beast-lore,
+  .app .records-screen.phone-menu .beast .beast-count,
+  .app .records-screen.phone-menu .bestiary-page .setup-head {
+    display: none;
+  }
+  .app .records-screen.phone-menu .bestiary {
+    display: grid;
+    gap: 5px;
+    width: 100%;
+    margin: 0;
+  }
+  .app .records-screen.phone-menu .bestiary-page,
+  .app .records-screen.phone-menu .bestiary-list {
+    display: contents;
+  }
+  .app .records-screen.phone-menu .beast {
+    grid-template-columns: 20px minmax(0, 1fr);
+    column-gap: 6px;
+    padding: 4px 6px;
+    cursor: pointer;
+  }
+  .app .records-screen.phone-menu .beast-token {
+    grid-row: auto;
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+  }
+  .app .records-screen.phone-menu .beast-name {
+    font-size: 0.6rem;
+    line-height: 1.2;
+  }
+  .app .records-screen.phone-menu .achievement.open,
+  .app .records-screen.phone-menu .beast.open {
+    border-color: var(--cyan);
+  }
+  .app.pixel .records-screen.phone-menu .records-detail {
+    display: block;
+    grid-area: detail;
+    min-height: 2.7em;
+    margin: 0;
+    padding: 5px 10px;
+    background: var(--px-panel);
+    border: 2px solid var(--panel-edge);
+    color: var(--ink-dim);
+    font-size: 0.68rem;
+    line-height: 1.3;
+  }
+  .app .records-detail b {
+    color: var(--ink);
+  }
+  .app .records-detail .achievement-reward,
+  .app .records-detail .beast-count {
+    font-size: inherit;
+  }
+
+  /* -- How to Play: one page at a time */
+  .app .howto.phone-menu .howto-grid {
+    display: contents;
+  }
+  .app.pixel .howto.phone-menu .howto-card {
+    max-width: none;
+    padding: 10px 14px;
+    font-size: 0.74rem;
+    line-height: 1.4;
+  }
+  .app .howto.phone-menu .howto-card p {
+    margin: 0 0 0.5em;
+  }
+  .app .howto.phone-menu .howto-card p:last-child {
+    margin-bottom: 0;
+  }
+  .app .howto.phone-menu .howto-card .muted {
+    font-size: inherit;
+  }
+  .app .howto.phone-menu .sigil-list {
+    display: grid;
+    gap: 6px;
+  }
+  .app .howto.phone-menu .sigil-row {
+    gap: 8px;
+    padding: 4px 8px;
+  }
+  .app .howto.phone-menu .sigil-row svg {
+    width: 34px;
+    height: 34px;
+    flex: none;
+  }
+  .app .howto.phone-menu .sigil-row div {
+    font-size: 0.68rem;
+    line-height: 1.3;
+  }
+  .app .howto.phone-menu .map-list {
+    gap: 4px 18px;
+  }
+  .app .howto.phone-menu .tips {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0;
+    font-size: 0.78rem;
+  }
+  .app .howto.phone-menu > .menu-buttons > .howto-practice {
+    grid-area: extra;
+  }
+
+  /* -- Sigil Practice: the sigils to pick in the bar, the pad beside (or above) the read-out */
+  .app .practice.phone-menu > .screen-sub,
+  .app .practice.phone-menu .practice-measure {
+    display: none;
+  }
+  .app .practice.phone-menu .practice-targets {
+    grid-area: tabs;
+    gap: 5px;
+    margin: 0;
+  }
+  .app.pixel .practice.phone-menu .practice-target {
+    gap: 4px;
+    padding: 4px 9px 4px 7px;
+    font-size: 0.7rem;
+  }
+  .app .practice.phone-menu .practice-target svg {
+    width: 16px;
+    height: 16px;
+  }
+  .app .practice.phone-menu .practice-grid {
+    grid-area: pane;
+    align-self: stretch;
+    gap: 8px;
+    max-width: none;
+    margin: 0;
+  }
+  .app .practice.phone-menu .practice-pad {
+    height: auto;
+    min-height: 0;
+  }
+  .app .practice.phone-menu .practice-hint {
+    bottom: 30px;
+    font-size: 0.72rem;
+  }
+  .app .practice.phone-menu .practice-legend {
+    left: 8px;
+    bottom: 6px;
+    gap: 8px;
+    font-size: 0.56rem;
+  }
+  .app .practice.phone-menu .practice-panel {
+    gap: 5px;
+  }
+  .app .practice.phone-menu .verdict-detail {
+    font-size: 0.64rem;
+    line-height: 1.25;
+  }
+  .app.pixel .practice.phone-menu .practice-verdict {
+    min-height: 0;
+    padding: 5px 10px;
+    font-size: 0.66rem;
+    gap: 2px 8px;
+  }
+  .app.pixel .practice.phone-menu .verdict-head {
+    font-size: 0.72rem;
+  }
+  .app .practice.phone-menu .practice-shapes {
+    gap: 4px;
+  }
+  .app.pixel .practice.phone-menu .shape-row {
+    grid-template-columns: 20px 74px minmax(0, 1fr) 30px;
+    column-gap: 6px;
+    padding: 2px 8px;
+  }
+  .app .practice.phone-menu .shape-row svg {
+    width: 18px;
+    height: 18px;
+  }
+  .app.pixel .practice.phone-menu .shape-name {
+    font-size: 0.62rem;
+  }
+  .app .practice.phone-menu .shape-score {
+    font-size: 0.66rem;
+  }
+  .app .practice.phone-menu .shape-note {
+    font-size: 0.58rem;
+    line-height: 1.2;
+  }
+  .app .practice.phone-menu .practice-history {
+    gap: 3px;
+    font-size: 0.6rem;
+  }
+}
+
+/* Sideways: the bar holds what each menu needs most; the title gives way where it can't fit. */
+@media (max-height: 500px) {
+  .app .shop.phone-menu.screen {
+    grid-template-areas:
+      'back sub tabs go'
+      'pane pane pane pane';
+  }
+  .app .shop.phone-menu > .screen-title,
+  .app .practice.phone-menu > .screen-title {
+    display: none;
+  }
+  .app .records-screen.phone-menu.screen {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'back title tabs go'
+      'pane pane pane pane'
+      'detail detail detail detail';
+  }
+  .app .records-screen.phone-menu .hall-records {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .app .records-screen.phone-menu .achievement-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .app .records-screen.phone-menu .bestiary {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+  .app .howto.phone-menu.screen {
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'back title tabs extra go'
+      'pane pane pane pane pane';
+  }
+  .app .howto.phone-menu .sigil-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .app .howto.phone-menu .map-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .app .practice.phone-menu .practice-targets {
+    flex-wrap: nowrap;
+  }
+  .app .practice.phone-menu .practice-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+  }
+}
+
+/* Upright: the shards under the title, and the pad above the read-out. */
+@media (max-width: 559px) {
+  .app .phone-menu .pane-tabs {
+    flex-wrap: wrap;
+  }
+  .app .shop.phone-menu.screen {
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'title title title'
+      'sub sub sub'
+      'tabs tabs tabs'
+      'pane pane pane'
+      'back . go';
+  }
+  .app.pixel .shop.phone-menu > .screen-sub {
+    justify-self: center;
+  }
+  .app .shop.phone-menu .shop-grid,
+  .app .shop.phone-menu .grimoire {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app .records-screen.phone-menu.screen {
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'title title title'
+      'tabs tabs tabs'
+      'pane pane pane'
+      'detail detail detail'
+      'back . go';
+  }
+  .app .records-screen.phone-menu .hall-records,
+  .app .records-screen.phone-menu .achievement-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .app .records-screen.phone-menu .bestiary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .app .howto.phone-menu.screen {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'title title title'
+      'tabs tabs tabs'
+      'pane pane pane'
+      'back extra go';
+  }
+  .app .howto.phone-menu > .menu-buttons > .howto-practice {
+    justify-self: center;
+  }
+  .app .howto.phone-menu .sigil-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app .practice.phone-menu .practice-targets {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .app .practice.phone-menu .practice-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 }
