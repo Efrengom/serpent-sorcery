@@ -29,6 +29,8 @@ export interface GameOptions extends ViewOptions {
    * can't begin there.
    */
   autoAim: boolean;
+  /** Short buzzes for a hit, a level-up, an Archmage's fall and so on, where the device can vibrate. On by default on a phone or tablet. */
+  vibration: boolean;
 }
 
 export const GAME_SPEED = { min: 0.5, max: 1, step: 0.1 };
@@ -41,7 +43,7 @@ export function touchFirst(): boolean {
 }
 
 export function defaultOptions(): GameOptions {
-  return { ...DEFAULT_VIEW, gameSpeed: 1, bindings: copyBindings(DEFAULT_BINDINGS), steerRight: false, autoAim: touchFirst() };
+  return { ...DEFAULT_VIEW, gameSpeed: 1, bindings: copyBindings(DEFAULT_BINDINGS), steerRight: false, autoAim: touchFirst(), vibration: touchFirst() };
 }
 
 /** Snaps a speed to the slider's steps and range. */

@@ -1,6 +1,6 @@
 import type { SpellId } from './config';
 import type { RunMods } from './progression';
-import type { UltimateId } from './ultimates';
+import type { UltimateId } from './ultimate-info';
 
 export type WizardId = 'arcanist' | 'frostcoil' | 'wardscale' | 'stormtongue';
 export const WIZARD_IDS: WizardId[] = ['arcanist', 'frostcoil', 'wardscale', 'stormtongue'];

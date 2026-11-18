@@ -128,6 +128,20 @@ describe('reroll, banish and skip (L1-L3)', () => {
     expect(rerollOffer(w, 5, Math.random)).toBeNull();
   });
 
+  it('never rerolls into the very same cards', () => {
+    // Early on the pool is small: a plain redraw repeats the offer about one time in 80.
+    const w = newWorld();
+    w.rerolls = 1e6;
+    const rng = mulberry32(21);
+    let offer = rollOffer(w, 1, rng);
+    for (let i = 0; i < 400; i++) {
+      const next = rerollOffer(w, 1, rng, offer)!;
+      const ids = (o: typeof offer) => o.map((c) => c.id).sort().join();
+      expect(ids(next)).not.toBe(ids(offer));
+      offer = next;
+    }
+  });
+
   it('banishes a card for the rest of the run and puts a new one in its place', () => {
     const w = newWorld();
     w.banishes = 1;

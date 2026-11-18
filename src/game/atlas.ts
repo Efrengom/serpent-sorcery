@@ -1,6 +1,6 @@
 import { buildLayout, MAPS, mapArea, type MapLayout } from './maps';
 import type { MapId } from './maps/types';
-import { MINIMAP_HAZARDS, MINIMAP_STYLE } from './minimap';
+import { MINIMAP_HAZARDS, MINIMAP_STYLE } from './minimap-style';
 import { hexRgb } from './pixel/bake';
 import { clearanceAt } from './terrain';
 

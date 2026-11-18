@@ -19,6 +19,22 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
+// A deploy replaces the files that parts loaded on demand come from, so a page opened before it
+// can't fetch them: reload it, once, to pick up the new build.
+window.addEventListener('vite:preloadError', (e) => {
+  const KEY = 'serpent-sorcery-reloaded';
+  let last = 0;
+  try {
+    last = Number(sessionStorage.getItem(KEY)) || 0;
+    sessionStorage.setItem(KEY, String(Date.now()));
+  } catch {
+    // No session storage: reload anyway.
+  }
+  if (Date.now() - last < 60_000) return;
+  e.preventDefault();
+  location.reload();
+});
+
 // Installed (home-screen) play works offline: the service worker keeps what the game has loaded.
 // Production builds only, so the dev server's live reloading is never cached.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {

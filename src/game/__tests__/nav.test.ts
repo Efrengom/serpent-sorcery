@@ -120,7 +120,9 @@ describe('spawning on a big map', () => {
     expect(inView(w.camera, e.x, e.y, NAV.ringInner - 1)).toBe(false);
   });
 
-  it('keeps every foe out of the stonework through a busy minute', () => {
+  // A minute of play at 60 frames a second takes a few seconds on its own, and more on a busy
+  // machine, so it has longer than the default five.
+  it('keeps every foe out of the stonework through a busy minute', { timeout: 30_000 }, () => {
     const w = newWorld(5);
     w.time = 240;
     w.invuln = 1e9;

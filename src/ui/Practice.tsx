@@ -3,6 +3,7 @@ import { audio } from '../game/audio';
 import { castTier, type CastTier } from '../game/cast';
 import { CLEAN_CAST, GESTURE } from '../game/config';
 import { analyzeStroke, recognize, SIGIL_KINDS, type Pt, type SigilKind, type StrokeAnalysis } from '../game/gesture';
+import { touchFirst } from '../game/options';
 import { COLORS } from '../game/palette';
 import { cornerMarks, measurements, reportAttempt, SHAPE_NAMES, SHAPE_TIPS, shapeOverlay, type AttemptOutcome } from '../game/practice';
 import { SIGIL_TO_SPELL, SPELL_COLORS } from '../game/spells';
@@ -298,7 +299,7 @@ export function PracticeScreen({ onBack, onPlay }: { onBack(): void; onPlay(): v
   const a = last?.analysis ?? null;
 
   return (
-    <div className="screen practice">
+    <div className="screen practice phone-menu">
       <h2 className="screen-title">Sigil Practice</h2>
       <p className="screen-sub">Draw in the box. The recognizer shows what it read and why — nothing here costs a thing.</p>
       <div className="practice-targets" role="radiogroup" aria-label="Sigil to practise">
@@ -336,7 +337,7 @@ export function PracticeScreen({ onBack, onPlay }: { onBack(): void; onPlay(): v
             onPointerCancel={(e) => finish(e, true)}
             onContextMenu={(e) => e.preventDefault()}
           />
-          {!last && !stroke.current && <span className="practice-hint">{target ? `Draw a ${SHAPE_NAMES[target]} — start at the dot` : 'Hold the left mouse button and draw'}</span>}
+          {!last && !stroke.current && <span className="practice-hint">{target ? `Draw a ${SHAPE_NAMES[target]} — start at the dot` : touchFirst() ? 'Draw with a finger' : 'Hold the left mouse button and draw'}</span>}
           <div className="practice-legend" aria-hidden="true">
             <span className="lg-start">start</span>
             <span className="lg-end">end</span>

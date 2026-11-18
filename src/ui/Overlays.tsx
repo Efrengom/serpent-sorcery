@@ -316,7 +316,7 @@ export function PauseMenu({
   if (showOptions) {
     return (
       <div className="overlay">
-        <div className="overlay-inner wide options-overlay">
+        <div className="overlay-inner wide options-overlay phone-menu">
           <h2 className="overlay-title">Options</h2>
           <OptionsPanel options={options} onChange={onOptions} onBack={closeOptions} />
           <button className="btn primary" onClick={closeOptions} autoFocus>

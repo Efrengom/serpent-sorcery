@@ -258,9 +258,15 @@ async function clickButton(text) {
   return true;
 }
 
+/** The run loads on demand: wait until it is up (or give up after a while, for the checks to report). */
+async function runUp() {
+  await page.waitForFunction(() => window.__serpent?.getPhase?.(), { timeout: 15000 }).catch(() => undefined);
+}
+
 try {
   // ============================================================== Part A: controls
   await page.keyboard.press('Enter');
+  await runUp();
   await sleep(700);
   let s = await state();
   check('Enter on title starts a run', s.phase === 'playing', { phase: s.phase });
@@ -1125,9 +1131,12 @@ try {
       });
       times.shift();
       times.sort((a, b) => a - b);
-      return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), max: +times[times.length - 1].toFixed(1) };
+      return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), slow: times.filter((t) => t > 50).length, max: +times[times.length - 1].toFixed(1) };
     });
-    check('frame times stay smooth while the view races across the whole map', frameTimes.p95 < 34 && frameTimes.max < 120, frameTimes);
+    // Smooth: nearly every frame on time, and stalls rare. One hiccup on a busy machine (a garbage
+    // collection, another process) passes; repeated stalls, or one long one, don't.
+    const smooth = (f) => f.p95 < 34 && f.slow <= 3 && f.max < 250;
+    check('frame times stay smooth while the view races across the whole map', smooth(frameTimes), frameTimes);
 
     // The deeper maps: each one's landmarks, and frame times across each.
     const tours = (
@@ -1203,14 +1212,14 @@ try {
           });
           times.shift();
           times.sort((a, b) => a - b);
-          return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), max: +times[times.length - 1].toFixed(1) };
+          return { frames: times.length, median: +times[Math.floor(times.length / 2)].toFixed(1), p95: +times[Math.floor(times.length * 0.95)].toFixed(1), slow: times.filter((t) => t > 50).length, max: +times[times.length - 1].toFixed(1) };
         }, lane);
       }
     }
     check('every deeper map plays its own theme', Object.entries(deepThemes).every(([id, theme]) => theme === id), deepThemes);
     check(
       'every deeper map has a landmark tour, and frame times stay smooth racing across each',
-      tours.every((t) => t.tour.length >= 3 && t.lane) && Object.values(deepTimes).every((f) => f.p95 < 34 && f.max < 120),
+      tours.every((t) => t.tour.length >= 3 && t.lane) && Object.values(deepTimes).every(smooth),
       { maps: tours.map((t) => t.id), deepTimes },
     );
   }
@@ -1636,6 +1645,7 @@ try {
   await page.reload({ waitUntil: 'networkidle0' });
   check('purchase persists across reload', JSON.stringify((await readSave()).meta) === JSON.stringify(shopAfter.meta));
   await page.keyboard.press('Enter');
+  await runUp();
   await sleep(500);
   const stats = await page.evaluate(() => window.__serpent.debug().world.stats);
   check('permanent upgrade applies to the next run', stats.maxHp > 100 || stats.damageMult > 1 || stats.pickupRadius > 110 || stats.xpMult > 1, {
@@ -1686,6 +1696,7 @@ try {
     const chosen = (await readSave()).settings;
     check('picking a wizard and a curse with real clicks saves them', chosen.wizard === 'frostcoil' && chosen.curses.join() === 'glass', { wizard: chosen.wizard, curses: chosen.curses });
     await page.keyboard.press('Enter');
+    await runUp();
     await sleep(600);
     const run = await page.evaluate(() => {
       const w = window.__serpent.debug().world;
@@ -1776,7 +1787,27 @@ try {
     check('each unlocked wizard card names its ultimate', ultLine.some((t) => /Starfall/.test(t)) && ultLine.some((t) => /Absolute Zero/.test(t)), { ultLine });
     await page.screenshot({ path: path.join(OUT, '18-setup-heat.png') });
     await page.keyboard.press('Enter');
-    await sleep(800);
+    // The run loads on demand, so wait for the offer to take input rather than a fixed time.
+    // The panel shows it's ready (its cards light up) a moment before its keys are listened for, so
+    // give it that moment too.
+    const relicReady = (n) =>
+      page.waitForFunction((n) => document.querySelector('.relic-offer .cards.armed') && new RegExp(`relic ${n} of`).test(document.querySelector('.relic-offer .eyebrow')?.textContent ?? ''), { timeout: 10000 }, n).then(
+        () => sleep(200).then(() => 'ready'),
+        () => 'timed out',
+      );
+    const offerState = () =>
+      page.evaluate(() => {
+        const card = document.querySelector('.upgrade-card.relic[data-relic="rimewalker"]');
+        const r = card?.getBoundingClientRect();
+        return {
+          eyebrow: document.querySelector('.relic-offer .eyebrow')?.textContent,
+          armed: !!document.querySelector('.relic-offer .cards.armed'),
+          disabled: card?.disabled,
+          atCentre: r ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.className : null,
+          taken: [...window.__serpent.debug().world.relics],
+        };
+      });
+    const waits = [await relicReady(1)];
 
     // A waystone start catches up: a relic for each map skipped (the Catacombs' own first), then a draft.
     const relic1 = await page.evaluate(() => ({
@@ -1785,8 +1816,10 @@ try {
       eyebrow: document.querySelector('.relic-offer .eyebrow')?.textContent,
     }));
     check('a waystone start offers a relic for each map skipped, the Catacombs’ own first', relic1.phase === 'relic' && relic1.relics.length === 3 && relic1.relics[0] === 'rimewalker' && /relic 1 of 2/.test(relic1.eyebrow ?? ''), relic1);
+    const beforeClick = await offerState();
     await page.click('.upgrade-card.relic[data-relic="rimewalker"]');
-    await sleep(800);
+    const afterClick = await offerState();
+    waits.push(await relicReady(2));
     await page.keyboard.press('Digit1');
     await sleep(800);
     const offerIds = () => page.evaluate(() => [...document.querySelectorAll('.levelup .upgrade-card')].map((c) => c.dataset.card));
@@ -1796,7 +1829,7 @@ try {
         return { phase: window.__serpent.getPhase(), rerolls: w.rerolls, banishes: w.banishes, banished: [...w.banished], relics: [...w.relics], hp: w.hp, eyebrow: document.querySelector('.levelup .eyebrow')?.textContent };
       });
     const d0 = await tools();
-    check('then it drafts the level-ups through the usual panel', d0.phase === 'levelup' && /Waystone draft · 1 of 24/.test(d0.eyebrow ?? '') && d0.relics.length === 2 && d0.relics[0] === 'rimewalker', d0);
+    check('then it drafts the level-ups through the usual panel', d0.phase === 'levelup' && /Waystone draft · 1 of 24/.test(d0.eyebrow ?? '') && d0.relics.length === 2 && d0.relics[0] === 'rimewalker', { ...d0, waits, beforeClick, afterClick });
     await page.screenshot({ path: path.join(OUT, '19-draft.png') });
 
     // Reroll, banish and skip on a real offer.
@@ -1931,6 +1964,7 @@ try {
     check('Esc leaves the options screen', !!(await page.$('.title-screen')));
 
     await page.keyboard.press('Enter');
+    await runUp();
     await sleep(600);
     const view = await page.evaluate(() => {
       const v = window.__serpent.renderer.view;
@@ -2095,6 +2129,8 @@ try {
   // ============================================================== Part G: sigil practice room
   {
     await clickButton('Practice Sigils');
+    // The practice room loads on demand.
+    await page.waitForSelector('.practice-canvas', { timeout: 10000 });
     await sleep(300);
     const pad = await page.$eval('.practice-canvas', (c) => {
       const r = c.getBoundingClientRect();
@@ -2163,6 +2199,7 @@ try {
     await page.setViewport({ width: 812, height: 375, hasTouch: true, isMobile: true });
     await page.reload({ waitUntil: 'networkidle0' });
     await clickButton('Play');
+    await runUp();
     await sleep(900);
     const layout = await page.evaluate(() => {
       const r = window.__serpent.renderer;
@@ -2237,6 +2274,9 @@ try {
     await sleep(200);
     await clickButton('Options');
     await sleep(150);
+    // On a phone, Options shows one tab at a time; auto-aim is under Controls.
+    await page.evaluate(() => document.querySelector('[data-pane-tab="controls"]')?.click());
+    await sleep(100);
     const toggled = await clickButton('Auto-aim');
     await sleep(100);
     await clickButton('Back to pause');
@@ -2373,6 +2413,7 @@ try {
       await page.evaluate((k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)), SAVE_KEY, saved);
       await page.reload({ waitUntil: 'networkidle0' });
       await clickButton('Play');
+      await runUp();
       await sleep(600);
       await page.evaluate(() => {
         const w = window.__serpent.debug().world;
@@ -2470,10 +2511,171 @@ try {
     await page.goto(URL, { waitUntil: 'networkidle0' });
   }
 
+  // ============================================================== Part Q: the menus on a phone
+  // Every menu behind the title's tiles, each of its tabs and the pause menu's Options fit a phone
+  // held either way, as a touch screen, without scrolling and without one part covering another,
+  // filled with their longest content. A sideways swipe turns How to Play's page. A larger screen
+  // shows each menu whole, with no tabs. The save is put back afterwards.
+  {
+    const saved = await page.evaluate((k) => localStorage.getItem(k), SAVE_KEY);
+    const PHONES = [
+      { name: 'sideways with the browser bar', width: 832, height: 330 },
+      { name: 'sideways fullscreen', width: 832, height: 384 },
+      { name: 'upright with the browser bar', width: 384, height: 720 },
+      { name: 'upright fullscreen', width: 384, height: 832 },
+    ];
+    const MENUS = [
+      ['Wizard & Curses', 'Wizard'],
+      ['Options', 'Options'],
+      ['Permanent Upgrades', 'Permanent Upgrades'],
+      ['Hall of Records', 'Hall of Records'],
+      ['How to Play', 'How to Play'],
+      ['Sigil Practice', 'Practice Sigils'],
+    ];
+    // Scrolling, and any laid-out part of the menu (looking through display: contents) that covers
+    // another, spills out of its own box or runs off the screen.
+    const layoutProblems = (sel) =>
+      page.evaluate((sel) => {
+        const root = document.querySelector(sel);
+        if (!root) return ['missing'];
+        const doc = document.scrollingElement;
+        const out = [];
+        const over = Math.max(root.scrollHeight - root.clientHeight, doc.scrollHeight - innerHeight);
+        const wide = Math.max(root.scrollWidth - root.clientWidth, doc.scrollWidth - innerWidth);
+        if (over > 1) out.push(`scrolls ${over}px`);
+        if (wide > 1) out.push(`${wide}px too wide`);
+        const items = [];
+        const walk = (el) => {
+          for (const c of el.children) {
+            const cs = getComputedStyle(c);
+            if (cs.display === 'contents') walk(c);
+            else if (cs.display !== 'none' && cs.position !== 'absolute' && cs.position !== 'fixed') {
+              const r = c.getBoundingClientRect();
+              if (r.width > 0 && r.height > 0) items.push({ el: c, r });
+            }
+          }
+        };
+        walk(root.matches('.overlay') ? root.querySelector('.overlay-inner') : root);
+        const name = (el) => (typeof el.className === 'string' && el.className ? el.className.split(' ').slice(0, 2).join('.') : el.tagName);
+        items.forEach(({ el, r }, i) => {
+          if (r.bottom > innerHeight + 1 || r.right > innerWidth + 1 || r.top < -1 || r.left < -1) out.push(`${name(el)} off the screen`);
+          if (el.scrollHeight > el.clientHeight + 2 && getComputedStyle(el).overflowY === 'visible') out.push(`${name(el)} spills ${el.scrollHeight - el.clientHeight}px`);
+          for (const { el: e2, r: b } of items.slice(i + 1)) {
+            const w = Math.min(r.right, b.right) - Math.max(r.left, b.left);
+            const h = Math.min(r.bottom, b.bottom) - Math.max(r.top, b.top);
+            if (w > 1 && h > 1) out.push(`${name(el)} covers ${name(e2)}`);
+          }
+        });
+        return out;
+      }, sel);
+    // Each visible tab in turn (or the menu as it is, with none), with what's wrong in each.
+    const everyTab = async (phone, menu, sel) => {
+      const tabs = await page.evaluate((sel) => [...document.querySelector(sel).querySelectorAll('[role=tab]')].filter((b) => b.offsetParent).length, sel);
+      for (let i = 0; i < Math.max(1, tabs); i++) {
+        let tab = '';
+        if (tabs) {
+          tab = await page.evaluate(
+            (sel, i) => {
+              const b = [...document.querySelector(sel).querySelectorAll('[role=tab]')].filter((b) => b.offsetParent)[i];
+              b.click();
+              return b.dataset.paneTab ?? '';
+            },
+            sel,
+            i,
+          );
+        }
+        await sleep(350);
+        const problems = await layoutProblems(sel);
+        if (problems.length) bad.push({ phone: phone.name, menu, tab, problems });
+        seen++;
+      }
+    };
+    const bad = [];
+    let seen = 0;
+    let keysOnTouch = 0;
+    let swiped = null;
+    for (const phone of PHONES) {
+      await page.setViewport({ width: phone.width, height: phone.height, hasTouch: true, isMobile: true });
+      // A finger for a pointer, as on a phone.
+      const cdp = await page.createCDPSession();
+      await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: 'coarse' }, { name: 'hover', value: 'none' }] });
+      await page.goto(`${URL}?nosites`, { waitUntil: 'networkidle0' });
+      await page.evaluate(async (k) => {
+        const { dailyDate } = await import('/src/game/daily.ts');
+        const sv = JSON.parse(localStorage.getItem(k));
+        sv.currency = 12640;
+        Object.assign(sv.records, { totalRuns: 312, bestTime: 3600, bestLevel: 61, bestKills: 12345, deepest: 9, wins: 4, heatUnlocked: 10, dailyDate: dailyDate(new Date()), dailyBest: 98765, breakables: 123456 });
+        sv.records.maps = ['ruins', 'hollows', 'catacombs', 'ember'];
+        sv.grimoire = ['way:hollows', 'way:catacombs', 'way:ember'];
+        Object.assign(sv.settings, { curses: ['frenzy', 'glass', 'swarm'], heat: 7, startMap: 'catacombs' });
+        localStorage.setItem(k, JSON.stringify(sv));
+      }, SAVE_KEY);
+      await page.reload({ waitUntil: 'networkidle0' });
+      for (const [menu, button] of MENUS) {
+        await clickButton(button);
+        // Sigil Practice loads on demand: wait for the menu to be up.
+        await page.waitForFunction(() => document.querySelector('.screen:not(.title-screen)'), { timeout: 10000 }).catch(() => undefined);
+        await sleep(400);
+        await everyTab(phone, menu, '.screen');
+        if (menu === 'Options') keysOnTouch += await page.evaluate(() => [...document.querySelectorAll('[data-pane-tab=keys]')].filter((b) => b.offsetParent).length);
+        if (menu === 'How to Play' && phone.width > phone.height) {
+          // A swipe to the left, from Steer, turns to Draw.
+          await page.evaluate(() => document.querySelector('[data-pane-tab=steer]').click());
+          await sleep(200);
+          const t = await page.touchscreen.touchStart(phone.width * 0.7, phone.height * 0.6);
+          await t.move(phone.width * 0.25, phone.height * 0.62);
+          await t.end();
+          await sleep(300);
+          swiped = await page.evaluate(() => document.querySelector('.pane-tab.on')?.dataset.paneTab ?? null);
+        }
+        await page.keyboard.press('Escape');
+        await sleep(300);
+      }
+      // The pause menu's Options, in a plain run.
+      await page.evaluate((k) => {
+        const sv = JSON.parse(localStorage.getItem(k));
+        Object.assign(sv.settings, { curses: [], heat: 0, startMap: 'ruins' });
+        localStorage.setItem(k, JSON.stringify(sv));
+      }, SAVE_KEY);
+      await page.reload({ waitUntil: 'networkidle0' });
+      await clickButton('Play');
+      await page.waitForFunction(() => window.__serpent);
+      await sleep(500);
+      await page.evaluate(() => {
+        const w = window.__serpent.debug().world;
+        w.invuln = 1e9;
+        w.spawnAcc = -1e9;
+        window.__serpent.pause();
+      });
+      await sleep(300);
+      await clickButton('Options');
+      await sleep(300);
+      await everyTab(phone, 'Options in the pause menu', '.overlay');
+      await cdp.send('Emulation.setEmulatedMedia', { features: [] });
+      await cdp.detach();
+    }
+    check('every menu, each of its tabs and the pause menu’s Options fit a phone held either way without scrolling or overlapping, at their longest', bad.length === 0 && seen >= PHONES.length * 18, { phones: PHONES.length, views: seen, bad });
+    check('a touch screen has no Keys tab, and a sideways swipe turns How to Play’s page', keysOnTouch === 0 && swiped === 'draw', { keysOnTouch, swiped });
+    await page.evaluate((k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)), SAVE_KEY, saved);
+    // A larger screen: no tabs, and Wizard & Curses shows the wizards, the curses and the maps at once.
+    await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });
+    await page.goto(URL, { waitUntil: 'networkidle0' });
+    await clickButton('Wizard');
+    await sleep(400);
+    const whole = await page.evaluate(() => ({
+      tabs: [...document.querySelectorAll('.pane-tab')].filter((b) => b.offsetParent).length,
+      parts: [...document.querySelectorAll('.setup .phone-pane')].filter((p) => p.offsetParent).length,
+    }));
+    check('a larger screen shows each menu whole, with no tabs', whole.tabs === 0 && whole.parts === 3, whole);
+    await page.keyboard.press('Escape');
+    await sleep(300);
+  }
+
   // ============================================================== Part V: the Archmage Ascendant and a won run
   {
     await page.goto(`${URL}?depth=4`, { waitUntil: 'networkidle0' });
     await clickButton('Play');
+    await runUp();
     await sleep(900);
     const runs0 = (await readSave()).records.totalRuns;
     await page.evaluate(async () => {
@@ -2563,6 +2765,7 @@ try {
   // ============================================================== Part S: shrines, merchants, chests and rifts
   {
     await clickButton('Play');
+    await runUp();
     await sleep(900);
     const spots = await page.evaluate(async () => {
       const w = window.__serpent.debug().world;
