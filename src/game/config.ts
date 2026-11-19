@@ -22,10 +22,12 @@ export const ARENA = {
 export const CAMERA = {
   /** World units shown top to bottom (the old arena's height, so things look the same size). */
   viewHeight: 800,
-  /** Wider windows see more to the sides, up to this; narrow ones at least `minViewWidth`. */
-  maxViewWidth: 1600,
+  /**
+   * The view always fills the window, so a wider one sees more to the sides; a narrow one sees
+   * at least `minViewWidth`. Maps are at least four `wideViewWidth`s across.
+   */
+  wideViewWidth: 1600,
   minViewWidth: 1000,
-  maxViewHeight: 1100,
   /**
    * Phones (a window under 560 CSS pixels wide, or 500 tall) zoom in a little: 600 units top to
    * bottom, at least 640 across, so the serpent stays big enough to see on a small screen.
@@ -145,8 +147,12 @@ export const VIEW = {
   /** Window sizes that count as a phone: narrower than this, or no taller than this. */
   narrowBelow: 560,
   shortAtMost: 500,
-  sideInset: 14,
-  bottomInset: 14,
+  /**
+   * On a narrow screen the minimap sits this many CSS pixels higher, above the ultimate's card
+   * (centred at the bottom, 52 tall and 8 up), which leaves no room beside it.
+   */
+  minimapLiftNarrow: 68,
+  /** CSS pixels a full screen shake moves the view (it reaches this far past every edge). */
   maxShake: 7,
 };
 

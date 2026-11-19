@@ -5,7 +5,7 @@ import { fadeLevel } from './telegraph';
 import { shakeOffset } from './effects';
 import type { Pt } from './gesture';
 import type { TouchView } from './input';
-import type { MapLayout } from './maps/types';
+import type { MapLayout, Rect } from './maps/types';
 import { clamp, type Vec } from './math';
 import { Minimap } from './minimap';
 import { COLORS } from './palette';
@@ -81,10 +81,17 @@ export class Renderer {
   scale = 1;
   ox = 0;
   oy = 0;
-  viewW: number = CAMERA.maxViewWidth;
+  viewW: number = CAMERA.wideViewWidth;
   viewH: number = CAMERA.viewHeight;
   camLeft = 0;
   camTop = 0;
+  /**
+   * The part of the canvas the player sees clear of the HUD, a notch and a home bar, in CSS
+   * pixels. The view covers it and a little more; the minimap, arrows and banners stay inside it.
+   */
+  visible: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  /** Where the minimap was last drawn, in CSS pixels (null when it's off). */
+  minimapAt: Rect | null = null;
   /** The map and area (look) the floor was built for. */
   private map: MapLayout | null = null;
   private area = 0;
@@ -125,9 +132,12 @@ export class Renderer {
   }
 
   /**
-   * Fits the low-res view with a whole-number upscale so every art pixel is the same size. The
-   * view is 320 art pixels tall (or a little more, filling the window) and as wide as the window
-   * allows, within the camera's limits. Very small windows fall back to fractional scaling.
+   * Fits the low-res view with a whole-number upscale so every art pixel is the same size, and
+   * fills the window with it, edge to edge below the HUD. The upscale is the largest whole number
+   * that still shows the usual height and least width (a closer view on a phone); the window's
+   * shape then decides how much more is seen across (or down). The view runs a few pixels past
+   * every edge so a shake never shows its border, and on a phone the canvas reaches under the
+   * notch and home bar too (see .game-canvas). Very small windows fall back to fractional scaling.
    */
   resize(): void {
     // Both weights, and the bold W that is a face of its own (see styles.css), ready for the canvas.
@@ -140,18 +150,20 @@ export class Renderer {
     this.minimap = null;
     const dpr = this.dpr;
     const fixed = this.pixelScale !== null;
-    const side = fixed ? 0 : VIEW.sideInset;
-    const bottom = fixed ? 0 : VIEW.bottomInset;
     const top = fixed ? 0 : this.topInset;
+    const safe = this.safeInsets();
+    this.visible = { x0: safe.left, y0: top, x1: this.cssW - safe.right, y1: this.cssH - safe.bottom };
+    // The upscale is chosen for the part of the window clear of the HUD, notch and home bar.
     const size = this.fitSize();
-    const availW = (this.cssW - side * 2) * dpr;
-    const availH = (this.cssH - top) * dpr;
-    const fit = Math.min(availW / (size.w / P), availH / (size.h / P));
+    const fit = Math.min(((this.visible.x1 - this.visible.x0) * dpr) / (size.w / P), ((this.visible.y1 - this.visible.y0) * dpr) / (size.h / P));
     const whole = Math.floor(fit);
     const f = fixed ? Math.max(1, Math.round(this.pixelScale! * dpr)) : whole >= PIXEL_ART.minIntegerScale ? whole : Math.max(0.5, fit);
     this.pixelFactor = f;
-    this.lowW = fixed ? Math.ceil(availW / f) : Math.min(Math.floor(availW / f), Math.round(CAMERA.maxViewWidth / P));
-    this.lowH = fixed ? Math.ceil(availH / f) : Math.min(Math.floor(availH / f), Math.round(CAMERA.maxViewHeight / P));
+    const availW = this.cssW * dpr;
+    const availH = (this.cssH - top) * dpr;
+    const pad = fixed ? 0 : Math.ceil((VIEW.maxShake * dpr) / f);
+    this.lowW = Math.ceil(availW / f) + pad * 2;
+    this.lowH = Math.ceil(availH / f) + pad * 2;
     if (!this.low || this.low.width !== this.lowW || this.low.height !== this.lowH) {
       this.low = createCanvas(this.lowW, this.lowH);
       this.lowCtx = this.low.getContext('2d')!;
@@ -160,8 +172,8 @@ export class Renderer {
     this.viewH = this.lowH * P;
     const devW = this.lowW * f;
     const devH = this.lowH * f;
-    this.devX = Math.round((this.cssW * dpr - devW) / 2);
-    this.devY = Math.round(top * dpr + Math.max(0, (availH - bottom * dpr - devH) / 2));
+    this.devX = Math.round((availW - devW) / 2);
+    this.devY = Math.round(top * dpr + (fixed ? 0 : (availH - devH) / 2));
     this.scale = f / P / dpr;
     this.ox = this.devX / dpr;
     this.oy = this.devY / dpr;
@@ -175,6 +187,28 @@ export class Renderer {
       this.uiCtx = this.ui.getContext('2d')!;
       this.vignettes = [];
     }
+  }
+
+  /**
+   * How far the canvas reaches past its box (the safe area) at the sides and bottom, in CSS
+   * pixels: under a phone's notch or camera, and its home bar.
+   */
+  private safeInsets(): { left: number; right: number; bottom: number } {
+    const host = this.canvas.parentElement?.getBoundingClientRect();
+    const box = this.canvas.getBoundingClientRect();
+    if (!host || box.width === 0) return { left: 0, right: 0, bottom: 0 };
+    return { left: Math.max(0, host.left - box.left), right: Math.max(0, box.right - host.right), bottom: Math.max(0, box.bottom - host.bottom) };
+  }
+
+  /** The visible part of the view in world units: on screen, below the HUD and clear of a notch or home bar. */
+  private visibleWorld(): Rect {
+    const v = this.visible;
+    return {
+      x0: this.camLeft + (v.x0 - this.ox) / this.scale,
+      y0: this.camTop + (v.y0 - this.oy) / this.scale,
+      x1: this.camLeft + (v.x1 - this.ox) / this.scale,
+      y1: this.camTop + (v.y1 - this.oy) / this.scale,
+    };
   }
 
   /** A phone-sized window: narrower than VIEW.narrowBelow or no taller than VIEW.shortAtMost (the HUD's CSS uses the same sizes). */
@@ -328,19 +362,22 @@ export class Renderer {
   }
 
   /**
-   * Arrows for off-screen pointers: on the line from the view's middle toward each one, just
-   * inside the view's edge, pointing at it (world units).
+   * Arrows for off-screen pointers: on the line from the middle of what's visible toward each
+   * one, just inside its edge, pointing at it (world units).
    */
   private arrows(world: World): { x: number; y: number; a: number; p: Pointer }[] {
     const out: { x: number; y: number; a: number; p: Pointer }[] = [];
     const inset = 34 / this.scale;
-    const cx = this.camLeft + this.viewW / 2;
-    const cy = this.camTop + this.viewH / 2;
+    const v = this.visibleWorld();
+    const cx = (v.x0 + v.x1) / 2;
+    const cy = (v.y0 + v.y1) / 2;
+    const hw = (v.x1 - v.x0) / 2;
+    const hh = (v.y1 - v.y0) / 2;
     for (const p of this.pointers(world)) {
       const dx = p.x - cx;
       const dy = p.y - cy;
-      if (Math.abs(dx) <= this.viewW / 2 && Math.abs(dy) <= this.viewH / 2) continue;
-      const k = Math.min((this.viewW / 2 - inset) / Math.max(1e-6, Math.abs(dx)), (this.viewH / 2 - inset) / Math.max(1e-6, Math.abs(dy)));
+      if (Math.abs(dx) <= hw && Math.abs(dy) <= hh) continue;
+      const k = Math.min((hw - inset) / Math.max(1e-6, Math.abs(dx)), (hh - inset) / Math.max(1e-6, Math.abs(dy)));
       out.push({ x: cx + dx * k, y: cy + dy * k, a: Math.atan2(dy, dx), p });
     }
     return out;
@@ -358,11 +395,14 @@ export class Renderer {
   }
 
   private drawMinimap(world: World): void {
+    this.minimapAt = null;
     if (!this.view.minimap) return;
     this.minimap ??= new Minimap(world.map, world.area, this.compact ? 120 : undefined);
     const m = this.minimap;
-    const x = Math.round(this.ox + this.viewW * this.scale - m.w - 10);
-    const y = Math.round(this.oy + this.viewH * this.scale - m.h - 10);
+    const lift = this.cssW < VIEW.narrowBelow ? VIEW.minimapLiftNarrow : 0;
+    const x = Math.round(this.visible.x1 - m.w - 10);
+    const y = Math.round(this.visible.y1 - m.h - 10 - lift);
+    this.minimapAt = { x0: x, y0: y, x1: x + m.w, y1: y + m.h };
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     m.draw(this.ctx, world, x, y, { x0: this.camLeft, y0: this.camTop, x1: this.camLeft + this.viewW, y1: this.camTop + this.viewH });
   }
@@ -383,7 +423,7 @@ export class Renderer {
       const a = Math.min(1, (TOUCH.hintTime - world.time) / 2) * 0.55;
       const steerX = t.side === 'left' ? this.cssW * TOUCH.zone * 0.5 : this.cssW * (1 - TOUCH.zone * 0.5);
       const drawX = t.side === 'left' ? this.cssW * (0.5 + TOUCH.zone / 2) : this.cssW * (0.5 - TOUCH.zone / 2);
-      const y = this.cssH - 96;
+      const y = this.visible.y1 - 96;
       ctx.globalAlpha = a;
       ctx.font = this.font(17, 800);
       ctx.textAlign = 'center';
@@ -497,8 +537,9 @@ export class Renderer {
     const inT = clamp(b.t / 0.3, 0, 1);
     const outT = clamp((b.max - b.t) / 0.5, 0, 1);
     const a = Math.min(inT, outT);
-    const cx = this.cssW / 2;
-    const cy = this.oy + this.viewH * this.scale * 0.22;
+    const v = this.visible;
+    const cx = (v.x0 + v.x1) / 2;
+    const cy = v.y0 + (v.y1 - v.y0) * 0.22;
     const size = clamp(this.scale * 44, 22, 52);
     ctx.globalAlpha = a;
     ctx.textAlign = 'center';

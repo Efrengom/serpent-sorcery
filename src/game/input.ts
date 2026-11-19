@@ -65,6 +65,7 @@ export class InputManager {
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('blur', this.onBlur);
     window.addEventListener('resize', this.onResize);
+    globalThis.screen?.orientation?.addEventListener('change', this.onTurn);
     document.addEventListener('visibilitychange', this.onVisibility);
     this.canvas.addEventListener('pointerdown', this.onPointerDown);
     window.addEventListener('pointermove', this.onPointerMove);
@@ -78,6 +79,7 @@ export class InputManager {
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
     window.removeEventListener('resize', this.onResize);
+    globalThis.screen?.orientation?.removeEventListener('change', this.onTurn);
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     window.removeEventListener('pointermove', this.onPointerMove);
@@ -204,6 +206,12 @@ export class InputManager {
     this.clearAll();
     this.cb.onResize();
   };
+
+  /**
+   * A phone turned end over end keeps its window size, so no resize comes, but its notch moves
+   * to the other side; the view is fitted again once the page has settled.
+   */
+  private onTurn = () => requestAnimationFrame(this.onResize);
 
   private onContextMenu = (e: Event) => e.preventDefault();
 

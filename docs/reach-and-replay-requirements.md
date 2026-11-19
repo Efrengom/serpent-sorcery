@@ -29,7 +29,7 @@ And little to bring a player back beyond shards.
   steer", "Draw sigils here").
 - **T4. Phone layout.** A window under 560 CSS pixels wide (upright) or 500 tall (sideways)
   counts as a phone. Its view is closer (600 world units tall rather than 800, at least 640
-  across) so the serpent is big enough to see, and fills the width. Sideways, the HUD bar slims to
+  across) so the serpent is big enough to see, and fills the screen. Sideways, the HUD bar slims to
   50 px; upright, it takes two rows with the spells below. The minimap is smaller. Level-up,
   relic and game-over panels are tighter on a short screen and scroll from the top if they must.
 - **T5. Installing.** A web manifest (full screen, any orientation), icons drawn from the game's
@@ -133,5 +133,11 @@ Everything above is in.
     installed too.
   - **Checks:** `npm run offline` builds the game and checks, in headless Edge, that Chrome finds it
     installable, that every file is cached, and that it plays with the network cut.
+  - **Edge to edge:** the view used to stop at 1600 world units across, which left empty bands at the
+    sides of a phone and a wide window. It now fills the window at the same zoom, so a wider screen
+    sees more to the sides. (Upright, a phone about 390 px wide now gets T4's closer view, about 650
+    across; the zoom used to leave room for side margins that are gone.) On a phone the canvas also
+    reaches under the notch and home bar. The HUD,
+    minimap, arrows and banners stay clear of them (`Renderer.visible`).
 - **Not measured yet:** how the Ascendant and the sites play over many runs. The balance bot
   doesn't use sites, and only reaches the Ascendant at full upgrades.
