@@ -1,5 +1,12 @@
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
+// First, to catch the browser's offer to install the game even if it comes before the title.
+import './ui/install';
+// The game's two fonts, part of the build so an installed game has them offline. Before
+// styles.css, which lays its own bold W over Silkscreen Bold.
+import '@fontsource/silkscreen/latin-400.css';
+import '@fontsource/silkscreen/latin-700.css';
+import '@fontsource-variable/pixelify-sans';
 import { App } from './ui/App';
 import './ui/styles.css';
 

@@ -1,6 +1,6 @@
-/* Silkscreen Bold's own W is nearly solid and reads as a heart. This face, layered over Google's
-   (declared later, so it wins), swaps in a clearer W for W and w alone; scripts/make-bold-w.mjs
-   draws it. */
+/* Silkscreen Bold's own W is nearly solid and reads as a heart. This face, layered over the bundled
+   Silkscreen Bold (main.tsx loads that first, so this one wins), swaps in a clearer W for W and w
+   alone; scripts/make-bold-w.mjs draws it. */
 @font-face {
   font-family: 'Silkscreen';
   font-weight: 700;
@@ -25,7 +25,7 @@
   --hostile: #ff5a36;
   --hp: #ff4f7b;
   --title-font: 'Silkscreen', 'Courier New', monospace;
-  --ui-font: 'Pixelify Sans', 'Silkscreen', 'Courier New', monospace;
+  --ui-font: 'Pixelify Sans Variable', 'Pixelify Sans', 'Silkscreen', 'Courier New', monospace;
   color-scheme: dark;
 }
 
@@ -1963,7 +1963,7 @@ kbd {
 
 .app.pixel {
   --title-font: 'Silkscreen', 'Courier New', monospace;
-  --ui-font: 'Pixelify Sans', 'Silkscreen', 'Courier New', monospace;
+  --ui-font: 'Pixelify Sans Variable', 'Pixelify Sans', 'Silkscreen', 'Courier New', monospace;
   --px-ink: #0d0718;
   --px-panel: #1d1233;
   --px-panel-2: #26183f;
@@ -5051,5 +5051,34 @@ kbd {
   .app .practice.phone-menu .practice-grid {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
+  }
+}
+
+/* Installing on iOS: the steps, with Share drawn as iOS draws it. */
+.install-steps {
+  margin: 4px 0 18px;
+  padding-left: 1.4em;
+  max-width: 420px;
+  text-align: left;
+  line-height: 1.5;
+  color: #ddd0f5;
+}
+
+.install-steps li + li {
+  margin-top: 8px;
+}
+
+.install-steps .pixel-icon {
+  vertical-align: middle;
+}
+
+@media (max-height: 500px), (max-width: 559px) {
+  .app .install-steps {
+    margin-bottom: 10px;
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+  .app .install-steps li + li {
+    margin-top: 5px;
   }
 }

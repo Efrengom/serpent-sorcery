@@ -8,9 +8,12 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "playtest": "node scripts/playtest.mjs"
+    "playtest": "node scripts/playtest.mjs",
+    "offline": "vite build && node scripts/offline-check.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/pixelify-sans": "^5.3.0",
+    "@fontsource/silkscreen": "^5.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

@@ -109,6 +109,11 @@ const browser = await puppeteer.launch({
   args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling'],
 });
 const page = await browser.newPage();
+// The browser may offer to install the dev server's page itself; only the checks' own offers
+// (marked fromCheck) reach the game, so the Install button shows only when a check means it to.
+await page.evaluateOnNewDocument(() => {
+  window.addEventListener('beforeinstallprompt', (e) => (e.fromCheck ? undefined : e.stopImmediatePropagation()), true);
+});
 const sampleResponses = [];
 page.on('response', (r) => {
   if (r.url().includes('/sfx/') && r.url().includes('.ogg')) sampleResponses.push(r.status());
@@ -2356,12 +2361,69 @@ try {
       const m = href ? await (await fetch(href)).json() : null;
       const icons = m ? await Promise.all(m.icons.map(async (i) => (await fetch(i.src)).status)) : [];
       const apple = document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href');
-      return { name: m?.name, display: m?.display, icons, maskable: !!m?.icons.some((i) => i.purpose === 'maskable'), apple: apple ? (await fetch(apple)).status : 0, sw: (await fetch('/sw.js')).status };
+      const credentials = document.querySelector('link[rel="manifest"]')?.getAttribute('crossorigin');
+      return { name: m?.name, id: m?.id, display: m?.display, orientation: m?.orientation, credentials, icons, maskable: !!m?.icons.some((i) => i.purpose === 'maskable'), apple: apple ? (await fetch(apple)).status : 0, sw: (await fetch('/sw.js')).status };
     });
-    check('the game can be installed: a manifest with its icons (one maskable), an iOS icon and an offline service worker', pwa.name === 'Serpent Sorcery' && pwa.icons.length >= 3 && pwa.icons.every((s) => s === 200) && pwa.maskable && pwa.apple === 200 && pwa.sw === 200, pwa);
+    check(
+      'the game can be installed: a manifest (full screen, sideways, with an id, fetched with credentials for a protected preview) with its icons (one maskable), an iOS icon and an offline service worker',
+      pwa.name === 'Serpent Sorcery' && pwa.id === '/' && pwa.display === 'fullscreen' && pwa.orientation === 'landscape' && pwa.credentials === 'use-credentials' && pwa.icons.length >= 3 && pwa.icons.every((s) => s === 200) && pwa.maskable && pwa.apple === 200 && pwa.sw === 200,
+      pwa,
+    );
     await page.evaluate(() => window.__serpent.endRun());
     await sleep(500);
     await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });
+    // The fonts come with the game: nothing is fetched from elsewhere, and both are loaded.
+    const elsewhere = [];
+    const offOrigin = (r) => {
+      if (!r.url().startsWith(URL) && !r.url().startsWith('data:')) elsewhere.push(r.url());
+    };
+    page.on('request', offOrigin);
+    await page.goto(URL, { waitUntil: 'networkidle0' });
+    page.off('request', offOrigin);
+    const fonts = await page.evaluate(async () => {
+      await document.fonts.ready;
+      const loaded = async (font) => (await document.fonts.load(font)).some((f) => f.status === 'loaded');
+      return {
+        silkscreen: await loaded('16px Silkscreen'),
+        silkscreenBold: await loaded('700 16px Silkscreen'),
+        pixelify: await loaded('16px "Pixelify Sans Variable"'),
+        pixelifyBold: await loaded('700 16px "Pixelify Sans Variable"'),
+      };
+    });
+    check('the fonts are part of the game: both load, and nothing is fetched from anywhere else', Object.values(fonts).every(Boolean) && elsewhere.length === 0, { fonts, elsewhere });
+    // The browser's offer to install shows the title's Install button, which replays it; installing hides it.
+    const offerInstall = () =>
+      page.evaluate(() => {
+        window.__installPrompts = 0;
+        const e = new Event('beforeinstallprompt', { cancelable: true });
+        e.fromCheck = true;
+        e.prompt = () => {
+          window.__installPrompts++;
+          return Promise.resolve();
+        };
+        e.userChoice = Promise.resolve({ outcome: 'accepted' });
+        window.dispatchEvent(e);
+      });
+    const installButton = () => page.evaluate(() => document.querySelector('[data-install]')?.dataset.install ?? null);
+    const before = await installButton();
+    await offerInstall();
+    await sleep(200);
+    const offered = await installButton();
+    await page.click('[data-install="prompt"]').catch(() => undefined);
+    await sleep(300);
+    const afterInstall = { button: await installButton(), prompts: await page.evaluate(() => window.__installPrompts) };
+    await page.goto(URL, { waitUntil: 'networkidle0' });
+    await offerInstall();
+    await sleep(200);
+    const offeredAgain = await installButton();
+    await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
+    await sleep(200);
+    const afterAppInstalled = await installButton();
+    check(
+      'the browser’s offer to install shows an Install button on the title, which opens it once; installing hides the button',
+      before === null && offered === 'prompt' && afterInstall.button === null && afterInstall.prompts === 1 && offeredAgain === 'prompt' && afterAppInstalled === null,
+      { before, offered, afterInstall, offeredAgain, afterAppInstalled },
+    );
     await page.goto(URL, { waitUntil: 'networkidle0' });
   }
 
@@ -2591,6 +2653,7 @@ try {
       }
     };
     const bad = [];
+    const iphone = [];
     let seen = 0;
     let keysOnTouch = 0;
     let swiped = null;
@@ -2631,6 +2694,28 @@ try {
         await page.keyboard.press('Escape');
         await sleep(300);
       }
+      // As an iPhone: the title's Install button opens the how-to, which fits, and the corner's
+      // three buttons keep clear of the title.
+      const realAgent = await browser.userAgent();
+      await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1');
+      await page.reload({ waitUntil: 'networkidle0' });
+      await sleep(400);
+      const corner = await page.evaluate(() => {
+        const box = document.querySelector('.corner-buttons')?.getBoundingClientRect();
+        const covered = [...document.querySelectorAll('.title-wrap .btn, .title-wrap .game-title, .title-wrap .pixel-title-serpent')].filter((el) => {
+          const r = el.getBoundingClientRect();
+          return box && r.width > 0 && Math.min(r.right, box.right) - Math.max(r.left, box.left) > 1 && Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top) > 1;
+        });
+        return { buttons: document.querySelectorAll('.corner-buttons .icon-btn').length, covered: covered.map((el) => el.textContent.trim().slice(0, 24)) };
+      });
+      const iosButton = await page.evaluate(() => document.querySelector('[data-install]')?.dataset.install ?? null);
+      await page.evaluate(() => document.querySelector('[data-install="ios"]')?.click());
+      await sleep(400);
+      const helpProblems = await layoutProblems('.install-help');
+      iphone.push({ phone: phone.name, iosButton, corner, helpProblems });
+      await page.keyboard.press('Escape');
+      await page.setUserAgent(realAgent);
+      await page.reload({ waitUntil: 'networkidle0' });
       // The pause menu's Options, in a plain run.
       await page.evaluate((k) => {
         const sv = JSON.parse(localStorage.getItem(k));
@@ -2656,6 +2741,11 @@ try {
     }
     check('every menu, each of its tabs and the pause menu’s Options fit a phone held either way without scrolling or overlapping, at their longest', bad.length === 0 && seen >= PHONES.length * 18, { phones: PHONES.length, views: seen, bad });
     check('a touch screen has no Keys tab, and a sideways swipe turns How to Play’s page', keysOnTouch === 0 && swiped === 'draw', { keysOnTouch, swiped });
+    check(
+      'on an iPhone the title’s Install button opens a how-to that fits a phone held either way, and the corner’s buttons keep clear of the title',
+      iphone.length === PHONES.length && iphone.every((i) => i.iosButton === 'ios' && i.corner.buttons === 3 && i.corner.covered.length === 0 && i.helpProblems.length === 0),
+      iphone,
+    );
     await page.evaluate((k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)), SAVE_KEY, saved);
     // A larger screen: no tabs, and Wizard & Curses shows the wizards, the curses and the maps at once.
     await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });

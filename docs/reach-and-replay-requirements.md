@@ -119,5 +119,19 @@ Everything above is in.
     `SitePanel` in the overlays.
   - **Replay:** `daily.ts`, `achievements.ts`, `bestiary.ts`, the Hall of Records in `Menus.tsx`,
     and the save's new records in `persistence.ts`.
+- **Installing, finished (November 2026).** T5 shipped with Google's fonts and a cache of only what had
+  been loaded. Now:
+  - **Fonts:** both are part of the build (`@fontsource/silkscreen`, `@fontsource-variable/pixelify-sans`,
+    their licences in `public/licenses/`), and nothing loads from anywhere else.
+  - **Cache:** installing caches every file of the build, listed into `sw.js` by `vite.config.ts`, so
+    the game plays offline from its first launch.
+  - **Orientation:** installed, it opens sideways (`"orientation": "landscape"`); the browser still
+    follows the phone, and iOS ignores it.
+  - **Install button:** the title has one (`src/ui/install.ts`). Chrome and Edge replay their own
+    install dialog from it; on iOS it explains Share, then Add to Home Screen. It's gone once installed.
+  - **Previews:** the manifest is fetched with credentials, so a deployment behind a login can be
+    installed too.
+  - **Checks:** `npm run offline` builds the game and checks, in headless Edge, that Chrome finds it
+    installable, that every file is cached, and that it plays with the network cut.
 - **Not measured yet:** how the Ascendant and the sites play over many runs. The balance bot
   doesn't use sites, and only reaches the Ascendant at full upgrades.
