@@ -2493,6 +2493,9 @@ try {
       before === null && offered === 'prompt' && afterInstall.button === null && afterInstall.prompts === 1 && offeredAgain === 'prompt' && afterAppInstalled === null,
       { before, offered, afterInstall, offeredAgain, afterAppInstalled },
     );
+    // Quit belongs to the desktop program (npm run desktop:check): a web page can't close its tab.
+    const quitOnWeb = await page.evaluate(() => ({ quit: !!document.querySelector('[data-quit]'), bridge: 'serpentDesktop' in window }));
+    check('on the web the title has no Quit button', !quitOnWeb.quit && !quitOnWeb.bridge, quitOnWeb);
     await page.goto(URL, { waitUntil: 'networkidle0' });
   }
 

@@ -18,6 +18,7 @@ import { BindingsContext, OptionsScreen } from './Options';
 import { askToKeep } from './keep';
 import { SaveScreen } from './SaveScreen';
 import { dayOf } from '../game/saveCode';
+import { desktop } from '../desktop';
 
 type Screen = 'title' | 'howto' | 'shop' | 'setup' | 'options' | 'save' | 'practice' | 'records' | 'game';
 
@@ -45,6 +46,12 @@ export function App() {
     saveRef.current = save;
     setStored(writeSave(save));
   }, [save]);
+
+  // The desktop program: Steam's achievements follow the save's, those earned before Steam (or
+  // brought over in a backup) included.
+  useEffect(() => {
+    desktop()?.steam.unlock(save.achievements);
+  }, [save.achievements]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {

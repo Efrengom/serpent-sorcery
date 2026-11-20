@@ -9,7 +9,13 @@
     "preview": "vite preview",
     "test": "vitest run",
     "playtest": "node scripts/playtest.mjs",
-    "offline": "vite build && node scripts/offline-check.mjs"
+    "offline": "vite build && node scripts/offline-check.mjs",
+    "desktop:install": "npm --prefix desktop install",
+    "desktop": "vite build && npm --prefix desktop start",
+    "desktop:dev": "node scripts/desktop-dev.mjs",
+    "desktop:package": "vite build && npm --prefix desktop run package",
+    "desktop:typecheck": "tsc -p desktop/tsconfig.json",
+    "desktop:check": "node scripts/desktop-check.mjs"
   },
   "dependencies": {
     "@fontsource-variable/pixelify-sans": "^5.3.0",

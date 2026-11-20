@@ -17,6 +17,7 @@ import type { SaveData } from '../game/persistence';
 import { META_IDS, META_UPGRADES, metaMaxLevel, metaNextCost, type MetaId } from '../game/progression';
 import { isWizardUnlocked, playableWizard, WIZARD_IDS, WIZARDS, type WizardId } from '../game/wizards';
 import { PixelIcon, PixelTitleSerpent, RelicIcon, Shard, UpgradeGlyph, WizardPortrait } from './art';
+import { desktop } from '../desktop';
 import { useFullscreen } from './fullscreen';
 import { useInstall } from './install';
 import { useBackupReminder } from './keep';
@@ -82,6 +83,12 @@ export function TitleScreen({
   const start = startMaps(save.grimoire).includes(save.settings.startMap) ? save.settings.startMap : MAP_ORDER[0];
   const muteKey = useKeyLabel('mute');
   const fullscreen = useFullscreen();
+  const quit = desktop()?.quit;
+  const optionsButton = (
+    <button className={`btn${remindBackup ? ' pulse' : ''}`} data-options onClick={onOptions}>
+      Options
+    </button>
+  );
   return (
     <div className="screen title-screen">
       <div className="title-wrap">
@@ -131,9 +138,17 @@ export function TitleScreen({
                 Practice Sigils
               </button>
             </div>
-            <button className={`btn${remindBackup ? ' pulse' : ''}`} data-options onClick={onOptions}>
-              Options
-            </button>
+            {quit ? (
+              // The desktop program: Quit beside Options, as a PC game has.
+              <div className="menu-pair">
+                {optionsButton}
+                <button className="btn" data-quit onClick={quit}>
+                  Quit
+                </button>
+              </div>
+            ) : (
+              optionsButton
+            )}
           </div>
         </div>
         <VolumeControls {...volume} />

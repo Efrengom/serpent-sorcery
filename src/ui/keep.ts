@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import type { SaveData } from '../game/persistence';
+import { desktop } from '../desktop';
 
 type Keeper = { persisted?(): Promise<boolean>; persist?(): Promise<boolean> };
 
@@ -20,6 +21,9 @@ function manager(): Keeper | null {
 
 /** Whether the browser has agreed to keep the save (false when it can't say). */
 export async function isKept(): Promise<boolean> {
+  // The desktop program keeps the save in a file of its own, which nothing clears: no reminder,
+  // and nothing to ask.
+  if (desktop()) return true;
   try {
     return (await manager()?.persisted?.()) === true;
   } catch {

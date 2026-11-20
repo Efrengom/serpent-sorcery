@@ -48,6 +48,35 @@ On Windows PowerShell with script execution disabled, `npm` itself is blocked (`
 
 Screenshots and `results.json` go to `playtest-output/`. Set `PLAYTEST_BROWSER` to use a different Chromium-based browser and `AUTOPILOT_SECONDS` to shorten the run.
 
+## Desktop build (Steam)
+
+`desktop/` is the game as a Windows program for Steam: the web build (`dist/`) in Electron, in a package of its own so the web project's install never downloads Electron. On the desktop:
+- **The save** is a file Steam Cloud can sync: `%APPDATA%\Serpent Sorcery\saves\save.json`, with the save before it kept as `save.json.bak`.
+- **Steam:** achievements unlock on Steam, and Steam's overlay works (Shift+Tab).
+- **The window** opens fullscreen. F11 and Alt+Enter toggle it, and the title has a Quit button.
+
+Without Steam running, it plays as usual without them. `docs/steam.md` lists what to set up on Steamworks.
+
+```bash
+npm run desktop:install    # once: Electron, electron-builder, esbuild and steamworks.js, into desktop/
+npm run desktop            # build the game and run it in the program
+npm run desktop:dev        # the program on the dev server, with live reloading
+npm run desktop:package    # desktop/release/win-unpacked/, with "Serpent Sorcery.exe": the folder Steam ships
+npm run desktop:typecheck  # type-check desktop/
+npm run desktop:check      # package it, then check the real .exe end to end (~1 min)
+```
+
+`npm run desktop:check` launches the packaged program three times with a temporary data folder and a stand-in for Steam, and drives it over Chromium's remote debugging. It checks:
+- the title draws, with its fonts and a Quit button;
+- the save is written to the file and loads back after a relaunch;
+- the save's achievements go to Steam;
+- the window opens fullscreen and then as it was left;
+- Backup & Restore says the save is kept;
+- the page can't navigate away;
+- Quit closes the program with the save intact.
+
+A real save is never touched.
+
 ## Controls
 
 | Input | Action |
@@ -426,11 +455,12 @@ src/game/            framework-free game code (no React)
   music/             score (each map's themes and band as data), synth instruments, ambient beds, player, what plays when
 src/ui/              React screens, HUD and overlays, and the development jukebox and inspector
 public/              the web manifest, home-screen icons and the offline service worker
-scripts/             the end-to-end play-test, the headless balance bot, the music mix report, and the icon renderer
+desktop/             the Windows program for Steam (Electron): its window, the save file, Steam, packaging
+scripts/             the end-to-end play-test, the desktop check, the headless balance bot, the music mix report, and the icon renderer
 ```
 
 The animation loop and all fast-changing state live in `Game` outside React. React gets phase changes, level-up offers, run results, and a HUD snapshot throttled to 20 Hz. The simulation runs at a fixed 120 Hz step, so movement, cooldowns and spawns don't depend on frame rate.
 
 ## Saves
 
-Saved in `localStorage` under `serpent-sorcery-save-v1`: Arcane Shards, permanent upgrade levels, Grimoire unlocks, records (best time, level, kills, run count, lifetime bosses defeated, deepest depth, maps reached for the atlas, lifetime containers smashed, heat unlocked and cleared, wins, the fastest win, the wizards who have won and the highest heat won at, lifetime foes defeated, rifts won and wares bought, the bestiary's counts, the daily's date, best, tries and streak), achievements earned, mute/volume, the chosen wizard, curses, heat and start map, and the options (shake, reduced flashing, safe warnings, minimap, steady camera, game speed, key bindings, which thumb steers). Saved bindings are cleaned on load: unknown keys, duplicates and a stray Esc are dropped. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.
+Saved in `localStorage` under `serpent-sorcery-save-v1` (in the desktop program, in a file instead; see "Desktop build"): Arcane Shards, permanent upgrade levels, Grimoire unlocks, records (best time, level, kills, run count, lifetime bosses defeated, deepest depth, maps reached for the atlas, lifetime containers smashed, heat unlocked and cleared, wins, the fastest win, the wizards who have won and the highest heat won at, lifetime foes defeated, rifts won and wares bought, the bestiary's counts, the daily's date, best, tries and streak), achievements earned, mute/volume, the chosen wizard, curses, heat and start map, and the options (shake, reduced flashing, safe warnings, minimap, steady camera, game speed, key bindings, which thumb steers). Saved bindings are cleaned on load: unknown keys, duplicates and a stray Esc are dropped. A locked wizard in the save falls back to the Arcanist. Every field is validated and clamped on load. Missing or corrupt data falls back to defaults field by field. Each run has a unique id, and the reward is banked only if that id hasn't been committed before, so a run can never pay out twice.
