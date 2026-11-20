@@ -2740,6 +2740,7 @@ try {
         sv.records.maps = ['ruins', 'hollows', 'catacombs', 'ember'];
         sv.grimoire = ['way:hollows', 'way:catacombs', 'way:ember'];
         Object.assign(sv.settings, { curses: ['frenzy', 'glass', 'swarm'], heat: 7, startMap: 'catacombs' });
+        sv.backup = { last: dailyDate(new Date()), seen: true };
         localStorage.setItem(k, JSON.stringify(sv));
       }, SAVE_KEY);
       await page.reload({ waitUntil: 'networkidle0' });
@@ -2763,6 +2764,38 @@ try {
         await page.keyboard.press('Escape');
         await sleep(300);
       }
+      // Backup & Restore, behind Options: as it opens, pasting a code, replacing (with the
+      // fewer-runs warning) and just after, with Undo.
+      await clickButton('Options');
+      await sleep(300);
+      await page.evaluate(() => document.querySelector('[data-save=open-screen]').click());
+      await sleep(300);
+      await everyTab(phone, 'Backup & Restore', '.screen');
+      await page.evaluate(() => document.querySelector('[data-save=paste]').click());
+      await sleep(200);
+      await page.evaluate(async () => {
+        const { defaultSave } = await import('/src/game/persistence.ts');
+        const { encodeSave } = await import('/src/game/saveCode.ts');
+        const { ACHIEVEMENT_IDS } = await import('/src/game/achievements.ts');
+        const sv = defaultSave();
+        sv.currency = 99999;
+        Object.assign(sv.records, { totalRuns: 300, wins: 44 });
+        sv.achievements = ACHIEVEMENT_IDS.slice(0, 19);
+        const t = document.querySelector('textarea.save-code');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, encodeSave(sv, new Date()));
+        t.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await everyTab(phone, 'Backup & Restore: pasting a code', '.screen');
+      await page.evaluate(() => document.querySelector('[data-save=read]').click());
+      await everyTab(phone, 'Backup & Restore: replacing', '.screen');
+      await page.evaluate(() => document.querySelector('[data-save=replace]').click());
+      await everyTab(phone, 'Backup & Restore: restored', '.screen');
+      await page.evaluate(() => document.querySelector('[data-save=undo]').click());
+      await sleep(200);
+      await page.keyboard.press('Escape');
+      await sleep(300);
+      await page.keyboard.press('Escape');
+      await sleep(300);
       // As an iPhone: the title's Install button opens the how-to, which fits, and the corner's
       // three buttons keep clear of the title.
       const realAgent = await browser.userAgent();
@@ -3066,6 +3099,218 @@ try {
     check('the Hall of Records lists every achievement (the earned ones lit) and a bestiary of the foes met', hall.achievements === 20 && hall.earned === saved.achievements.length && hall.earned >= 1 && beasts.all === 21 && beasts.known.includes('chaser') && beasts.known.includes('ascendant') && /Azhdaha/.test(beasts.ascendant ?? ''), { hall, beasts });
     await page.keyboard.press('Escape');
     await sleep(300);
+  }
+
+  // ============================================================== Part K: keeping the save
+  // Backup & Restore. A copied code and a saved file hold the save; pasting a code or choosing a
+  // file restores its progress and keeps this device's options, and Undo puts the old save back;
+  // a cut-off code or a message with none changes nothing. After a run is banked the browser is
+  // asked to keep the save, and until Backup & Restore is opened, Options pulses when the browser
+  // hasn't agreed. The browser's answer is stubbed. The save is put back afterwards.
+  {
+    const original = await page.evaluate((k) => localStorage.getItem(k), SAVE_KEY);
+    const origin = URL.replace(/\/$/, '');
+    const cdp = await page.createCDPSession();
+    const downloads = path.join(OUT, 'downloads');
+    fs.rmSync(downloads, { recursive: true, force: true });
+    fs.mkdirSync(downloads, { recursive: true });
+    await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
+    await browser.defaultBrowserContext().overridePermissions(origin, ['clipboard-read', 'clipboard-write', 'clipboard-sanitized-write']);
+    /** The browser's answer about keeping the save, until the next reload; its asks are counted. */
+    const keepAs = (kept) =>
+      page.evaluate((kept) => {
+        window.__keepAsks = 0;
+        navigator.storage.persisted = async () => kept;
+        navigator.storage.persist = async () => {
+          window.__keepAsks++;
+          return kept;
+        };
+      }, kept);
+    /** A fresh save with these shards, runs, wins and settings, loaded. */
+    const freshSave = async (o) => {
+      await page.evaluate(
+        async (k, o) => {
+          const { defaultSave } = await import('/src/game/persistence.ts');
+          const sv = defaultSave();
+          sv.currency = o.currency;
+          sv.records.totalRuns = o.runs;
+          sv.records.wins = o.wins ?? 0;
+          Object.assign(sv.settings, o.settings ?? {});
+          sv.backup = { last: '', seen: o.seen ?? false };
+          localStorage.setItem(k, JSON.stringify(sv));
+        },
+        SAVE_KEY,
+        o,
+      );
+      await page.goto(`${URL}?nosites`, { waitUntil: 'networkidle0' });
+      await sleep(300);
+    };
+    const tap = async (sel) => {
+      await page.evaluate((sel) => document.querySelector(sel)?.click(), sel);
+      await sleep(300);
+    };
+    const back = async () => {
+      await page.keyboard.press('Escape');
+      await sleep(250);
+    };
+    const pulsing = () =>
+      page.evaluate(() => ({
+        title: document.querySelector('[data-options]')?.classList.contains('pulse') ?? null,
+        options: document.querySelector('[data-save=open-screen]')?.classList.contains('pulse') ?? null,
+      }));
+    const status = () =>
+      page.evaluate(() => {
+        const el = document.querySelector('[data-save=status]');
+        return { kept: el?.dataset.kept ?? null, text: el?.textContent ?? '' };
+      });
+    const paste = (text) =>
+      page.evaluate((text) => {
+        const t = document.querySelector('textarea.save-code');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, text);
+        t.dispatchEvent(new Event('input', { bubbles: true }));
+      }, text);
+    const today = await page.evaluate(async () => (await import('/src/game/saveCode.ts')).dayOf(new Date()));
+
+    // The reminder: six runs, the screen never opened.
+    await freshSave({ currency: 777, runs: 6, wins: 1 });
+    await keepAs(true);
+    await tap('[data-options]');
+    const keptOptions = await pulsing();
+    await back();
+    const keptTitle = await pulsing();
+    await keepAs(false);
+    await tap('[data-options]');
+    const remindOptions = await pulsing();
+    await back();
+    const remindTitle = await pulsing();
+    await tap('[data-options]');
+    await tap('[data-save=open-screen]');
+    const notKept = await status();
+    await page.screenshot({ path: path.join(OUT, '36-backup.png') });
+    await back();
+    const afterOptions = await pulsing();
+    await back();
+    const afterTitle = await pulsing();
+    const seen = (await readSave()).backup.seen;
+    await page.reload({ waitUntil: 'networkidle0' });
+    await keepAs(false);
+    await tap('[data-options]');
+    const afterReload = await pulsing();
+    check(
+      'Options pulses for a backup once there are runs to lose, the browser hasn’t agreed to keep them and Backup & Restore was never opened; opening it ends that for good',
+      keptOptions.options === false && keptTitle.title === false && remindOptions.options === true && remindTitle.title === true && seen && afterOptions.options === false && afterTitle.title === false && afterReload.options === false,
+      { keptOptions, keptTitle, remindOptions, remindTitle, seen, afterOptions, afterTitle, afterReload },
+    );
+    await keepAs(true);
+    await tap('[data-save=open-screen]');
+    const kept = await status();
+    check('Backup & Restore says whether the browser keeps the save', notKept.kept === 'false' && /may clear your save/.test(notKept.text) && kept.kept === 'true' && /keeps your save for good/.test(kept.text), { notKept, kept });
+
+    // Copy code, then Save as file.
+    await page.bringToFront();
+    await tap('[data-save=copy]');
+    const copied = await page.evaluate(async (k) => {
+      const { decodeSave } = await import('/src/game/saveCode.ts');
+      const code = await navigator.clipboard.readText().catch((e) => `error: ${e.message}`);
+      const got = decodeSave(code);
+      const sv = JSON.parse(localStorage.getItem(k));
+      const progress = (s) => JSON.stringify([s.currency, s.meta, s.records, s.achievements, s.grimoire]);
+      return { code, ok: got.ok, same: got.ok && progress(got.save) === progress(sv), last: sv.backup.last, note: document.querySelector('.save-part [role=status]')?.textContent ?? '' };
+    }, SAVE_KEY);
+    check('Copy code puts the whole save on the clipboard as a code, and the screen remembers the day', copied.ok && copied.same && copied.last === today && /Copied/.test(copied.note), { ...copied, code: copied.code.slice(0, 24), today });
+    await tap('[data-save=file]');
+    let file = null;
+    for (let i = 0; i < 50 && !file; i++) {
+      await sleep(100);
+      file = fs.readdirSync(downloads).find((f) => f.endsWith('.txt')) ?? null;
+    }
+    const fileText = file ? fs.readFileSync(path.join(downloads, file), 'utf8') : '';
+    const inFile = await page.evaluate(async (text) => {
+      const { decodeSave } = await import('/src/game/saveCode.ts');
+      const got = decodeSave(text);
+      return got.ok ? { currency: got.save.currency, runs: got.save.records.totalRuns } : got;
+    }, fileText);
+    check(
+      'Save as file downloads the save as a text file: a sentence on what it holds, then the code',
+      file === `serpent-sorcery-save-${today}.txt` && /^Serpent Sorcery save, backed up .*: 777 shards, 6 runs, 1 win, /.test(fileText) && inFile.currency === 777 && inFile.runs === 6,
+      { file, first: fileText.split('\n')[0], inFile },
+    );
+    await back();
+    await back();
+
+    // Restoring a pasted code, with text around it, onto a save with less in it; then Undo.
+    await freshSave({ currency: 5, runs: 2, settings: { minimap: false }, seen: true });
+    await tap('[data-options]');
+    await tap('[data-save=open-screen]');
+    await tap('[data-save=paste]');
+    await paste(`My save:\n${copied.code}\nthanks`);
+    await tap('[data-save=read]');
+    const confirm = await page.evaluate(() => ({
+      step: document.querySelector('[data-step]')?.dataset.step ?? null,
+      rows: [...document.querySelectorAll('.save-compare > div')].map((d) => d.textContent.replace(/\s+/g, ' ').trim()),
+      fewer: !!document.querySelector('[data-save=fewer]'),
+    }));
+    await page.screenshot({ path: path.join(OUT, '36-backup-confirm.png') });
+    await tap('[data-save=replace]');
+    const replaced = await readSave();
+    const undoShown = !!(await page.$('[data-save=undo]'));
+    await tap('[data-save=undo]');
+    const undone = await readSave();
+    check(
+      'pasting a code (with text around it) asks first, showing both saves, then restores its progress and keeps this device’s options; Undo puts the old save back',
+      confirm.step === 'confirm' && /This device.*5.*2 runs/.test(confirm.rows[0] ?? '') && /Backup, made .*777.*6 runs/.test(confirm.rows[1] ?? '') && !confirm.fewer &&
+        replaced.currency === 777 && replaced.records.totalRuns === 6 && replaced.settings.minimap === false && undoShown && undone.currency === 5 && undone.records.totalRuns === 2,
+      { confirm, replaced: { currency: replaced.currency, runs: replaced.records.totalRuns, minimap: replaced.settings.minimap }, undoShown, undone: { currency: undone.currency, runs: undone.records.totalRuns } },
+    );
+
+    // The saved file, chosen onto a save with more runs than it.
+    await freshSave({ currency: 40, runs: 50, seen: true });
+    await tap('[data-options]');
+    await tap('[data-save=open-screen]');
+    const input = await page.$('[data-save=input]');
+    if (input && file) await input.uploadFile(path.join(downloads, file));
+    await sleep(400);
+    const fewer = await page.evaluate(() => ({ step: document.querySelector('[data-step]')?.dataset.step ?? null, warning: document.querySelector('[data-save=fewer]')?.textContent ?? null }));
+    await tap('[data-save=replace]');
+    const fromFile = await readSave();
+    check(
+      'choosing a backup file restores it too, warning first when the backup has fewer runs than this device',
+      fewer.step === 'confirm' && /fewer runs/.test(fewer.warning ?? '') && fromFile.currency === 777 && fromFile.records.totalRuns === 6,
+      { fewer, currency: fromFile.currency, runs: fromFile.records.totalRuns },
+    );
+
+    // A cut-off code, and a message with none in it.
+    const before = JSON.stringify(await readSave());
+    await tap('[data-save=paste]');
+    await paste(copied.code.slice(0, -30));
+    await tap('[data-save=read]');
+    const cut = await page.evaluate(() => document.querySelector('.save-step .save-error')?.textContent ?? null);
+    await paste('hello there');
+    await tap('[data-save=read]');
+    const none = await page.evaluate(() => document.querySelector('.save-step .save-error')?.textContent ?? null);
+    const unchanged = JSON.stringify(await readSave()) === before;
+    check('a cut-off code and a message with no code in it say so, and change nothing', /cut off/.test(cut ?? '') && /isn’t a backup code/.test(none ?? '') && unchanged, { cut, none, unchanged });
+    await back();
+    await back();
+    await back();
+
+    // A banked run asks the browser to keep the save.
+    await keepAs(false);
+    await clickButton('Play');
+    await runUp();
+    await sleep(400);
+    await page.evaluate(() => window.__serpent.endRun());
+    await sleep(900);
+    const asks = await page.evaluate(() => window.__keepAsks);
+    check('once a run is banked, the browser is asked to keep the save', asks === 1, { asks });
+    await clickButton('Title');
+    await sleep(300);
+
+    await cdp.send('Browser.setDownloadBehavior', { behavior: 'default' });
+    await cdp.detach();
+    await browser.defaultBrowserContext().clearPermissionOverrides();
+    await page.evaluate((k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)), SAVE_KEY, original);
+    await page.goto(`${URL}?nosites`, { waitUntil: 'networkidle0' });
   }
 
   // ============================================================== Part D: upgrade-integrity fuzz

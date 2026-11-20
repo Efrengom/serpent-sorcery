@@ -5088,3 +5088,159 @@ kbd {
     margin-top: 5px;
   }
 }
+
+/* ---------------------------------------------------------------- backup & restore */
+
+/* What the save holds and whether the browser keeps it, over Back up and Restore side by side. */
+.save-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  width: 100%;
+  max-width: 760px;
+  margin-bottom: 22px;
+  text-align: left;
+}
+
+.save-body .save-state,
+.save-body .save-step {
+  grid-column: 1 / -1;
+}
+
+.save-body .setup-head {
+  margin: 0;
+}
+
+.save-now {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.save-sum .shards {
+  margin-left: 0;
+}
+
+/* Two buttons side by side, the same width. */
+.save-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.save-row > .btn {
+  padding-left: 10px;
+  padding-right: 10px;
+  white-space: nowrap;
+}
+
+.save-body code {
+  font: 700 1em 'Courier New', monospace;
+  color: var(--ink);
+}
+
+.save-error {
+  color: var(--hp);
+}
+
+.save-restored {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--green);
+}
+
+.save-code {
+  width: 100%;
+  min-height: 96px;
+  box-sizing: border-box;
+  resize: none;
+  padding: 8px 10px;
+  border: 3px solid var(--px-ink, #0d0718);
+  border-radius: 0;
+  background: #120a22;
+  color: var(--ink);
+  font: 0.8rem/1.35 'Courier New', monospace;
+  word-break: break-all;
+}
+
+.save-code:focus {
+  outline: 2px solid var(--cyan);
+}
+
+/* Both saves on one grid, so their summaries line up. */
+.save-compare {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 16px;
+  align-items: baseline;
+  margin: 0;
+}
+
+.save-compare > div {
+  display: contents;
+}
+
+.save-compare dt {
+  color: var(--ink-dim);
+  font-size: 0.85rem;
+}
+
+.save-compare dd {
+  margin: 0;
+}
+
+@media (max-height: 500px), (max-width: 559px) {
+  /* Options' second button, Backup & Restore, takes the bar's other end. */
+  .app .options.phone-menu > .menu-buttons > .save-btn {
+    grid-area: go;
+  }
+  .app .save-screen.phone-menu > .menu-buttons > .btn.primary {
+    grid-area: back;
+  }
+  .app .save-body {
+    gap: 8px;
+    margin: 0;
+  }
+  .app .save-now,
+  .app .save-compare dd {
+    font-size: 0.78rem;
+  }
+  .app .save-compare dt {
+    font-size: 0.66rem;
+  }
+  .app .save-compare {
+    gap: 6px 12px;
+  }
+  .app.pixel .save-row > .btn {
+    padding: 0.5em 0.8em;
+    font-size: 0.7rem;
+  }
+  .app .save-row {
+    gap: 8px;
+  }
+  .app .save-code {
+    min-height: 0;
+    height: 64px;
+    font-size: 0.7rem;
+  }
+  .app.pixel .save-restored .btn.small {
+    padding: 0.3em 0.7em;
+    font-size: 0.62rem;
+  }
+}
+
+/* Upright, Back up and Restore stack, and so do the two saves being compared. */
+@media (max-width: 559px) {
+  .app .save-body {
+    grid-template-columns: 1fr;
+  }
+  .app .save-compare {
+    grid-template-columns: 1fr;
+    gap: 1px;
+  }
+  .app .save-compare > div + div > dt {
+    margin-top: 6px;
+  }
+}

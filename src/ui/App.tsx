@@ -15,8 +15,11 @@ import { pixelFloorUrl } from './art';
 import { Jukebox } from './Jukebox';
 import { HowToPlay, RecordsScreen, SetupScreen, ShopScreen, TitleScreen } from './Menus';
 import { BindingsContext, OptionsScreen } from './Options';
+import { askToKeep } from './keep';
+import { SaveScreen } from './SaveScreen';
+import { dayOf } from '../game/saveCode';
 
-type Screen = 'title' | 'howto' | 'shop' | 'setup' | 'options' | 'practice' | 'records' | 'game';
+type Screen = 'title' | 'howto' | 'shop' | 'setup' | 'options' | 'save' | 'practice' | 'records' | 'game';
 
 // The run and the practice room load on demand, so the title shows sooner on a phone. Both are
 // fetched as soon as the title is up, so Play is still instant.
@@ -35,10 +38,12 @@ export function App() {
   /** The run being played is today's daily (its own seed, wizard and curse). */
   const [dailyRun, setDailyRun] = useState(false);
   const saveRef = useRef(save);
+  /** The last write to storage worked (false in a private window, or with storage turned off). */
+  const [stored, setStored] = useState(true);
 
   useEffect(() => {
     saveRef.current = save;
-    writeSave(save);
+    setStored(writeSave(save));
   }, [save]);
 
   useEffect(() => {
@@ -107,6 +112,9 @@ export function App() {
     const keys = bindingMap(bindings);
     const onKey = (e: KeyboardEvent) => {
       if (e.repeat) return;
+      // Typing in a text box (a pasted backup code) isn't a key command.
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       const action = keys.get(e.code);
       if (action === 'mute') toggleMute();
     };
@@ -119,7 +127,26 @@ export function App() {
     const outcome = commitRunResult(saveRef.current, result);
     saveRef.current = outcome.save;
     setSave(outcome.save);
+    // Now there's progress to keep, the browser is asked to keep it for good.
+    void askToKeep();
     return outcome;
+  }, []);
+
+  /** A restored backup, or the save it replaced put back. */
+  const restore = useCallback((next: SaveData) => {
+    saveRef.current = next;
+    setSave(next);
+    audio.play('select');
+  }, []);
+
+  const backedUp = useCallback(() => {
+    setSave((s) => ({ ...s, backup: { ...s.backup, last: dayOf(new Date()) } }));
+  }, []);
+
+  /** Opening Backup & Restore once ends its reminder. */
+  const openSave = useCallback(() => {
+    setSave((s) => (s.backup.seen ? s : { ...s, backup: { ...s.backup, seen: true } }));
+    setScreen('save');
   }, []);
 
   const buy = useCallback((id: MetaId) => {
@@ -229,7 +256,8 @@ export function App() {
         />
       )}
       {screen === 'howto' && <HowToPlay onBack={toTitle} onPlay={play} onPractice={() => setScreen('practice')} safeWarnings={options.safeWarnings} />}
-      {screen === 'options' && <OptionsScreen options={options} onChange={setOptions} onBack={toTitle} />}
+      {screen === 'options' && <OptionsScreen options={options} onChange={setOptions} onBack={toTitle} save={save} onSave={openSave} />}
+      {screen === 'save' && <SaveScreen save={save} stored={stored} onRestore={restore} onBackedUp={backedUp} onBack={() => setScreen('options')} />}
       {screen === 'records' && <RecordsScreen save={save} onBack={toTitle} />}
       {screen === 'practice' && (
         <Suspense fallback={null}>

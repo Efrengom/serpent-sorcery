@@ -100,6 +100,11 @@ export interface SaveData {
   };
   /** Id of the last run whose reward was banked; guarantees one award per run. */
   lastRunId: string;
+  /**
+   * This device's backups: the day of the last one made here ('' for none), and whether the
+   * Backup & Restore screen has been opened (which ends the reminder). A restore keeps these.
+   */
+  backup: { last: string; seen: boolean };
 }
 
 export function defaultSave(): SaveData {
@@ -135,8 +140,12 @@ export function defaultSave(): SaveData {
     grimoire: [],
     settings: { muted: false, volume: 0.7, musicVolume: 0.55, wizard: 'arcanist', curses: [], heat: 0, startMap: 'ruins', ...defaultOptions() },
     lastRunId: '',
+    backup: { last: '', seen: false },
   };
 }
+
+/** A day as YYYY-MM-DD. */
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function num(v: unknown, fallback: number, lo: number, hi: number, integer = false): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
@@ -154,6 +163,7 @@ export function sanitizeSave(input: unknown): SaveData {
   const meta = obj(o.meta);
   const records = obj(o.records);
   const settings = obj(o.settings);
+  const backup = obj(o.backup);
   const cleanMeta = emptyMetaLevels();
   for (const id of META_IDS) cleanMeta[id] = num(meta[id], 0, 0, metaMaxLevel(id), true);
   return {
@@ -182,7 +192,7 @@ export function sanitizeSave(input: unknown): SaveData {
       bestiary: Object.fromEntries(
         BEAST_IDS.filter((id) => num(obj(records.bestiary)[id], 0, 0, 1e12, true) > 0).map((id) => [id, num(obj(records.bestiary)[id], 0, 0, 1e12, true)]),
       ),
-      dailyDate: typeof records.dailyDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(records.dailyDate) ? records.dailyDate : '',
+      dailyDate: typeof records.dailyDate === 'string' && ISO_DAY.test(records.dailyDate) ? records.dailyDate : '',
       dailyBest: num(records.dailyBest, 0, 0, 1e9, true),
       dailyPlays: num(records.dailyPlays, 0, 0, 1e6, true),
       dailyStreak: num(records.dailyStreak, 0, 0, 1e5, true),
@@ -214,6 +224,10 @@ export function sanitizeSave(input: unknown): SaveData {
       vibration: typeof settings.vibration === 'boolean' ? settings.vibration : d.settings.vibration,
     },
     lastRunId: typeof o.lastRunId === 'string' ? o.lastRunId.slice(0, 64) : '',
+    backup: {
+      last: typeof backup.last === 'string' && ISO_DAY.test(backup.last) ? backup.last : '',
+      seen: backup.seen === true,
+    },
   };
 }
 

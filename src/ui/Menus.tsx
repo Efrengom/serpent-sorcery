@@ -19,6 +19,7 @@ import { isWizardUnlocked, playableWizard, WIZARD_IDS, WIZARDS, type WizardId } 
 import { PixelIcon, PixelTitleSerpent, RelicIcon, Shard, UpgradeGlyph, WizardPortrait } from './art';
 import { useFullscreen } from './fullscreen';
 import { useInstall } from './install';
+import { useBackupReminder } from './keep';
 import { PaneTabs, paneClass } from './PaneTabs';
 import { BindingsContext, KeyHint, useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
@@ -73,6 +74,8 @@ export function TitleScreen({
   const [installHelp, setInstallHelp] = useState(false);
   useKey(ENTER, installHelp ? () => setInstallHelp(false) : onPlay);
   const firstTime = save.records.totalRuns === 0;
+  // Progress worth keeping that the browser may clear: Options (and Backup & Restore in it) pulses.
+  const remindBackup = useBackupReminder(save);
   const wizard = playableWizard(save.settings.wizard, save.records);
   const curses = save.settings.curses;
   const heat = playableHeat(save.settings.heat, save.records.heatUnlocked);
@@ -128,7 +131,7 @@ export function TitleScreen({
                 Practice Sigils
               </button>
             </div>
-            <button className="btn" onClick={onOptions}>
+            <button className={`btn${remindBackup ? ' pulse' : ''}`} data-options onClick={onOptions}>
               Options
             </button>
           </div>

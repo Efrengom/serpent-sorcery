@@ -93,6 +93,21 @@ And little to bring a player back beyond shards.
   how many the player has defeated; one never met shows as "???".
 - **D4. Hall of Records.** A screen from the title with the run records (wins, fastest win, foes
   defeated, daily best and streak) and two tabs: achievements and the bestiary.
+- **D5. Keeping the save.** Everything above lives in the browser's storage, which a browser may
+  clear on its own (short of space or, in Safari, after a week without a visit).
+  - **Kept for good:** once a run is banked, the game asks the browser to keep its storage for
+    good (`navigator.storage.persist()`). Chrome, Edge and Safari answer by themselves; Firefox
+    asks the player once.
+  - **Backup & Restore,** from the Options screen (not the pause menu), says whether the browser
+    keeps the save, or that nothing is being kept (a private window). It backs the save up as a code
+    to copy or a text file (the share sheet on a phone), and restores one by pasting the code or
+    choosing the file.
+  - **A restore asks first,** with both saves side by side and a warning when the backup has fewer
+    runs. It brings the backup's progress and run setup and keeps this device's options, so a
+    phone's auto-aim doesn't follow it to a desktop. Undo puts the old save back until the screen is
+    left.
+  - **The reminder:** with 5 runs or more, while the browser hasn't agreed to keep the save, Options
+    pulses until Backup & Restore has been opened once.
 
 ## 6. Testing
 
@@ -139,5 +154,13 @@ Everything above is in.
     across; the zoom used to leave room for side margins that are gone.) On a phone the canvas also
     reaches under the notch and home bar. The HUD,
     minimap, arrows and banners stay clear of them (`Renderer.visible`).
+- **Keeping the save (November 2026).** D5 as described: `src/ui/keep.ts` asks the browser and
+  drives the reminder, `src/game/saveCode.ts` makes and reads the codes, and
+  `src/ui/SaveScreen.tsx` is the screen.
+  - **A code** is `SS1:`, then the save and the day it was made as base64url, a checksum, and `~`.
+    base64url survives messaging apps and smart quotes, the checksum catches a changed code, and the
+    `~` a cut-off one. A code is found inside other text and across line breaks.
+  - **What a code holds** is cleaned like a save loaded from storage.
+  - **A backup file** is a sentence on what it holds, then the code.
 - **Not measured yet:** how the Ascendant and the sites play over many runs. The balance bot
   doesn't use sites, and only reaches the Ascendant at full upgrades.
