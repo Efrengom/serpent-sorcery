@@ -8,6 +8,7 @@ import '@fontsource/silkscreen/latin-400.css';
 import '@fontsource/silkscreen/latin-700.css';
 import '@fontsource-variable/pixelify-sans';
 import { App } from './ui/App';
+import { desktop } from './desktop';
 import './ui/styles.css';
 
 // Development only: ?inspector opens the sprite and effect inspector instead of the game. In a
@@ -43,8 +44,9 @@ window.addEventListener('vite:preloadError', (e) => {
 });
 
 // Installed (home-screen) play works offline: the service worker keeps what the game has loaded.
-// Production builds only, so the dev server's live reloading is never cached.
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+// Production builds only, so the dev server's live reloading is never cached; and not in the
+// desktop program, which has every file already.
+if (import.meta.env.PROD && 'serviceWorker' in navigator && !desktop()) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => undefined);
   });

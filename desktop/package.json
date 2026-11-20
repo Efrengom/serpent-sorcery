@@ -1,0 +1,21 @@
+{
+  "name": "serpent-sorcery-desktop",
+  "productName": "Serpent Sorcery",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Serpent Sorcery for the desktop: the web game in Electron, with its save in a file and Steam's achievements and overlay.",
+  "main": "out/main.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && node run.mjs",
+    "package": "node build.mjs && electron-builder --win dir --config electron-builder.yml"
+  },
+  "dependencies": {
+    "steamworks.js": "0.4.0"
+  },
+  "devDependencies": {
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2"
+  }
+}

@@ -3,3 +3,5 @@ dist
 *.tsbuildinfo
 playtest-output
 .claude/
+desktop/out
+desktop/release

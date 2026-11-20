@@ -1,0 +1,24 @@
+# The program, as a folder Steam can ship: npm run desktop:package writes
+# release/win-unpacked/, with "Serpent Sorcery.exe" in it. Steam needs no installer.
+appId: com.serpentsorcery.game
+productName: Serpent Sorcery
+directories:
+  output: release
+files:
+  - out/**
+  - package.json
+  # Only the Windows build of steamworks.js.
+  - "!node_modules/steamworks.js/dist/{linux64,osx}/**"
+# The web game itself, built by the root project.
+extraResources:
+  - from: ../dist
+    to: web
+# steamworks.js loads its native module and Steam's DLL from disk, so they stay out of the archive.
+asarUnpack:
+  - node_modules/steamworks.js/dist/win64/**
+# The game is in English: Chromium's other languages would only make the download bigger.
+electronLanguages:
+  - en-US
+win:
+  target: dir
+  icon: ../public/icons/icon-512.png

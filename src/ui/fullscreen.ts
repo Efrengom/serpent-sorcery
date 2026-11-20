@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { desktop } from '../desktop';
 
 /**
  * Fullscreen, for phones above all: it hides the browser's address bar and tabs. Uses the
@@ -36,10 +37,19 @@ export function toggleFullscreen(): void {
   settle(el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen?.());
 }
 
-/** The fullscreen button's state, following the page in and out of fullscreen; null where there is no button. */
+/**
+ * The fullscreen button's state, following the page in and out of fullscreen; null where there is
+ * no button. In the desktop program it's the window's own fullscreen, the one F11 and Alt+Enter
+ * toggle (the page's fullscreen on top of a fullscreen window would leave the button out of step).
+ */
 export function useFullscreen(): { on: boolean; toggle(): void } | null {
-  const [on, setOn] = useState(isFullscreen);
+  const win = desktop()?.fullscreen ?? null;
+  const [on, setOn] = useState(() => (win ? win.get() : isFullscreen()));
   useEffect(() => {
+    if (win) {
+      setOn(win.get());
+      return win.onChange(setOn);
+    }
     const sync = () => setOn(isFullscreen());
     document.addEventListener('fullscreenchange', sync);
     document.addEventListener('webkitfullscreenchange', sync);
@@ -48,5 +58,6 @@ export function useFullscreen(): { on: boolean; toggle(): void } | null {
       document.removeEventListener('webkitfullscreenchange', sync);
     };
   }, []);
+  if (win) return { on, toggle: () => win.set(!win.get()) };
   return available() ? { on, toggle: toggleFullscreen } : null;
 }

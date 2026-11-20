@@ -1,6 +1,7 @@
 /**
- * Validated localStorage persistence. Any missing, malformed or out-of-range data
- * falls back to safe defaults field by field rather than discarding the whole save.
+ * Validated save persistence: the browser's localStorage on the web, a file in the desktop program.
+ * Any missing, malformed or out-of-range data falls back to safe defaults field by field rather
+ * than discarding the whole save.
  */
 
 import {
@@ -26,6 +27,7 @@ import { clampSpeed, defaultOptions, type GameOptions } from './options';
 import type { RunRecap } from './recap';
 import type { RelicId } from './relics';
 import { WIZARD_IDS, type WizardId } from './wizards';
+import { desktop } from '../desktop';
 
 export const SAVE_KEY = 'serpent-sorcery-save-v1';
 export const SAVE_VERSION = 1;
@@ -246,13 +248,16 @@ export function parseSave(raw: string | null | undefined): SaveData {
   }
 }
 
-interface StorageLike {
+export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
 }
 
+/** Where the save lives: a file in the desktop program, the browser's storage on the web. */
 function storage(): StorageLike | null {
   try {
+    const file = desktop()?.store;
+    if (file) return file;
     return typeof localStorage !== 'undefined' ? localStorage : null;
   } catch {
     return null;

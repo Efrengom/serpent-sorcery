@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactN
 import { touchFirst } from '../game/options';
 import type { SaveData } from '../game/persistence';
 import { backupFile, decodeSave, encodeSave, formatDay, restoreFrom, saveSummary, type CodeProblem, type SaveSummary } from '../game/saveCode';
+import { desktop } from '../desktop';
 import { Shard } from './art';
 import { useInstall } from './install';
 import { useKept } from './keep';
@@ -155,7 +156,9 @@ export function SaveScreen({
   };
 
   let status: ReactNode;
-  if (!stored) status = 'This browser isn’t keeping anything right now (a private window, or storage turned off). Back up before you close it.';
+  const app = desktop();
+  if (app) status = stored ? `Your save is kept on this computer.${app.steam.cloud ? ' Steam Cloud keeps a copy too.' : ''}` : 'The game couldn’t write its save file. Back up before you quit.';
+  else if (!stored) status = 'This browser isn’t keeping anything right now (a private window, or storage turned off). Back up before you close it.';
   else if (kept === null) status = 'Checking whether this browser keeps your save…';
   else if (kept) status = 'This browser keeps your save for good.';
   else
