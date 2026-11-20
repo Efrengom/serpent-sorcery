@@ -16,6 +16,8 @@ import {
 } from '../game/keys';
 import { buzzFor, canVibrate } from '../game/haptics';
 import { GAME_SPEED, touchFirst, type GameOptions } from '../game/options';
+import type { SaveData } from '../game/persistence';
+import { useBackupReminder } from './keep';
 import { PaneTabs, paneClass } from './PaneTabs';
 
 /** The player's key bindings, so hints like "Pause (Esc)" show the keys actually bound. */
@@ -321,7 +323,21 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
   );
 }
 
-export function OptionsScreen({ options, onChange, onBack }: { options: GameOptions; onChange(patch: Partial<GameOptions>): void; onBack(): void }) {
+/** Options from the title, which also lead to Backup & Restore (not from the pause menu: restoring mid-run makes no sense). */
+export function OptionsScreen({
+  options,
+  onChange,
+  onBack,
+  save,
+  onSave,
+}: {
+  options: GameOptions;
+  onChange(patch: Partial<GameOptions>): void;
+  onBack(): void;
+  save: SaveData;
+  onSave(): void;
+}) {
+  const remind = useBackupReminder(save);
   return (
     <div className="screen options phone-menu">
       <h2 className="screen-title">Options</h2>
@@ -329,6 +345,9 @@ export function OptionsScreen({ options, onChange, onBack }: { options: GameOpti
       <div className="menu-buttons row">
         <button className="btn primary" onClick={onBack}>
           Back <kbd>Esc</kbd>
+        </button>
+        <button className={`btn save-btn${remind ? ' pulse' : ''}`} data-save="open-screen" onClick={onSave}>
+          Backup &amp; Restore
         </button>
       </div>
     </div>
