@@ -15,7 +15,7 @@ import {
   type KeyBindings,
 } from '../game/keys';
 import { buzzFor, canVibrate } from '../game/haptics';
-import { GAME_SPEED, touchFirst, type GameOptions } from '../game/options';
+import { GAME_SPEED, hasTouchScreen, touchFirst, type GameOptions } from '../game/options';
 import type { SaveData } from '../game/persistence';
 import { useBackupReminder } from './keep';
 import { PaneTabs, paneClass } from './PaneTabs';
@@ -227,6 +227,8 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
   const [pane, setPane] = useState<'display' | 'controls' | 'keys'>('display');
   // Only a phone or tablet that can vibrate offers vibration.
   const [vibrates] = useState(() => canVibrate() && touchFirst());
+  // Which thumb steers only matters where there's a touch screen.
+  const [touch] = useState(hasTouchScreen);
   return (
     <div className="options-grid">
       <PaneTabs
@@ -275,15 +277,17 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
           />
         </div>
         <div className={`options-part ${paneClass('controls', pane)}`}>
-          <Toggle
-            label="Steer with the right thumb"
-            hint="On a touch screen, one thumb steers from its side of the screen and the other draws. On: the right thumb steers."
-            on={options.steerRight}
-            onChange={(steerRight) => onChange({ steerRight })}
-          />
+          {touch && (
+            <Toggle
+              label="Steer with the right thumb"
+              hint="On a touch screen, one thumb steers from its side of the screen and the other draws. On: the right thumb steers."
+              on={options.steerRight}
+              onChange={(steerRight) => onChange({ steerRight })}
+            />
+          )}
           <Toggle
             label="Auto-aim"
-            hint="Bolt, Lightning and Frost Field go to the nearest foe in view instead of where you start drawing; Bolt and Frost Field to an urn or reliquary if it’s nearer. On by default on phones and tablets, where the steering thumb covers its side of the screen."
+            hint={`Bolt, Lightning and Frost Field go to the nearest foe in view instead of where you start drawing; Bolt and Frost Field to an urn or reliquary if it’s nearer.${touch ? ' On by default on phones and tablets, where the steering thumb covers its side of the screen.' : ''}`}
             on={options.autoAim}
             onChange={(autoAim) => onChange({ autoAim })}
           />
@@ -317,7 +321,7 @@ export function OptionsPanel({ options, onChange, onBack }: { options: GameOptio
       <section className={`options-section options-keys ${paneClass('keys', pane)}`}>
         <h3 className="setup-head pane-head">Keys</h3>
         <KeyTable bindings={options.bindings} onChange={(bindings) => onChange({ bindings })} />
-        <p className="opt-note">Draw sigils with the left mouse button, or a finger on a touch screen. Esc always pauses and goes back.</p>
+        <p className="opt-note">Draw sigils with the left mouse button. Esc always pauses and goes back.</p>
       </section>
     </div>
   );

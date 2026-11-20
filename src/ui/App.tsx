@@ -262,7 +262,7 @@ export function App() {
           volume={volume}
         />
       )}
-      {screen === 'howto' && <HowToPlay onBack={toTitle} onPlay={play} onPractice={() => setScreen('practice')} safeWarnings={options.safeWarnings} />}
+      {screen === 'howto' && <HowToPlay onBack={toTitle} onPlay={play} onPractice={() => setScreen('practice')} safeWarnings={options.safeWarnings} steerRight={options.steerRight} autoAim={options.autoAim} />}
       {screen === 'options' && <OptionsScreen options={options} onChange={setOptions} onBack={toTitle} save={save} onSave={openSave} />}
       {screen === 'save' && <SaveScreen save={save} stored={stored} onRestore={restore} onBackedUp={backedUp} onBack={() => setScreen('options')} />}
       {screen === 'records' && <RecordsScreen save={save} onBack={toTitle} />}

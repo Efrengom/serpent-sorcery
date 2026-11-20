@@ -2337,6 +2337,8 @@ try {
     // On a phone, Options shows one tab at a time; auto-aim is under Controls.
     await page.evaluate(() => document.querySelector('[data-pane-tab="controls"]')?.click());
     await sleep(100);
+    const thumbOnPhone = await page.evaluate(() => [...document.querySelectorAll('[role=switch]')].some((b) => b.textContent.includes('right thumb') && b.offsetParent));
+    check('a touch screen’s Options offer steering with the right thumb', thumbOnPhone);
     const toggled = await clickButton('Auto-aim');
     await sleep(100);
     await clickButton('Back to pause');
@@ -2864,6 +2866,31 @@ try {
     check('a larger screen shows each menu whole, with no tabs', whole.tabs === 0 && whole.parts === 3, whole);
     await page.keyboard.press('Escape');
     await sleep(300);
+    // How to Play fits a 1280×720 screen whole, its buttons included, and leaves the maps to be
+    // found; with no touch screen, Options doesn't offer which thumb steers.
+    await clickButton('How to Play');
+    await sleep(400);
+    const howto = await page.evaluate(() => {
+      const root = document.querySelector('.howto');
+      const play = [...root.querySelectorAll('.menu-buttons button')].find((b) => b.textContent.includes('Play'));
+      return {
+        over: root.scrollHeight - root.clientHeight,
+        playBottom: play ? Math.round(play.getBoundingClientRect().bottom) : null,
+        maps: !!root.querySelector('.howto-maps, .map-list, [data-pane-tab=maps]'),
+      };
+    });
+    await page.keyboard.press('Escape');
+    await sleep(300);
+    await clickButton('Options');
+    await sleep(300);
+    const thumbOnPC = await page.evaluate(() => [...document.querySelectorAll('[role=switch]')].some((b) => b.textContent.includes('right thumb')));
+    await page.keyboard.press('Escape');
+    await sleep(300);
+    check(
+      'on a 1280×720 screen How to Play fits whole, with no maps, and Options has no touch steering without a touch screen',
+      howto.over <= 1 && howto.playBottom !== null && howto.playBottom <= 720 && !howto.maps && !thumbOnPC,
+      { ...howto, thumbOnPC },
+    );
   }
 
   // ============================================================== Part V: the Archmage Ascendant and a won run
