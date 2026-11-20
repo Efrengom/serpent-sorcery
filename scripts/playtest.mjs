@@ -109,6 +109,11 @@ const browser = await puppeteer.launch({
   args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling'],
 });
 const page = await browser.newPage();
+// The browser may offer to install the dev server's page itself; only the checks' own offers
+// (marked fromCheck) reach the game, so the Install button shows only when a check means it to.
+await page.evaluateOnNewDocument(() => {
+  window.addEventListener('beforeinstallprompt', (e) => (e.fromCheck ? undefined : e.stopImmediatePropagation()), true);
+});
 const sampleResponses = [];
 page.on('response', (r) => {
   if (r.url().includes('/sfx/') && r.url().includes('.ogg')) sampleResponses.push(r.status());
@@ -984,6 +989,16 @@ try {
       cameraMoved: Math.round(Math.hypot(c1.cam.x - c0.cam.x, c1.cam.y - c0.cam.y)),
       headFromMiddlePx: Math.round(follow.off),
     });
+    const fill = await page.evaluate(() => {
+      const r = window.__serpent.renderer;
+      const c = document.querySelector('.game-canvas');
+      return { canvas: [c.clientWidth, c.clientHeight], view: [r.ox, r.oy, r.ox + r.viewW * r.scale, r.oy + r.viewH * r.scale].map(Math.round), visible: r.visible };
+    });
+    check(
+      'the view fills the window edge to edge below the HUD, with no empty bands at the sides',
+      fill.view[0] <= 0 && fill.view[2] >= fill.canvas[0] && fill.view[1] <= fill.visible.y0 && fill.view[3] >= fill.canvas[1] && fill.visible.x0 === 0 && fill.visible.x1 === fill.canvas[0],
+      fill,
+    );
 
     await page.evaluate(() => window.__serpent.setOptions({ ...window.__serpent.options, steadyCamera: true }));
     await sleep(300);
@@ -1056,8 +1071,8 @@ try {
         const dpr = c.width / c.clientWidth;
         const w = 220;
         const h = Math.round((220 * 3600) / 6400);
-        const x = Math.round(r.ox + r.viewW * r.scale - w - 10);
-        const y = Math.round(r.oy + r.viewH * r.scale - h - 10);
+        const x = Math.round(r.visible.x1 - w - 10);
+        const y = Math.round(r.visible.y1 - h - 10);
         const data = c.getContext('2d').getImageData(Math.round(x * dpr), Math.round(y * dpr), Math.round(w * dpr), Math.round(h * dpr)).data;
         // The outline of the visible area is the only near-white there.
         let n = 0;
@@ -2203,9 +2218,54 @@ try {
     await sleep(900);
     const layout = await page.evaluate(() => {
       const r = window.__serpent.renderer;
-      return { compact: r.compact, viewW: Math.round(r.viewW), viewH: Math.round(r.viewH), hud: Math.round(document.querySelector('.hud-bar').getBoundingClientRect().height) };
+      return {
+        compact: r.compact,
+        seenW: Math.round((r.visible.x1 - r.visible.x0) / r.scale),
+        seenH: Math.round((r.visible.y1 - r.visible.y0) / r.scale),
+        fills: r.ox <= 0 && r.ox + r.viewW * r.scale >= r.cssW && r.oy + r.viewH * r.scale >= r.cssH,
+        hud: Math.round(document.querySelector('.hud-bar').getBoundingClientRect().height),
+      };
     });
-    check('a phone held sideways gets the close-up view across the whole width, and a slim HUD', layout.compact && layout.viewW >= 1400 && layout.viewH === 600 && layout.hud <= 52, layout);
+    check('a phone held sideways gets the close-up view across the whole width, and a slim HUD', layout.compact && layout.seenW >= 1400 && layout.seenH === 600 && layout.fills && layout.hud <= 52, layout);
+    // A notch on each side and a home bar (the safe area, emulated): the play area still reaches
+    // the screen's edges under them, while the HUD, the minimap and the arrows keep clear.
+    const notched = async (insets) => {
+      await client.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, right: 0, bottom: 0, left: 0, ...insets } });
+      await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+      await sleep(300);
+    };
+    await notched({ left: 44, right: 30, bottom: 20 });
+    const notch = await page.evaluate(() => {
+      const r = window.__serpent.renderer;
+      const c = document.querySelector('.game-canvas').getBoundingClientRect();
+      const hud = document.querySelector('.hud-bar').getBoundingClientRect();
+      // Arrows toward a way down far off to the left and far below.
+      const v = r.visible;
+      const mid = r.screenToWorld({ x: (v.x0 + v.x1) / 2, y: (v.y0 + v.y1) / 2 });
+      const arrows = [
+        { x: mid.x - 5000, y: mid.y },
+        { x: mid.x, y: mid.y + 5000 },
+      ].map((d) => r.worldToScreen(r.arrows({ descent: d })[0]));
+      return {
+        canvas: [c.left, c.right, c.bottom].map(Math.round),
+        screen: [innerWidth, innerHeight],
+        hudLeft: Math.round(hud.left),
+        visible: v,
+        fills: r.ox <= 0 && r.ox + r.viewW * r.scale >= r.cssW && r.oy + r.viewH * r.scale >= r.cssH,
+        arrows: arrows.map((a) => [Math.round(a.x), Math.round(a.y)]),
+        minimap: r.minimapAt,
+      };
+    });
+    await page.screenshot({ path: path.join(OUT, '30a-touch-notch.png') });
+    await notched({});
+    check(
+      'with notches at the sides and a home bar, the play area reaches under them while the HUD, minimap and arrows keep clear',
+      notch.canvas[0] === 0 && notch.canvas[1] === notch.screen[0] && notch.canvas[2] === notch.screen[1] && notch.fills &&
+        notch.hudLeft >= 44 && notch.visible.x0 === 44 && notch.visible.y1 === notch.screen[1] - 20 &&
+        notch.arrows[0][0] > 44 && notch.arrows[1][1] < notch.screen[1] - 20 &&
+        !!notch.minimap && notch.minimap.x1 <= notch.screen[0] - 30 && notch.minimap.y1 <= notch.screen[1] - 20,
+      notch,
+    );
     await page.evaluate(() => {
       const w = window.__serpent.debug().world;
       w.invuln = 1e9;
@@ -2346,22 +2406,93 @@ try {
       const r = window.__serpent.renderer;
       const bar = document.querySelector('.hud-bar').getBoundingClientRect();
       const spells = document.querySelector('.hud-right').getBoundingClientRect();
-      return { viewW: Math.round(r.viewW), hud: Math.round(bar.height), spellsBelow: spells.top > bar.top + 40, oy: Math.round(r.oy) };
+      const ultCard = document.querySelector('.ult-card').getBoundingClientRect();
+      const m = r.minimapAt;
+      return {
+        seenW: Math.round((r.visible.x1 - r.visible.x0) / r.scale),
+        fills: r.ox <= 0 && r.ox + r.viewW * r.scale >= r.cssW && r.oy + r.viewH * r.scale >= r.cssH,
+        hud: Math.round(bar.height),
+        spellsBelow: spells.top > bar.top + 40,
+        top: Math.round(r.visible.y0),
+        minimap: m && [m.x0, m.y0, m.x1, m.y1],
+        card: [ultCard.left, ultCard.top, ultCard.right, ultCard.bottom].map(Math.round),
+      };
     });
     await page.screenshot({ path: path.join(OUT, '30b-touch-portrait.png') });
-    check('a phone held upright gets a two-row HUD and a view as wide as the screen', portrait.viewW === 640 && portrait.hud >= 90 && portrait.spellsBelow && portrait.oy >= portrait.hud, portrait);
+    check(
+      'a phone held upright gets a two-row HUD and a view as wide as the screen, with the minimap above the ultimate’s card',
+      portrait.seenW === 640 && portrait.fills && portrait.hud >= 90 && portrait.spellsBelow && portrait.top >= portrait.hud && !!portrait.minimap && portrait.minimap[3] <= portrait.card[1],
+      portrait,
+    );
     // Installing: a manifest with its icons, an icon for iOS, and the offline service worker.
     const pwa = await page.evaluate(async () => {
       const href = document.querySelector('link[rel="manifest"]')?.getAttribute('href');
       const m = href ? await (await fetch(href)).json() : null;
       const icons = m ? await Promise.all(m.icons.map(async (i) => (await fetch(i.src)).status)) : [];
       const apple = document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href');
-      return { name: m?.name, display: m?.display, icons, maskable: !!m?.icons.some((i) => i.purpose === 'maskable'), apple: apple ? (await fetch(apple)).status : 0, sw: (await fetch('/sw.js')).status };
+      const credentials = document.querySelector('link[rel="manifest"]')?.getAttribute('crossorigin');
+      return { name: m?.name, id: m?.id, display: m?.display, orientation: m?.orientation, credentials, icons, maskable: !!m?.icons.some((i) => i.purpose === 'maskable'), apple: apple ? (await fetch(apple)).status : 0, sw: (await fetch('/sw.js')).status };
     });
-    check('the game can be installed: a manifest with its icons (one maskable), an iOS icon and an offline service worker', pwa.name === 'Serpent Sorcery' && pwa.icons.length >= 3 && pwa.icons.every((s) => s === 200) && pwa.maskable && pwa.apple === 200 && pwa.sw === 200, pwa);
+    check(
+      'the game can be installed: a manifest (full screen, sideways, with an id, fetched with credentials for a protected preview) with its icons (one maskable), an iOS icon and an offline service worker',
+      pwa.name === 'Serpent Sorcery' && pwa.id === '/' && pwa.display === 'fullscreen' && pwa.orientation === 'landscape' && pwa.credentials === 'use-credentials' && pwa.icons.length >= 3 && pwa.icons.every((s) => s === 200) && pwa.maskable && pwa.apple === 200 && pwa.sw === 200,
+      pwa,
+    );
     await page.evaluate(() => window.__serpent.endRun());
     await sleep(500);
     await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });
+    // The fonts come with the game: nothing is fetched from elsewhere, and both are loaded.
+    const elsewhere = [];
+    const offOrigin = (r) => {
+      if (!r.url().startsWith(URL) && !r.url().startsWith('data:')) elsewhere.push(r.url());
+    };
+    page.on('request', offOrigin);
+    await page.goto(URL, { waitUntil: 'networkidle0' });
+    page.off('request', offOrigin);
+    const fonts = await page.evaluate(async () => {
+      await document.fonts.ready;
+      const loaded = async (font) => (await document.fonts.load(font)).some((f) => f.status === 'loaded');
+      return {
+        silkscreen: await loaded('16px Silkscreen'),
+        silkscreenBold: await loaded('700 16px Silkscreen'),
+        pixelify: await loaded('16px "Pixelify Sans Variable"'),
+        pixelifyBold: await loaded('700 16px "Pixelify Sans Variable"'),
+      };
+    });
+    check('the fonts are part of the game: both load, and nothing is fetched from anywhere else', Object.values(fonts).every(Boolean) && elsewhere.length === 0, { fonts, elsewhere });
+    // The browser's offer to install shows the title's Install button, which replays it; installing hides it.
+    const offerInstall = () =>
+      page.evaluate(() => {
+        window.__installPrompts = 0;
+        const e = new Event('beforeinstallprompt', { cancelable: true });
+        e.fromCheck = true;
+        e.prompt = () => {
+          window.__installPrompts++;
+          return Promise.resolve();
+        };
+        e.userChoice = Promise.resolve({ outcome: 'accepted' });
+        window.dispatchEvent(e);
+      });
+    const installButton = () => page.evaluate(() => document.querySelector('[data-install]')?.dataset.install ?? null);
+    const before = await installButton();
+    await offerInstall();
+    await sleep(200);
+    const offered = await installButton();
+    await page.click('[data-install="prompt"]').catch(() => undefined);
+    await sleep(300);
+    const afterInstall = { button: await installButton(), prompts: await page.evaluate(() => window.__installPrompts) };
+    await page.goto(URL, { waitUntil: 'networkidle0' });
+    await offerInstall();
+    await sleep(200);
+    const offeredAgain = await installButton();
+    await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
+    await sleep(200);
+    const afterAppInstalled = await installButton();
+    check(
+      'the browser’s offer to install shows an Install button on the title, which opens it once; installing hides the button',
+      before === null && offered === 'prompt' && afterInstall.button === null && afterInstall.prompts === 1 && offeredAgain === 'prompt' && afterAppInstalled === null,
+      { before, offered, afterInstall, offeredAgain, afterAppInstalled },
+    );
     await page.goto(URL, { waitUntil: 'networkidle0' });
   }
 
@@ -2591,6 +2722,7 @@ try {
       }
     };
     const bad = [];
+    const iphone = [];
     let seen = 0;
     let keysOnTouch = 0;
     let swiped = null;
@@ -2631,6 +2763,28 @@ try {
         await page.keyboard.press('Escape');
         await sleep(300);
       }
+      // As an iPhone: the title's Install button opens the how-to, which fits, and the corner's
+      // three buttons keep clear of the title.
+      const realAgent = await browser.userAgent();
+      await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1');
+      await page.reload({ waitUntil: 'networkidle0' });
+      await sleep(400);
+      const corner = await page.evaluate(() => {
+        const box = document.querySelector('.corner-buttons')?.getBoundingClientRect();
+        const covered = [...document.querySelectorAll('.title-wrap .btn, .title-wrap .game-title, .title-wrap .pixel-title-serpent')].filter((el) => {
+          const r = el.getBoundingClientRect();
+          return box && r.width > 0 && Math.min(r.right, box.right) - Math.max(r.left, box.left) > 1 && Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top) > 1;
+        });
+        return { buttons: document.querySelectorAll('.corner-buttons .icon-btn').length, covered: covered.map((el) => el.textContent.trim().slice(0, 24)) };
+      });
+      const iosButton = await page.evaluate(() => document.querySelector('[data-install]')?.dataset.install ?? null);
+      await page.evaluate(() => document.querySelector('[data-install="ios"]')?.click());
+      await sleep(400);
+      const helpProblems = await layoutProblems('.install-help');
+      iphone.push({ phone: phone.name, iosButton, corner, helpProblems });
+      await page.keyboard.press('Escape');
+      await page.setUserAgent(realAgent);
+      await page.reload({ waitUntil: 'networkidle0' });
       // The pause menu's Options, in a plain run.
       await page.evaluate((k) => {
         const sv = JSON.parse(localStorage.getItem(k));
@@ -2656,6 +2810,11 @@ try {
     }
     check('every menu, each of its tabs and the pause menu’s Options fit a phone held either way without scrolling or overlapping, at their longest', bad.length === 0 && seen >= PHONES.length * 18, { phones: PHONES.length, views: seen, bad });
     check('a touch screen has no Keys tab, and a sideways swipe turns How to Play’s page', keysOnTouch === 0 && swiped === 'draw', { keysOnTouch, swiped });
+    check(
+      'on an iPhone the title’s Install button opens a how-to that fits a phone held either way, and the corner’s buttons keep clear of the title',
+      iphone.length === PHONES.length && iphone.every((i) => i.iosButton === 'ios' && i.corner.buttons === 3 && i.corner.covered.length === 0 && i.helpProblems.length === 0),
+      iphone,
+    );
     await page.evaluate((k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)), SAVE_KEY, saved);
     // A larger screen: no tabs, and Wizard & Curses shows the wizards, the curses and the maps at once.
     await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });

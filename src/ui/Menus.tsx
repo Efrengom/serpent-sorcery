@@ -18,6 +18,7 @@ import { META_IDS, META_UPGRADES, metaMaxLevel, metaNextCost, type MetaId } from
 import { isWizardUnlocked, playableWizard, WIZARD_IDS, WIZARDS, type WizardId } from '../game/wizards';
 import { PixelIcon, PixelTitleSerpent, RelicIcon, Shard, UpgradeGlyph, WizardPortrait } from './art';
 import { useFullscreen } from './fullscreen';
+import { useInstall } from './install';
 import { PaneTabs, paneClass } from './PaneTabs';
 import { BindingsContext, KeyHint, useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
@@ -67,7 +68,10 @@ export function TitleScreen({
   onToggleMute(): void;
   volume: ComponentProps<typeof VolumeControls>;
 }) {
-  useKey(ENTER, onPlay);
+  const install = useInstall();
+  // iOS can't be offered an install dialog, so its Install button explains how.
+  const [installHelp, setInstallHelp] = useState(false);
+  useKey(ENTER, installHelp ? () => setInstallHelp(false) : onPlay);
   const firstTime = save.records.totalRuns === 0;
   const wizard = playableWizard(save.settings.wizard, save.records);
   const curses = save.settings.curses;
@@ -160,6 +164,17 @@ export function TitleScreen({
         </div>
       </div>
       <div className="corner-buttons">
+        {install && (
+          <button
+            className="icon-btn"
+            onClick={install.kind === 'prompt' ? install.install : () => setInstallHelp(true)}
+            title="Install the game"
+            aria-label="Install the game"
+            data-install={install.kind}
+          >
+            <PixelIcon name="install" scale={2} />
+          </button>
+        )}
         {fullscreen && (
           <button className="icon-btn" onClick={fullscreen.toggle} title={fullscreen.on ? 'Leave fullscreen' : 'Fullscreen'} aria-label={fullscreen.on ? 'Leave fullscreen' : 'Fullscreen'} data-fullscreen>
             <PixelIcon name={fullscreen.on ? 'windowed' : 'fullscreen'} scale={2} />
@@ -167,6 +182,34 @@ export function TitleScreen({
         )}
         <button className="icon-btn" onClick={onToggleMute} title={`Mute (${muteKey})`} aria-label="Toggle sound">
           <PixelIcon name={save.settings.muted ? 'soundOff' : 'soundOn'} scale={2} />
+        </button>
+      </div>
+      {installHelp && <InstallHelp onClose={() => setInstallHelp(false)} />}
+    </div>
+  );
+}
+
+/** Installing on iOS, which has no install dialog to offer: Share, then Add to Home Screen. */
+function InstallHelp({ onClose }: { onClose(): void }) {
+  useKey(BACK, onClose);
+  return (
+    <div className="overlay install-help" role="dialog" aria-label="Install the game">
+      <div className="overlay-inner">
+        <h2 className="overlay-title">Install the game</h2>
+        <ol className="install-steps">
+          <li>
+            Tap the <b>Share</b> button <PixelIcon name="share" scale={2} /> (at the bottom of Safari, or by the address bar in other
+            browsers).
+          </li>
+          <li>
+            Choose <b>Add to Home Screen</b>.
+          </li>
+          <li>
+            Open <b>Serpent Sorcery</b> from your home screen. It plays full screen, and offline.
+          </li>
+        </ol>
+        <button className="btn primary" onClick={onClose} autoFocus>
+          Got it
         </button>
       </div>
     </div>
@@ -334,6 +377,7 @@ export function HowToPlay({
   const [up, left, down, right] = (['up', 'left', 'down', 'right'] as const).map((a) => primaryKeyLabel(bindings, a));
   const steer = MOVE_ACTIONS.map((a) => primaryKeyLabel(bindings, a)).join('');
   const [page, setPage] = useState<HowToPage>('steer');
+  const install = useInstall();
   // On a phone a sideways swipe turns the page, as well as the tabs.
   const swipe = useRef<{ x: number; y: number } | null>(null);
   return (
@@ -483,6 +527,11 @@ export function HowToPlay({
           <span className="dot gold" /> Around 5:00 on each map a rival Archmage serpent arrives. Defeat it, then steer into the
           way down to the next map, where elites roam.
         </li>
+        {install && (
+          <li>
+            <span className="dot gold" /> Install the game (the button at the top of the title) to play it full screen and offline.
+          </li>
+        )}
         <li className="mouse-only">
           <KeyHint action="pause" /> pause · <KeyHint action="mute" /> mute · keys and comfort settings are in Options
         </li>

@@ -1,11 +1,13 @@
 {
+  "id": "/",
   "name": "Serpent Sorcery",
   "short_name": "Serpent Sorcery",
   "description": "One hand steers the serpent. The other draws the spells.",
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",
-  "orientation": "any",
+  "orientation": "landscape",
+  "categories": ["games"],
   "background_color": "#0a0614",
   "theme_color": "#1d0f33",
   "icons": [

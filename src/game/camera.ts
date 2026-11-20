@@ -16,7 +16,7 @@ export interface Camera {
 }
 
 export function createCamera(x: number, y: number): Camera {
-  return { x, y, viewW: CAMERA.maxViewWidth, viewH: CAMERA.viewHeight };
+  return { x, y, viewW: CAMERA.wideViewWidth, viewH: CAMERA.viewHeight };
 }
 
 /** Keeps the view inside the map (or centred on a map smaller than the view). */

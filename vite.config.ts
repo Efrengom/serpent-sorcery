@@ -57,7 +57,7 @@ export default defineConfig({
         // React in a file of its own: it changes far less often than the game, so a returning
         // player's browser keeps it across updates.
         manualChunks(id) {
-          if (id.includes('node_modules')) return 'react';
+          if (/node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'react';
         },
       },
     },

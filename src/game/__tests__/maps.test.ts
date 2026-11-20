@@ -122,7 +122,7 @@ describe('the Sunken Ruins layout', () => {
     const map = buildLayout(RUINS, 7);
     expect(map.width).toBe(6400);
     expect(map.height).toBe(3600);
-    expect(map.width / CAMERA.maxViewWidth).toBeGreaterThanOrEqual(4);
+    expect(map.width / CAMERA.wideViewWidth).toBeGreaterThanOrEqual(4);
     expect(map.height / CAMERA.viewHeight).toBeGreaterThanOrEqual(4.5);
     expect(map.clearings.length).toBeGreaterThanOrEqual(3);
     expect(map.landmarks.map((l) => l.kind).sort()).toEqual(['colonnade', 'colossus', 'gate', 'hall', 'plaza']);
@@ -221,7 +221,7 @@ describe('the Mycelium Hollows and the Rimefrost Catacombs', () => {
     expect(crypts.harmIndex).toBeNull();
     expect(clearanceAt(crypts.zones.ice!, 6700, 2300)).toBeLessThan(0);
     for (const map of [hollows, crypts]) {
-      expect(map.width / CAMERA.maxViewWidth).toBeGreaterThanOrEqual(4);
+      expect(map.width / CAMERA.wideViewWidth).toBeGreaterThanOrEqual(4);
       expect(map.height / CAMERA.viewHeight).toBeGreaterThanOrEqual(4.5);
       expect(map.width).toBeLessThanOrEqual(8000);
     }

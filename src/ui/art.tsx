@@ -83,6 +83,15 @@ const ICONS = {
     rows: ['..w...w..', '..w...w..', 'www...www', '.........', '.........', '.........', 'www...www', '..w...w..', '..w...w..'],
     colors: { w: PX.eye },
   },
+  // Install: an arrow down into a tray; Share, as iOS draws it: an arrow up out of a box.
+  install: {
+    rows: ['....w....', '....w....', '....w....', '..w.w.w..', '...www...', '....w....', 'w.......w', 'w.......w', 'wwwwwwwww'],
+    colors: { w: PX.eye },
+  },
+  share: {
+    rows: ['....w....', '...www...', '..w.w.w..', '....w....', 'ww..w..ww', 'w.......w', 'w.......w', 'w.......w', 'wwwwwwwww'],
+    colors: { w: PX.eye },
+  },
   triangle: {
     rows: ['....w....', '...wcw...', '...c.c...', '..c...c..', '..c...c..', '.c.....c.', '.c.....c.', 'ccccccccc'],
     colors: { c: PX.ward1, w: PX.ward2 },
