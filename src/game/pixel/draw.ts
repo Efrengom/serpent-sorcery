@@ -12,8 +12,7 @@ import { FINALE } from '../finale';
 import { SITE_INFO, SITES } from '../sites';
 import type { Blast, BuffId, Enemy, GestureView, GroundFx, PickupKind, World } from '../world';
 import { BUFF_INFO, HEAL_COLOR } from '../breakables';
-import { fillIcon } from '../icons';
-import { bayer, blit, createCanvas, gridSprite, type Sprite } from './bake';
+import { bayer, blit, createCanvas, gridSprite, inked, type Sprite } from './bake';
 import { PX } from './palette';
 import {
   boltHead,
@@ -1722,86 +1721,130 @@ export function drawBreakables(ctx: CanvasRenderingContext2D, world: World, quie
   }
 }
 
-const iconSprites = new Map<string, Sprite>();
-/** A pickup icon rasterized from its path: solid colour inside a one-pixel ink outline. */
-function iconSprite(id: BuffId | 'heal', size: number, color: string): Sprite {
-  const key = `${id}:${size}:${color}`;
-  let s = iconSprites.get(key);
-  if (!s) {
-    const mask = createCanvas(size, size);
-    const m = mask.getContext('2d')!;
-    m.fillStyle = '#fff';
-    fillIcon(m, id, size / 2, size / 2, size);
-    const alpha = m.getImageData(0, 0, size, size).data;
-    const on = (x: number, y: number) => x >= 0 && y >= 0 && x < size && y < size && alpha[(y * size + x) * 4 + 3] > 110;
-    const out = createCanvas(size + 2, size + 2);
-    const g = out.getContext('2d')!;
-    for (let y = -1; y <= size; y++) {
-      for (let x = -1; x <= size; x++) {
-        if (on(x, y)) g.fillStyle = color;
-        else if (on(x - 1, y) || on(x + 1, y) || on(x, y - 1) || on(x, y + 1)) g.fillStyle = PX.ink;
-        else continue;
-        g.fillRect(x + 1, y + 1, 1, 1);
-      }
-    }
-    s = { canvas: out, ox: Math.floor((size + 2) / 2), oy: Math.floor((size + 2) / 2) };
-    iconSprites.set(key, s);
-  }
-  return s;
-}
-
 /**
- * Pickups too fine to come out of their path at this size, drawn by hand: two hearts (the HUD's
- * heart, and a bigger one) and the Lodestone's horseshoe magnet with silver poles.
+ * Every pickup drawn by hand, as a sign shaded from its colour: two hearts (the HUD's heart, and a
+ * bigger one), an hourglass running (Quickening), a faceted four-point star (Empower), a chevron
+ * with a fainter one trailing (Swiftscale), a cracked stone shield (Stoneskin), a horseshoe magnet
+ * with silver poles (Lodestone) and crystal shards on a rock (Shard Cache). `k` is ink.
  */
-const PICKUP_ROWS: Partial<Record<PickupKind, string[]>> = {
-  heal: ['.kk...kk.', 'kwrk.krrk', 'kwrrkrrdk', 'krrrrrrdk', '.krrrrdk.', '..krrdk..', '...kdk...', '....k....'],
-  bigHeal: [
-    '.kkk...kkk.',
-    'kWwrk.krrrk',
-    'kwrrrkrrrdk',
-    'krrrrrrrrdk',
-    'krrrrrrrrdk',
-    '.krrrrrrdk.',
-    '..krrrrdk..',
-    '...krrdk...',
-    '....kdk....',
-    '.....k.....',
-  ],
-  lodestone: [
-    'kkkk...kkkk',
-    'kWWk...kWWk',
-    'kssk...kssk',
-    'kkkk...kkkk',
-    'kLpk...kLdk',
-    'kLpk...kLdk',
-    'kLpk...kLdk',
-    'kLppk.kppdk',
-    '.kLpppppdk.',
-    '..kkdddkk..',
-    '....kkk....',
-  ],
+const HEART_COLORS: Record<string, string> = { W: PX.white, w: PX.hurt2, r: PX.hurt1, d: PX.hurt0 };
+const PICKUP_ART: Record<PickupKind, { rows: string[]; colors: Record<string, string> }> = {
+  heal: { rows: ['.kk...kk.', 'kwrk.krrk', 'kwrrkrrdk', 'krrrrrrdk', '.krrrrdk.', '..krrdk..', '...kdk...', '....k....'], colors: HEART_COLORS },
+  bigHeal: {
+    rows: [
+      '.kkk...kkk.',
+      'kWwrk.krrrk',
+      'kwrrrkrrrdk',
+      'krrrrrrrrdk',
+      'krrrrrrrrdk',
+      '.krrrrrrdk.',
+      '..krrrrdk..',
+      '...krrdk...',
+      '....kdk....',
+      '.....k.....',
+    ],
+    colors: HEART_COLORS,
+  },
+  quickening: {
+    rows: inked([
+      'GGGGGGGGg',
+      'kkkkkkkkk',
+      '.weeeeee.',
+      '..wsssc..',
+      '...wsc...',
+      '....s....',
+      '...ese...',
+      '..essse..',
+      '.wsssssc.',
+      'kkkkkkkkk',
+      'GGGGGGGGg',
+    ]),
+    colors: { G: PX.gold1, g: PX.gold0, w: PX.cyan3, e: PX.ice0, s: BUFF_INFO.quickening.color, c: PX.cyan1 },
+  },
+  empower: {
+    rows: inked([
+      '....W....',
+      '....W....',
+      '...YWA...',
+      '..YYWAA..',
+      'WWWWWAAAA',
+      '..AAADD..',
+      '...AAD...',
+      '....A....',
+      '....A....',
+    ]),
+    colors: { W: PX.flame2, Y: PX.gold1, A: BUFF_INFO.empower.color, D: PX.gold0 },
+  },
+  swiftscale: {
+    rows: inked([
+      'rr..LM...',
+      '.rr..LM..',
+      '..rr..LM.',
+      '...rr..MM',
+      '..rs..MN.',
+      '.rs..MN..',
+      'rs..MN...',
+    ]),
+    colors: { r: PX.green1, s: PX.green0, L: '#d6ffbe', M: BUFF_INFO.swiftscale.color, N: PX.green1 },
+  },
+  stoneskin: {
+    rows: inked([
+      'hhhhhhhhh',
+      'hmmmmmmms',
+      'hmllmcmms',
+      'hmlmmcmds',
+      'hmmmcmmds',
+      '.hmmcmds.',
+      '.hmmmcds.',
+      '..hmmds..',
+      '...hds...',
+      '....s....',
+    ]),
+    colors: { h: PX.bone3, l: '#f4ecdc', m: BUFF_INFO.stoneskin.color, d: '#a89a82', s: '#6e6452', c: '#5a5244' },
+  },
+  lodestone: {
+    rows: [
+      'kkkk...kkkk',
+      'kWWk...kWWk',
+      'kssk...kssk',
+      'kkkk...kkkk',
+      'kLpk...kLdk',
+      'kLpk...kLdk',
+      'kLpk...kLdk',
+      'kLppk.kppdk',
+      '.kLpppppdk.',
+      '..kkdddkk..',
+      '....kkk....',
+    ],
+    colors: { W: PX.eye, s: PX.golem3, L: PX.xp2, p: PX.xp1, d: PX.xp0 },
+  },
+  shardCache: {
+    rows: inked([
+      '....W....',
+      '...LWD...',
+      '...LMD...',
+      '.W.LMD...',
+      'LDkLMD.W.',
+      'LDkLMDkMD',
+      'LDkLMDkMD',
+      'LDkLMDkMD',
+      'bbbbbbbbb',
+    ]),
+    colors: { W: '#f0faff', L: '#cfe8ff', M: BUFF_INFO.shardCache.color, D: '#4f7cc0', b: PX.golem2 },
+  },
 };
-const PICKUP_COLORS: Record<string, string> = {
-  k: PX.ink,
-  W: PX.white,
-  w: PX.hurt2,
-  r: PX.hurt1,
-  d: PX.hurt0,
-};
-const MAGNET_COLORS: Record<string, string> = { k: PX.ink, W: PX.eye, s: PX.golem3, L: PX.xp2, p: PX.xp1, d: PX.xp0 };
 
-function pickupSprite(kind: PickupKind, rows: string[]): Sprite {
-  const key = `drawn:${kind}`;
-  let s = iconSprites.get(key);
+const pickupSprites = new Map<PickupKind, Sprite>();
+function pickupSprite(kind: PickupKind): Sprite {
+  let s = pickupSprites.get(kind);
   if (!s) {
-    s = gridSprite(rows, kind === 'lodestone' ? MAGNET_COLORS : PICKUP_COLORS);
-    iconSprites.set(key, s);
+    s = gridSprite(PICKUP_ART[kind].rows, { k: PX.ink, ...PICKUP_ART[kind].colors });
+    pickupSprites.set(kind, s);
   }
   return s;
 }
 
-/** Hearts and buff runes bobbing on the floor, each with a dithered halo. */
+/** Hearts and buffs bobbing on the floor, each with a dithered halo in its colour. */
 export function drawPickups(ctx: CanvasRenderingContext2D, world: World, t: number, quiet: boolean): void {
   for (const p of world.pickups) {
     const x = p.x / P;
@@ -1809,11 +1852,10 @@ export function drawPickups(ctx: CanvasRenderingContext2D, world: World, t: numb
     if (!visible(x, y, 10)) continue;
     const heal = p.kind === 'heal' || p.kind === 'bigHeal';
     const color = heal ? HEAL_COLOR : BUFF_INFO[p.kind as BuffId].color;
-    const size = p.kind === 'bigHeal' ? 11 : heal ? 8 : 9;
+    const size = p.kind === 'heal' ? 8 : 11;
     const halo = quiet ? 0.3 : 0.25 + 0.15 * Math.sin(t * 5 + p.id);
     pixels(ctx, circlePixels(x, y, size * 0.75 + 1, (X, Y) => bayer(X, Y) < halo), color);
-    const rows = PICKUP_ROWS[p.kind];
-    blit(ctx, rows ? pickupSprite(p.kind, rows) : iconSprite(heal ? 'heal' : (p.kind as BuffId), size, color), x, y);
+    blit(ctx, pickupSprite(p.kind), x, y);
   }
 }
 
@@ -2196,17 +2238,286 @@ export function drawBlastsInFlight(ctx: CanvasRenderingContext2D, world: World):
   }
 }
 
-/** The way down: a dark vortex with turning rings; a ring round it counts down to its pull. */
-/** The map's sites in pixels: a shrine, a rift, a cursed chest and a merchant's stall. */
+// ---------------------------------------------------------------- sites
+
+/** Lays parts (text rows) on a blank w × h grid at their column and row; a later part covers an earlier one. */
+function stamp(w: number, h: number, parts: [number, number, string[]][]): string[] {
+  const grid = Array.from({ length: h }, () => new Array<string>(w).fill('.'));
+  for (const [c, r, rows] of parts) {
+    rows.forEach((row, j) => {
+      for (let i = 0; i < row.length; i++) if (row[i] !== '.') grid[r + j][c + i] = row[i];
+    });
+  }
+  return grid.map((row) => row.join(''));
+}
+
+/** Weathered stone for the shrine and the rift's shards, lit from the top left. */
+const SITE_STONE: Record<string, string> = { k: PX.ink, h: '#b8b0cc', l: PX.golem3, m: PX.golem2, d: PX.golem1, e: PX.golem0 };
+
+/**
+ * The Shrine of Pacts: an altar on two steps between two horned pillars, each with a gem, a pact's
+ * sigil carved in its face and a bowl of coals on top, where a crimson flame burns until a pact is
+ * made. The sigil's centre is at the shrine's position.
+ */
+const SHRINE_ROWS = inked([
+  '..h.....................h..',
+  '.hld...................hld.',
+  '.hld...................hld.',
+  '.hrd...................hrd.',
+  '.hld...................hld.',
+  '.hld......lllllll......hld.',
+  '.hld.....lrRrprRrd.....hld.',
+  '.hld.....hhhhhhhhd.....hld.',
+  '.hld......mmmmmmd......hld.',
+  '.hldkhhhhhhhhhhhhhhhhlkhld.',
+  '.hldkmmmmmmmmmmmmmmmmdkhld.',
+  '.hld..eeeeeeeeeeeeeee..hld.',
+  '.hld..lmmmmmmrmmmmmmd..hld.',
+  '.hld..lmmmmmrmrmmmmmd..hld.',
+  '.hld..lmmmmrmpmrmmmmd..hld.',
+  '.hld..lmmmmmrmrmmmmmd..hld.',
+  '.hld..lmmmmmmrmmmmmmd..hld.',
+  '.lllllllllllllllllllllllll.',
+  '.mmmmmmmmmmmmmmmmmmmmmmmmd.',
+  'lllllllllllllllllllllllllll',
+  'mmmmmmmmmmmmmmmmmmmmmmmmmmd',
+]);
+/** The sigil's pixels, in the shrine's art (before its outline). */
+const SHRINE_SIGIL = [13, 12, 12, 13, 14, 13, 11, 14, 15, 14, 12, 15, 14, 15, 13, 16];
+const SHRINE_FLAME = [
+  ['...a...', '..aa...', '.aaba..', '.abbba.', 'aabcbaa', '.abcba.'],
+  ['....a..', '...aa..', '..abaa.', '.abbba.', 'aabcbaa', '.abcba.'],
+  ['..a....', '..aaa..', '.abba..', '.abbba.', 'aabcbaa', '.abcba.'],
+];
+
+/**
+ * The Cursed Chest: banded in iron, locked with a skull whose eyes glow, its curse leaking from
+ * under the lid. Once opened, the lid stands back over an empty hold and the lock hangs broken.
+ */
+const CHEST_BODY = [
+  '.wwwIiwwwwwwwwwwwIiwww.',
+  '.DDDIiDDDDDDDDDDDIiDDD.',
+  '.wwwIiwwwwwwwwwwwIiwww.',
+  '.wwwIiwwwwwwwwwwwIiwww.',
+  '.DDDIiDDDDDDDDDDDIiDDD.',
+  '.iii...............iii.',
+];
+const CHEST_ROWS = inked([
+  '......WWWWWWWWWWW......',
+  '...WIiWWWWWWWWWWWIiW...',
+  '..wwIiwwwwwwwwwwwIiww..',
+  '.wwwIiwwwwwwwwwwwIiwww.',
+  '.DDDIiDDDDSSSDDDDIiDDD.',
+  '.gggIigggSSSSSgggIiggg.',
+  '.WWWIiWWWSgSgSWWWIiWWW.',
+  '.wwwIiwwwSSkSSwwwIiwww.',
+  '.wwwIiwwwwSkSwwwwIiwww.',
+  ...CHEST_BODY,
+]);
+const CHEST_OPEN_ROWS = inked([
+  '....DDDDDDDDDDDDDDD....',
+  '...DwwwwwwwwwwwwwwwD...',
+  '..DwwwwwwwwwwwwwwwwwD..',
+  '.DDDDDDDDDDDDDDDDDDDDD.',
+  '.ivvvvvvvvvvvvvvvvvvvi.',
+  '.ivvvvvvvvvvvvvvvvvvvi.',
+  '.WWWIiWWWWkSkWWWWIiWWW.',
+  '.wwwIiwwwwwSwwwwwIiwww.',
+  '.wwwIiwwwwwwwwwwwIiwww.',
+  ...CHEST_BODY,
+]);
+const CHEST_COLORS: Record<string, string> = {
+  k: PX.ink,
+  W: PX.bark3,
+  w: PX.bark2,
+  D: PX.bark1,
+  I: PX.golem3,
+  i: PX.golem2,
+  S: PX.bone2,
+  g: SITE_INFO.chest.color,
+  v: '#1a0e24',
+};
+
+/**
+ * The Wandering Merchant: a stall under a striped, scalloped awning, a pennant and a lantern hung
+ * from it, and the merchant in a deep hood behind the counter, eyes glowing, between a potion and a
+ * stack of coins, a cloth with a gold hem over the counter's front.
+ */
+const MERCHANT_ROWS = inked(
+  stamp(31, 21, [
+    [2, 0, ['QQQZZZQQQZZZQQQZZZQQQZZZQQQ', 'PPPYYYPPPYYYPPPYYYPPPYYYPPP', 'PPPYYYPPPYYYPPPYYYPPPYYYPPP', 'pppyyypppyyypppyyypppyyyppp', '.p..y..p..y..p..y..p..y..p.']],
+    [3, 5, Array<string>(9).fill('Ww')],
+    [26, 5, Array<string>(9).fill('Ww')],
+    [6, 5, ['.i.', 'PPP', 'PYP', 'P.P']],
+    [11, 5, ['...HHh...', '..HHhhh..', '.HHfffhh.', '.HfEfEfh.', '.Hhfffho.', 'HHhhhhhoo', 'HhhhGhhoo', 'Hhhhhhhoo', 'Hhhhhhhoo']],
+    [22, 5, ['.i.', 'iii', 'iFi', 'iFi', 'iii']],
+    [6, 10, ['.n.', 'xrr', 'rrr', 'rrR']],
+    [22, 11, ['ZYy', 'yyy', 'ZYy']],
+    [
+      2,
+      14,
+      [
+        'WWWWWWWWWWWWWWWWWWWWWWWWWWW',
+        'wwwwwYYYYYYYYYYYYYYYYYwwwww',
+        'wwwwwPPPPPPPPPPPPPPPPPwwwww',
+        'DDDDDPPPPPPPPPPPPPPPPPDDDDD',
+        'wwwwwPwPwPwPwPwPwPwPwPwwwww',
+        'DDDDDDDDDDDDDDDDDDDDDDDDDDD',
+      ],
+    ],
+    [3, 20, ['DD']],
+    [26, 20, ['DD']],
+  ]),
+);
+const MERCHANT_COLORS: Record<string, string> = {
+  k: PX.ink,
+  Q: '#a866d8',
+  P: '#7a3aa8',
+  p: '#4a1a78',
+  Z: PX.gold2,
+  Y: PX.gold1,
+  y: PX.gold0,
+  W: PX.bark3,
+  w: PX.bark2,
+  D: PX.bark1,
+  H: '#6a3a9a',
+  h: '#3a1a5a',
+  o: '#24103a',
+  f: '#0a0410',
+  E: PX.gold3,
+  G: PX.gold1,
+  i: PX.golem2,
+  F: PX.flame1,
+  n: PX.bone1,
+  x: PX.white,
+  r: PX.hurt1,
+  R: PX.hurt0,
+};
+
+/** The rift's tear from its top row down: half its width, and how far the row sways off centre. */
+const RIFT_HALF = [0, 1, 1, 2, 3, 2, 3, 4, 3, 4, 5, 4, 5, 5, 4, 5, 4, 3, 4, 3, 2, 3, 2, 1, 0];
+const RIFT_SWAY = [0, 0, 1, 1, 1, 0, 0, -1, -1, -1, 0, 0, 1, 1, 1, 0, 0, -1, -1, 0, 0, 0, 1, 1, 1];
+const RIFT_TOP = -15;
+const RIFT_SHARD_ROWS = [inked(['lm', 'md']), inked(['llm', 'mdd']), inked(['l', 'm', 'd'])];
+
+const siteSprites = new Map<string, Sprite>();
+function siteSprite(key: string, rows: string[], colors: Record<string, string>, ox: number, oy: number): Sprite {
+  let s = siteSprites.get(key);
+  if (!s) {
+    s = gridSprite(rows, colors, ox, oy);
+    siteSprites.set(key, s);
+  }
+  return s;
+}
+
+function drawShrine(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, quiet: boolean, live: boolean, id: number): void {
+  const colors = live
+    ? { ...SITE_STONE, r: SITE_INFO.shrine.color, R: PX.hurt0, p: PX.hurt2 }
+    : { ...SITE_STONE, r: PX.golem0, R: '#1a1226', p: PX.golem1 };
+  // Art pixel (c, r) lands at (x - 13 + c, y - 13 + r).
+  blit(ctx, siteSprite(`shrine:${live}`, SHRINE_ROWS, colors, 14, 14), x, y);
+  if (!live) return;
+  if (!quiet && Math.sin(t * 2.5 + id) > 0.2) {
+    for (let i = 0; i < SHRINE_SIGIL.length; i += 2) px(ctx, x - 13 + SHRINE_SIGIL[i], y - 13 + SHRINE_SIGIL[i + 1], PX.crim3);
+  }
+  const frame = quiet ? 0 : Math.floor(t * 7 + id) % SHRINE_FLAME.length;
+  const flame = siteSprite(`flame:${frame}`, SHRINE_FLAME[frame], { a: PX.crim2, b: PX.crim3, c: PX.flash }, 0, 0);
+  blit(ctx, flame, x - 3, y - 13);
+}
+
+function drawChest(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, quiet: boolean, live: boolean): void {
+  blit(ctx, siteSprite(`chest:${live}`, live ? CHEST_ROWS : CHEST_OPEN_ROWS, CHEST_COLORS, 12, 9), x, y);
+  if (!live) return;
+  // Wisps of the curse rising from under the lid.
+  for (let i = 0; i < 3; i++) {
+    const k = quiet ? 0.25 + i * 0.2 : (t * 0.45 + i / 3) % 1;
+    if (k > 0.85) continue;
+    const wx = x + (i - 1) * 7 + Math.round(Math.sin(k * TAU + i * 2) * 1.5);
+    const wy = y - 4 - Math.round(k * 14);
+    px(ctx, wx, wy, k < 0.45 ? SITE_INFO.chest.color : PX.purple2);
+    if (k < 0.6) px(ctx, wx, wy + 1, PX.purple1);
+  }
+}
+
+function drawMerchant(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, quiet: boolean, id: number): void {
+  // Art pixel (c, r) lands at (x - 15 + c, y - 13 + r).
+  if (!quiet) pixels(ctx, circlePixels(x + 8, y - 6, 4, (X, Y) => bayer(X, Y) < 0.25), PX.flame0);
+  blit(ctx, siteSprite('merchant', MERCHANT_ROWS, MERCHANT_COLORS, 16, 14), x, y);
+  const flicker = quiet || Math.sin(t * 13 + id) > -0.3 ? PX.flame1 : PX.flame0;
+  px(ctx, x + 8, y - 6, flicker);
+  px(ctx, x + 8, y - 5, PX.flame0);
+  // A blink now and then.
+  if ((t + id * 1.7) % 4.3 < 0.14) {
+    px(ctx, x - 1, y - 5, MERCHANT_COLORS.f);
+    px(ctx, x + 1, y - 5, MERCHANT_COLORS.f);
+  }
+}
+
+function drawRift(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, quiet: boolean, open: boolean, id: number): void {
+  const shard = (i: number) => siteSprite(`shard:${i}`, RIFT_SHARD_ROWS[i % RIFT_SHARD_ROWS.length], SITE_STONE, 1, 1);
+  if (!open) {
+    // Closed, it leaves a crack in the floor with a little light still in it, and the stones that fell.
+    for (let j = 5; j < RIFT_HALF.length - 2; j++) {
+      const cx = x + RIFT_SWAY[j];
+      const cy = y + RIFT_TOP + j;
+      px(ctx, cx, cy, PX.ink);
+      px(ctx, cx + 1, cy, j % 4 === 0 ? PX.purple1 : PX.purple0);
+    }
+    blit(ctx, shard(0), x - 6, y + 6);
+    blit(ctx, shard(1), x + 4, y + 8);
+    blit(ctx, shard(2), x - 3, y + 10);
+    return;
+  }
+  const color = SITE_INFO.rift.color;
+  const mid = y + RIFT_TOP + RIFT_HALF.length / 2;
+  pixels(ctx, circlePixels(x, mid, 15, (X, Y) => ((X - x) / 9) ** 2 + ((Y - mid) / 15) ** 2 <= 1 && bayer(X, Y) < 0.35), PX.purple1);
+  // The floor cracked where it opened.
+  const base = y + RIFT_TOP + RIFT_HALF.length - 1;
+  for (const [dx, dy] of [
+    [-7, 3],
+    [6, 2],
+    [1, 4],
+  ]) {
+    pixels(ctx, linePixels(x, base, x + dx, base + dy), PX.ink);
+  }
+  // Stones turning round it, behind the tear and then in front.
+  const spin = quiet ? 0 : t * 0.7;
+  const stones = [0, 1, 2, 3].map((i) => {
+    const a = spin + (i / 4) * TAU + id;
+    return { i, front: Math.sin(a) > 0, x: x + Math.round(Math.cos(a) * 13), y: mid + Math.round(Math.sin(a) * 4 + (quiet ? 0 : Math.sin(t * 2 + i))) };
+  });
+  for (const s of stones) if (!s.front) blit(ctx, shard(s.i), s.x, s.y);
+  const shimmer = quiet ? 0 : Math.floor(t * 10);
+  for (let j = 0; j < RIFT_HALF.length; j++) {
+    const w = RIFT_HALF[j];
+    const cx = x + RIFT_SWAY[j];
+    const cy = y + RIFT_TOP + j;
+    const rim = (j + shimmer) % 5 === 0 ? PX.white : PX.purple3;
+    if (w === 0) {
+      px(ctx, cx, cy, rim);
+      continue;
+    }
+    px(ctx, cx - w - 1, cy, PX.purple2);
+    px(ctx, cx + w + 1, cy, PX.purple2);
+    px(ctx, cx - w, cy, rim);
+    px(ctx, cx + w, cy, rim);
+    if (w > 1) px(ctx, cx - w + 1, cy, '#05010a', 2 * w - 1);
+    else px(ctx, cx, cy, '#05010a');
+  }
+  // Stars drifting deeper inside it.
+  for (let i = 0; i < 8; i++) {
+    const k = quiet ? hash2(i, id) : (t * 0.35 + hash2(i, id)) % 1;
+    const j = 2 + Math.floor(k * (RIFT_HALF.length - 4));
+    const w = RIFT_HALF[j];
+    if (w < 2) continue;
+    const dx = Math.round((hash2(i, 7) * 2 - 1) * (w - 1.5));
+    px(ctx, x + RIFT_SWAY[j] + dx, y + RIFT_TOP + j, i % 3 === 0 ? PX.white : color);
+  }
+  for (const s of stones) if (s.front) blit(ctx, shard(s.i), s.x, s.y);
+}
+
+/** The map's sites in pixels: a shrine, a rift, a cursed chest and a merchant's stall, each in a turning ring while it can be used. */
 export function drawSites(ctx: CanvasRenderingContext2D, world: World, t: number, quiet: boolean): void {
-  const rect = (x: number, y: number, w: number, h: number, color: string) => {
-    ctx.fillStyle = color;
-    ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
-  };
-  const box = (x: number, y: number, w: number, h: number, color: string) => {
-    rect(x - 1, y - 1, w + 2, h + 2, PX.ink);
-    rect(x, y, w, h, color);
-  };
   for (const s of world.sites) {
     const x = Math.round(s.x / P);
     const y = Math.round(s.y / P);
@@ -2219,38 +2530,10 @@ export function drawSites(ctx: CanvasRenderingContext2D, world: World, t: number
       pixels(ctx, circlePixels(x, y, R, (X, Y) => Math.floor((((Math.atan2(Y - y, X - x) + spin) % TAU) + TAU) / (TAU / 16)) % 2 === 0), color);
       pixels(ctx, circlePixels(x, y, R * 1.6, (X, Y) => bayer(X, Y) < (quiet ? 0.12 : 0.1 + 0.05 * Math.sin(t * 3 + s.id))), color);
     }
-    if (s.kind === 'shrine') {
-      box(x - 10, y - 3, 20, 10, '#4a4458');
-      box(x - 7, y - 9, 14, 6, '#5c566c');
-      rect(x - 2, y - 1, 4, 3, live ? color : '#3a3046');
-      if (live) rect(x - 1, y - 13 - (quiet ? 0 : Math.round(Math.sin(t * 9))), 2, 3, PX.flame1);
-    } else if (s.kind === 'rift') {
-      if (live || world.rift?.siteId === s.id) {
-        pixels(ctx, circlePixels(x, y, 9, (X, Y) => ((X - x) / 8) ** 2 + ((Y - y) / 15) ** 2 <= 1), '#0a0414');
-        const k = quiet ? 0 : Math.floor(t * 8);
-        for (let i = 0; i < 10; i++) {
-          const a = (i / 10) * TAU + k * 0.4;
-          px(ctx, x + Math.cos(a) * 9, y + Math.sin(a) * 16, i % 3 === 0 ? PX.white : color);
-        }
-      } else {
-        for (let i = -12; i <= 12; i++) px(ctx, x + Math.round(Math.sin(i * 0.5) * 2), y + i, '#2a1a40');
-      }
-    } else if (s.kind === 'chest') {
-      box(x - 9, y - 2, 18, 10, '#2a1a2e');
-      if (live) {
-        box(x - 9, y - 8, 18, 6, '#3a2440');
-        rect(x - 9, y - 6, 18, 1, color);
-        rect(x - 1, y - 4, 3, 4, PX.gold1);
-      } else box(x - 9, y - 12, 18, 4, '#1a0e1e');
-    } else {
-      rect(x - 12, y - 12, 2, 18, '#2a1a10');
-      rect(x + 10, y - 12, 2, 18, '#2a1a10');
-      for (let i = 0; i < 4; i++) rect(x - 13 + i * 6, y - 15, 6, 4, i % 2 === 0 ? '#7a3aa8' : PX.gold1);
-      pixels(ctx, circlePixels(x, y, 6, (X, Y) => Y >= y - 6 + Math.abs(X - x) * 2 - 6 && Y <= y + 6), '#3a1a5a');
-      rect(x - 2, y - 3, 1, 1, PX.gold3);
-      rect(x + 1, y - 3, 1, 1, PX.gold3);
-      disc(ctx, x + 9, y - 7, quiet ? 2 : 2 + Math.round(Math.sin(t * 5) * 0.5), PX.gold1);
-    }
+    if (s.kind === 'shrine') drawShrine(ctx, x, y, t, quiet, live, s.id);
+    else if (s.kind === 'rift') drawRift(ctx, x, y, t, quiet, live || world.rift?.siteId === s.id, s.id);
+    else if (s.kind === 'chest') drawChest(ctx, x, y, t, quiet, live);
+    else drawMerchant(ctx, x, y, t, quiet, s.id);
   }
 }
 
@@ -2280,6 +2563,7 @@ export function drawFinale(ctx: CanvasRenderingContext2D, world: World, t: numbe
   disc(ctx, x, y, Math.round((14 + 26 * k) / P), '#05010a');
 }
 
+/** The way down: a dark vortex with turning rings; a ring round it counts down to its pull. */
 export function drawDescent(ctx: CanvasRenderingContext2D, world: World, t: number, quiet: boolean): void {
   const d = world.descent;
   if (!d) return;

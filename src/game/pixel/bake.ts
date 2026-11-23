@@ -87,6 +87,26 @@ export function gridSprite(rows: string[], colors: Record<string, string>, ox?: 
   return { canvas, ox: ox ?? Math.floor(w / 2), oy: oy ?? Math.floor(h / 2) };
 }
 
+/**
+ * Text rows with a one-pixel `ink` outline round everything drawn, side by side (not across
+ * corners), one pixel bigger on every side. Rows can then be drawn as colour only, with ink inside
+ * just where parts meet.
+ */
+export function inked(rows: string[], ink = 'k'): string[] {
+  const w = Math.max(...rows.map((r) => r.length));
+  const on = (x: number, y: number) => y >= 0 && y < rows.length && x >= 0 && x < w && (rows[y][x] ?? '.') !== '.';
+  const out: string[] = [];
+  for (let y = -1; y <= rows.length; y++) {
+    let row = '';
+    for (let x = -1; x <= w; x++) {
+      if (on(x, y)) row += rows[y][x];
+      else row += on(x - 1, y) || on(x + 1, y) || on(x, y - 1) || on(x, y + 1) ? ink : '.';
+    }
+    out.push(row);
+  }
+  return out;
+}
+
 /** Draws a sprite with its anchor snapped to the low-res pixel grid. */
 export function blit(ctx: CanvasRenderingContext2D, s: Sprite, x: number, y: number): void {
   ctx.drawImage(s.canvas, Math.round(x - s.ox), Math.round(y - s.oy));

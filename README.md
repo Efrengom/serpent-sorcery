@@ -360,6 +360,7 @@ Effects are samples from Kenney's free CC0 packs (Impact, Sci-Fi, Interface and 
 Everything is pixel art. The view is drawn on a low-res canvas 320 art pixels tall (1 pixel = 2.5 world units), offset by the camera in whole pixels, and upscaled by a whole-number factor: ×2 at 1280×720, ×3 at 1920×1080. Very small windows fall back to fractional scaling.
 
 - **Sprites** are generated in code with hard edges, a 1px outline and top-left rim lighting. Heads are drawn at 16 headings.
+- **Pickups, containers and sites** are drawn by hand as rows of letters, one per pixel; `inked` in `bake.ts` can add the outline round them. Each buff is a sign shaded from its colour: an hourglass, a four-point star, a double chevron, a cracked stone shield, a magnet and crystal shards. The sites move a little while they can be used: the shrine's flame and sigil, the rift's shimmering edge with stars and stones turning round it, wisps from the cursed chest, and the merchant's lantern and blink.
 - **The floor** is painted per pixel in 256×256 chunks: flagstones, cracks, moss, the rune circle, torch light, and the stonework shaded from each solid's exact distance (rim-lit top-left, shadows cast down-right). Every detail is keyed by its position on the map, so chunks meet without seams. The chunks around the view are painted a band at a time within 3 ms a frame, ahead of need.
 - **Effects** use per-pixel lines and circles plus ordered (Bayer) dithering: charge lanes, lightning, Nova, enemy shots, crystals, particles and portals.
 - **Overlay:** the sigil trail and hurt flash are drawn on a screen-sized overlay that lines up with the same pixel grid.
@@ -431,7 +432,7 @@ src/game/            framework-free game code (no React)
   hazards.ts         lava, brambles, ice, burning trails, vents and telegraphed blasts
   telegraph.ts       what the renderer needs to preview attacks: lanes, aim lines, blasts in flight
   atlas.ts           the setup screen's map pictures
-  icons.ts           pickup and buff icons, shared by the pixel sprites and HUD
+  icons.ts           the buff icons on the HUD's chips (on the floor, pickups are drawn in pixels)
   input.ts           keyboard (following the key bindings), pointer capture, and the touch stick and drawing zones; clears on blur/resize/pause
   keys.ts            key bindings: defaults, rebinding, validation, key labels
   options.ts         comfort and accessibility options: shake, flashing, warnings, minimap, camera, game speed
