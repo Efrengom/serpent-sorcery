@@ -235,10 +235,16 @@ export class Renderer {
     this.minimap = null;
   }
 
-  /** Puts the view's top-left corner where the camera says, snapped to whole art pixels so the floor scrolls without shimmering. */
+  /**
+   * Puts the view's top-left corner where the camera says, snapped to whole art pixels so the floor
+   * scrolls without shimmering. The centre is snapped first and the corner is a whole number of
+   * pixels from it: were the half-width a half pixel, the corner would round at other moments than
+   * what the camera follows exactly (the head with the steady camera, a foe in the inspector), and
+   * that would hop a pixel back and forth as it moved.
+   */
   follow(cam: Camera): void {
-    this.camLeft = Math.round((cam.x - this.viewW / 2) / P) * P;
-    this.camTop = Math.round((cam.y - this.viewH / 2) / P) * P;
+    this.camLeft = (Math.round(cam.x / P) - Math.round(this.viewW / 2 / P)) * P;
+    this.camTop = (Math.round(cam.y / P) - Math.round(this.viewH / 2 / P)) * P;
   }
 
   private font(size: number, weight: number): string {

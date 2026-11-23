@@ -589,8 +589,8 @@ function drawSporeling(ctx: CanvasRenderingContext2D, e: Enemy, time: number, qu
 
 /** A Burrow Viper above ground; for a moment after it erupts, a ring of thrown-up earth round it. */
 function drawViper(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quiet: boolean): void {
-  const x = e.x / P;
-  const y = e.y / P;
+  const x = Math.round(e.x / P);
+  const y = Math.round(e.y / P);
   const R = e.r / P;
   const flash = e.flash > 0 && !quiet;
   if (e.state === 'recover' || e.state === 'attack') {
@@ -604,8 +604,8 @@ function drawViper(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quiet:
 
 /** A Bone Rattler walking, or (struck down) a heap of bones whose skull twitches harder as it nears rising. */
 function drawRattler(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quiet: boolean): void {
-  const x = e.x / P;
-  const y = e.y / P;
+  const x = Math.round(e.x / P);
+  const y = Math.round(e.y / P);
   const R = e.r / P;
   const flash = e.flash > 0 && !quiet;
   if (e.pile > 0) {
@@ -629,8 +629,8 @@ function drawRattler(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quie
 /** A Wraith: ghostly always, fainter still (every other pixel, no outline) while it drifts through stone; its eyes always show. */
 function drawWraith(ctx: CanvasRenderingContext2D, e: Enemy, world: World, quiet: boolean): void {
   const R = e.r / P;
-  const x = e.x / P;
-  const y = e.y / P + Math.round(Math.sin(world.time * 2.4 + e.wobble));
+  const x = Math.round(e.x / P);
+  const y = Math.round(e.y / P) + Math.round(Math.sin(world.time * 2.4 + e.wobble));
   const flash = e.flash > 0 && !quiet;
   const phased = clearanceAt(world.map.index, e.x, e.y) < 0;
   // A cold shimmer gathers round it as it readies a lunge.
@@ -677,8 +677,8 @@ function drawChaser(ctx: CanvasRenderingContext2D, e: Enemy, world: World, quiet
 /** A Puffcap: it roots and swells through its wind-up, a haze of spores thickening round it; at rest, a spore drifts up now and then. */
 function drawPuffcap(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quiet: boolean): void {
   const R = e.r / P;
-  const x = e.x / P;
-  const y = e.y / P;
+  const x = Math.round(e.x / P);
+  const y = Math.round(e.y / P);
   const flash = e.flash > 0 && !quiet;
   const k = e.state === 'windup' ? windup(e, ENEMIES.puffcap.telegraph) : 0;
   if (k > 0.25) pixels(ctx, circlePixels(x, y, R + 2 + k * 3, (X, Y) => bayer(X, Y) < 0.2 + 0.35 * k), PX.spore1);
@@ -696,8 +696,8 @@ function drawPuffcap(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quie
 /** A Frost Archer: it draws its bow through the wind-up, the nocked icicle glinting as the shot nears. */
 function drawFrostArcher(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quiet: boolean): void {
   const R = e.r / P;
-  const x = e.x / P;
-  const y = e.y / P;
+  const x = Math.round(e.x / P);
+  const y = Math.round(e.y / P);
   const flash = e.flash > 0 && !quiet;
   const drawn = e.state === 'windup';
   const a = drawn ? e.aim : e.heading;
@@ -716,8 +716,8 @@ function drawCaster(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quiet
   if (e.kind === 'puffcap') return drawPuffcap(ctx, e, time, quiet);
   if (e.kind === 'frostArcher') return drawFrostArcher(ctx, e, time, quiet);
   const R = e.r / P;
-  const x = e.x / P;
-  const y = e.y / P;
+  const x = Math.round(e.x / P);
+  const y = Math.round(e.y / P);
   const flash = e.flash > 0 && !quiet;
   const pyro = e.kind === 'pyromancer';
   blit(ctx, caster(directionIndex(e.heading), flash, pyro), x, y);
@@ -766,8 +766,8 @@ function drawBrute(ctx: CanvasRenderingContext2D, e: Enemy, time: number, quiet:
   const golemKind = e.kind === 'golem';
   // A golem stands rooted while its fists go up; the others shake as they gather for a charge.
   const shakeX = e.state === 'windup' && !golemKind ? (Math.floor(time * 30) % 2 === 0 ? 1 : -1) : 0;
-  const x = e.x / P + shakeX;
-  const y = e.y / P;
+  const x = Math.round(e.x / P) + shakeX;
+  const y = Math.round(e.y / P);
   const flash = e.flash > 0 && !quiet;
   const hot = e.state === 'windup' || e.state === 'attack';
   const magma = e.kind === 'magmaBrute';
@@ -843,8 +843,8 @@ function drawEnemySnake(ctx: CanvasRenderingContext2D, e: Enemy, time: number, q
   const segs = e.segments;
   const n = segs.length;
   const radii = segs.map((_, i) => Math.max(2, Math.round((e.segRadius * (1 - (i / n) * 0.45)) / P)));
-  const x = e.x / P;
-  const y = e.y / P;
+  const x = Math.round(e.x / P);
+  const y = Math.round(e.y / P);
   const R = e.r / P;
   const ascendant = boss && e.bossId === 'ascendant';
   if (boss && (e.enraged || ascendant) && !flash) {
@@ -1134,8 +1134,8 @@ function drawSerpentBody(ctx: CanvasRenderingContext2D, world: World, gesture: G
   }
 
   const sway = clamp(Math.round(Math.sin(s.anim * 3.2) * 1.3), -1, 1);
-  const hx = s.x / P;
-  const hy = s.y / P;
+  const hx = Math.round(s.x / P);
+  const hy = Math.round(s.y / P);
   blit(ctx, wizardHead('player', directionIndex(s.heading), sway, hurt ? 'hurt' : 'normal', world.wizard), hx, hy);
 
   // Eyes: 2x2 whites with a pupil pixel that looks toward the recorded aim target.
