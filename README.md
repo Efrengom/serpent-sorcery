@@ -152,6 +152,7 @@ Maps are data in `src/game/maps/`: a text grid (one character per 200×200 cell:
 - **Colorblind-safe warnings**: attack previews switch from red to yellow-and-black hazard stripes with dark casings, and every foe winding up an attack gets a yellow "!". Charge lanes fill with stripes as the charge builds, aim lines become solid with an arrowhead, and the boss's volley ring gets a casing. The colours are told apart by brightness, which every kind of colour vision keeps. A test simulates protanopia, deuteranopia and tritanopia (Machado et al., 2009). The yellow stays above 7:1 contrast against every arena floor under all of them. The standard red lane edge drops below 3:1 on some floors under protanopia.
 - **Minimap** (on by default): the map in the bottom-right corner, with the visible area outlined, your serpent, elites, the boss and its clearing. Clicks and strokes pass straight through it.
 - **Steady camera** (off by default): keeps the serpent in the middle of the view, with no look-ahead or easing, for players who find a moving camera uncomfortable.
+- **Steer with the right thumb** (only offered with a touch screen): the right thumb steers and the left draws.
 - **Auto-aim** (on by default on a phone or tablet, whose main pointer is a finger; off with a mouse): Bolt, Lightning and Frost Field go to the nearest foe in view instead of where you start drawing, and Bolt and Frost Field to an urn or reliquary when one is nearer. See [Sigils](#sigils).
 - **Game speed**: 50 to 100% in 10% steps. It slows the whole run, but drawing happens in real time, so there's more time to draw. Shards and records count game time, so a slower run earns the same; the run summary notes the speed.
 - **Keys**: two keys per action (steer up, down, left, right, ultimate, pause, mute). Click a key, then press the new one. Backspace clears it, Esc cancels. A key does one thing: binding one that's in use moves it and says which action lost it. A steering direction left with no key gets a warning. Keys are physical positions, so they work the same on any keyboard layout. Esc always pauses and goes back. Hints across the game (How to Play, the pause menu, button tooltips) show the keys you've bound.
@@ -359,6 +360,7 @@ Effects are samples from Kenney's free CC0 packs (Impact, Sci-Fi, Interface and 
 Everything is pixel art. The view is drawn on a low-res canvas 320 art pixels tall (1 pixel = 2.5 world units), offset by the camera in whole pixels, and upscaled by a whole-number factor: ×2 at 1280×720, ×3 at 1920×1080. Very small windows fall back to fractional scaling.
 
 - **Sprites** are generated in code with hard edges, a 1px outline and top-left rim lighting. Heads are drawn at 16 headings.
+- **Pickups, containers and sites** are drawn by hand as rows of letters, one per pixel; `inked` in `bake.ts` can add the outline round them. Each buff is a sign shaded from its colour: an hourglass, a four-point star, a double chevron, a cracked stone shield, a magnet and crystal shards. The sites move a little while they can be used: the shrine's flame and sigil, the rift's shimmering edge with stars and stones turning round it, wisps from the cursed chest, and the merchant's lantern and blink.
 - **The floor** is painted per pixel in 256×256 chunks: flagstones, cracks, moss, the rune circle, torch light, and the stonework shaded from each solid's exact distance (rim-lit top-left, shadows cast down-right). Every detail is keyed by its position on the map, so chunks meet without seams. The chunks around the view are painted a band at a time within 3 ms a frame, ahead of need.
 - **Effects** use per-pixel lines and circles plus ordered (Bayer) dithering: charge lanes, lightning, Nova, enemy shots, crystals, particles and portals.
 - **Overlay:** the sigil trail and hurt flash are drawn on a screen-sized overlay that lines up with the same pixel grid.
@@ -430,7 +432,7 @@ src/game/            framework-free game code (no React)
   hazards.ts         lava, brambles, ice, burning trails, vents and telegraphed blasts
   telegraph.ts       what the renderer needs to preview attacks: lanes, aim lines, blasts in flight
   atlas.ts           the setup screen's map pictures
-  icons.ts           pickup and buff icons, shared by the pixel sprites and HUD
+  icons.ts           the buff icons on the HUD's chips (on the floor, pickups are drawn in pixels)
   input.ts           keyboard (following the key bindings), pointer capture, and the touch stick and drawing zones; clears on blur/resize/pause
   keys.ts            key bindings: defaults, rebinding, validation, key labels
   options.ts         comfort and accessibility options: shake, flashing, warnings, minimap, camera, game speed

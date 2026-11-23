@@ -374,8 +374,11 @@ export function RecordsScreen({ save, onBack }: { save: SaveData; onBack(): void
   );
 }
 
-/** How to Play's pages, which a phone shows one at a time. */
-const HOWTO_PAGES = ['steer', 'draw', 'aim', 'maps', 'tips'] as const;
+/**
+ * How to Play's pages, which a phone shows one at a time. Only the basics: the maps are left for
+ * finding, and the rest shows itself in a run.
+ */
+const HOWTO_PAGES = ['steer', 'draw', 'aim', 'tips'] as const;
 type HowToPage = (typeof HOWTO_PAGES)[number];
 
 export function HowToPlay({
@@ -383,17 +386,22 @@ export function HowToPlay({
   onPlay,
   onPractice,
   safeWarnings,
+  steerRight,
+  autoAim,
 }: {
   onBack(): void;
   onPlay(): void;
   onPractice(): void;
   safeWarnings: boolean;
+  steerRight: boolean;
+  autoAim: boolean;
 }) {
   useKey(BACK, onBack);
   useKey(ENTER, onPlay);
   const bindings = useContext(BindingsContext);
   const [up, left, down, right] = (['up', 'left', 'down', 'right'] as const).map((a) => primaryKeyLabel(bindings, a));
   const steer = MOVE_ACTIONS.map((a) => primaryKeyLabel(bindings, a)).join('');
+  const steerKeys = steer === 'WSAD' ? 'WASD' : `${up} ${left} ${down} ${right}`;
   const [page, setPage] = useState<HowToPage>('steer');
   const install = useInstall();
   // On a phone a sideways swipe turns the page, as well as the tabs.
@@ -425,7 +433,6 @@ export function HowToPlay({
           { id: 'steer', name: 'Steer' },
           { id: 'draw', name: 'Draw' },
           { id: 'aim', name: 'Aim' },
-          { id: 'maps', name: 'Maps' },
           { id: 'tips', name: 'Tips' },
         ]}
       />
@@ -439,32 +446,28 @@ export function HowToPlay({
             <kbd className="k-d">{right}</kbd>
           </div>
           <p className="mouse-only">
-            Your serpent <b>never stops moving</b>. {steer === 'WSAD' ? 'WASD' : `${up} ${left} ${down} ${right}`} points it up, left,
-            down or right; hold two keys for diagonals.
-            Let go and it keeps its heading. Turns curve — reversing makes a U-turn.
+            Your serpent <b>never stops moving</b>. {steerKeys} turns it; hold two keys for diagonals.
           </p>
           <p className="touch-only">
-            Your serpent <b>never stops moving</b>; let go and it keeps its heading. Turns curve, and reversing makes a U-turn.
+            Your serpent <b>never stops moving</b>. Slide a thumb on the {steerRight ? 'right' : 'left'} of the screen to turn it
+            (Options swaps the sides), and draw with the other hand.
           </p>
           <p>
-            <b>On a touch screen</b>, hold a thumb on the left of the screen and slide it the way to go (or the right, in
-            Options). Your other hand draws anywhere else. Tap the ultimate's card to cast it.
+            Walls sting. Only enemy <b>heads</b> bite, and your own tail is safe.
           </p>
           <p>
-            Walls, pillars and statues sting and bounce you off, but they also block enemy shots. Only enemy <b>heads</b> bite,
-            and your own tail is safe.
-          </p>
-          <p>
-            Once your serpent is long enough, <b>loop your body around foes</b> to Constrict them: a dashed line shows the gap
-            left to close.
+            Once you're long enough, <b>loop around foes</b> to Constrict them.
           </p>
         </section>
         <section className={`howto-card ${paneClass('draw', page)}`}>
           <h3 className="pane-head">2 · Draw</h3>
-          <p>
-            <b>Hold the left mouse button</b> (or a finger) anywhere over the map, draw a sigil in one stroke, then <b>release</b> to cast.
-            Size doesn't matter: lines, triangles and zigzags work in any direction, circles either way round, and a V
-            just needs to open roughly upward. Each wizard starts with three sigils; level-ups teach the others.
+          <p className="mouse-only">
+            <b>Hold the left mouse button</b>, draw a sigil in one stroke, and <b>release</b> to cast. Any size, either way
+            round. You start with three; level-ups teach the rest.
+          </p>
+          <p className="touch-only">
+            <b>Draw a sigil</b> in one stroke with a finger, and <b>lift</b> it to cast. Any size, either way round. You start
+            with three; level-ups teach the rest.
           </p>
           <div className="sigil-list">
             {SPELL_IDS.map((id) => (
@@ -482,49 +485,27 @@ export function HowToPlay({
         </section>
         <section className={`howto-card ${paneClass('aim', page)}`}>
           <h3 className="pane-head">3 · Aim</h3>
+          {autoAim ? (
+            <p>
+              With <b>Auto-aim</b> on, spells go for the <b>nearest foe</b>, wherever you draw. Nova and Ward surround you.
+            </p>
+          ) : (
+            <p>
+              Spells go to <b>where you press down</b>, so you can draw anywhere. Nova and Ward surround you.
+            </p>
+          )}
+          <p>{autoAim ? 'Options can turn it off, to aim where you press down.' : 'Auto-aim, in Options, picks the nearest foe instead.'}</p>
           <p>
-            The spot where you <b>press down</b> becomes your target and gets a marker. On release, Bolt and Lightning fly
-            from the serpent's <b>current</b> head toward that marker — so the stroke itself can be drawn anywhere.
+            <b>Neat sigils hit harder</b>, up to 35% for a Perfect one.
           </p>
-          <p>
-            Press right on top of the serpent to fire straight ahead. Frost Field lands where you pressed; Nova and Ward
-            always surround you.
-          </p>
-          <p>
-            With <b>Auto-aim</b> (in Options; on by default on phones and tablets) they go to the nearest foe in view
-            instead, wherever you draw, and the marker shows which. Bolt and Frost Field go for urns and reliquaries
-            too, whichever is nearest.
-          </p>
-          <p>Max a spell's own upgrade and take two ranks of its partner, and a golden card evolves it.</p>
-          <p>
-            While you draw, the trail takes the colour of the spell it reads. <b>Perfect</b> sigils hit 35% harder,{' '}
-            <b>Clean</b> ones 15%.
-          </p>
-          <p className="muted">Each spell has its own short cooldown. A messy stroke shows “Sigil unclear” and costs nothing.</p>
           <p className="mouse-only">
-            Each wizard also has an <b>ultimate</b> on a long cooldown: press <KeyHint action="ultimate" /> or click its card at the
-            bottom of the screen once it's charged.
+            Your wizard's <b>ultimate</b> charges slowly: press <KeyHint action="ultimate" /> or click its card when it's ready.
           </p>
           <p className="touch-only">
-            Each wizard also has an <b>ultimate</b> on a long cooldown: tap its card at the bottom of the screen once it's charged.
+            Your wizard's <b>ultimate</b> charges slowly: tap its card when it's ready.
           </p>
         </section>
       </div>
-      <section className={`howto-card howto-maps ${paneClass('maps', page)}`}>
-        <h3 className="pane-head">4 · Maps</h3>
-        <p>
-          <b>Stone hurts, containers don't.</b> Run into small containers to smash them; break the big ones with spells. They
-          drop crystals, health and buffs: Quickening, Empower, Swiftscale, Stoneskin, Lodestone and Shard Caches.
-        </p>
-        <p>Each Archmage you defeat opens a way down to the next map. After the last, the run starts over, deeper and harder.</p>
-        <ol className="map-list">
-          {MAP_ORDER.map((id) => (
-            <li key={id}>
-              <b>{MAPS[id].name}</b> {MAPS[id].tip}
-            </li>
-          ))}
-        </ol>
-      </section>
       <ul className={`tips ${paneClass('tips', page)}`}>
         <li>
           {safeWarnings ? (
@@ -539,11 +520,10 @@ export function HowToPlay({
           )}
         </li>
         <li>
-          <span className="dot violet" /> Defeated foes drop crystals. Survive and level up to grow longer and stronger.
+          <span className="dot violet" /> Foes drop crystals. Level up to grow longer and stronger.
         </li>
         <li>
-          <span className="dot gold" /> Around 5:00 on each map a rival Archmage serpent arrives. Defeat it, then steer into the
-          way down to the next map, where elites roam.
+          <span className="dot gold" /> Around 5:00 a rival Archmage arrives. Defeat it to go deeper.
         </li>
         {install && (
           <li>

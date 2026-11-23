@@ -1,8 +1,8 @@
 import type { BuffId } from './world';
 
 /**
- * Pickup and buff icons as SVG path data in a 24×24 box. The same shapes are drawn on the
- * canvas (as Path2D), rasterized into pixel sprites, and used in the HUD's buff chips.
+ * Buff icons as SVG path data in a 24×24 box, for the HUD's buff chips. On the floor, each pickup is
+ * drawn by hand in pixels instead (pixel/draw.ts).
  */
 export const ICON_PATHS: Record<BuffId | 'heal', string> = {
   // An hourglass: cooldowns run faster.
@@ -21,18 +21,3 @@ export const ICON_PATHS: Record<BuffId | 'heal', string> = {
   heal: 'M12 22C5 16 1 12.5 1 8a5.5 5.5 0 0111-1.5A5.5 5.5 0 0123 8c0 4.5-4 8-11 14z',
 };
 
-const paths = new Map<string, Path2D>();
-
-/** Fills an icon centred on (x, y), `size` across, in the current fill style. */
-export function fillIcon(ctx: CanvasRenderingContext2D, id: BuffId | 'heal', x: number, y: number, size: number): void {
-  let p = paths.get(id);
-  if (!p) {
-    p = new Path2D(ICON_PATHS[id]);
-    paths.set(id, p);
-  }
-  ctx.save();
-  ctx.translate(x - size / 2, y - size / 2);
-  ctx.scale(size / 24, size / 24);
-  ctx.fill(p);
-  ctx.restore();
-}

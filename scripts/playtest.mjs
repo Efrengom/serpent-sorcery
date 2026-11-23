@@ -2337,6 +2337,8 @@ try {
     // On a phone, Options shows one tab at a time; auto-aim is under Controls.
     await page.evaluate(() => document.querySelector('[data-pane-tab="controls"]')?.click());
     await sleep(100);
+    const thumbOnPhone = await page.evaluate(() => [...document.querySelectorAll('[role=switch]')].some((b) => b.textContent.includes('right thumb') && b.offsetParent));
+    check('a touch screen’s Options offer steering with the right thumb', thumbOnPhone);
     const toggled = await clickButton('Auto-aim');
     await sleep(100);
     await clickButton('Back to pause');
@@ -2864,6 +2866,64 @@ try {
     check('a larger screen shows each menu whole, with no tabs', whole.tabs === 0 && whole.parts === 3, whole);
     await page.keyboard.press('Escape');
     await sleep(300);
+    // How to Play fits a 1280×720 screen whole, its buttons included, and leaves the maps to be
+    // found; with no touch screen, Options doesn't offer which thumb steers.
+    await clickButton('How to Play');
+    await sleep(400);
+    const howto = await page.evaluate(() => {
+      const root = document.querySelector('.howto');
+      const play = [...root.querySelectorAll('.menu-buttons button')].find((b) => b.textContent.includes('Play'));
+      return {
+        over: root.scrollHeight - root.clientHeight,
+        playBottom: play ? Math.round(play.getBoundingClientRect().bottom) : null,
+        maps: !!root.querySelector('.howto-maps, .map-list, [data-pane-tab=maps]'),
+      };
+    });
+    await page.keyboard.press('Escape');
+    await sleep(300);
+    await clickButton('Options');
+    await sleep(300);
+    const thumbOnPC = await page.evaluate(() => [...document.querySelectorAll('[role=switch]')].some((b) => b.textContent.includes('right thumb')));
+    await page.keyboard.press('Escape');
+    await sleep(300);
+    check(
+      'on a 1280×720 screen How to Play fits whole, with no maps, and Options has no touch steering without a touch screen',
+      howto.over <= 1 && howto.playBottom !== null && howto.playBottom <= 720 && !howto.maps && !thumbOnPC,
+      { ...howto, thumbOnPC },
+    );
+    // The Hall of Records grows with the screen: at 2560×1440 its cards and words are twice their
+    // 1280×720 size and both tabs still fit; at 1280×720 the achievements fit.
+    const hall = {};
+    for (const [w, h] of [
+      [1280, 720],
+      [2560, 1440],
+    ]) {
+      await page.setViewport({ width: w, height: h, hasTouch: false, isMobile: false });
+      await sleep(200);
+      await clickButton('Hall of Records');
+      await sleep(400);
+      for (const tab of ['achievements', 'bestiary']) {
+        await page.evaluate((t) => document.querySelector(`[data-tab=${t}]`)?.click(), tab);
+        await sleep(200);
+        hall[`${w} ${tab}`] = await page.evaluate(() => {
+          const root = document.querySelector('.records-screen');
+          return {
+            over: root.scrollHeight - root.clientHeight,
+            card: Math.round(document.querySelector('.achievement, .beast').getBoundingClientRect().width),
+            text: parseFloat(getComputedStyle(document.querySelector('.achievement-desc, .beast-lore')).fontSize),
+          };
+        });
+      }
+      await page.keyboard.press('Escape');
+      await sleep(300);
+    }
+    await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });
+    const [small, big] = [hall['1280 achievements'], hall['2560 achievements']];
+    check(
+      'the Hall of Records fills a 2560×1440 screen with cards and words twice their 1280×720 size, both tabs fitting',
+      small.over <= 1 && big.over <= 1 && hall['2560 bestiary'].over <= 1 && big.text === 2 * small.text && big.card >= 1.9 * small.card,
+      hall,
+    );
   }
 
   // ============================================================== Part V: the Archmage Ascendant and a won run

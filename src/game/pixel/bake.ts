@@ -31,16 +31,73 @@ export function hexRgb(hex: string): [number, number, number] {
   return v;
 }
 
+/**
+ * The light on a dome (an ellipse rx × ry round (cx, cy) that bulges toward the eye) at (x, y),
+ * from the top left and a little in front, as everything is lit: 0 dark to 1 bright.
+ */
+export function domeLight(x: number, y: number, cx: number, cy: number, rx: number, ry = rx): number {
+  let nx = (x - cx) / rx;
+  let ny = (y - cy) / ry;
+  const d = nx * nx + ny * ny;
+  if (d > 1) {
+    nx /= Math.sqrt(d);
+    ny /= Math.sqrt(d);
+  }
+  const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+  // Lambert's law with a little light all round, so the far side is dim but not black.
+  return Math.min(1, 0.12 + 0.88 * Math.max(0, nx * -0.62 + ny * -0.62 + nz * 0.48));
+}
+
+/**
+ * Picks a step of an n-colour ramp for light k (0 to 1) at sprite pixel (i, j), with a narrow band
+ * of ordered dither where one step gives way to the next.
+ */
+export function rampStep(k: number, n: number, i: number, j: number): number {
+  const v = Math.max(0, Math.min(n - 1, k * (n - 1)));
+  const f = v - Math.floor(v);
+  const edge = Math.max(0, Math.min(1, (f - 0.5) * 5 + 0.5));
+  return Math.min(n - 1, Math.floor(v) + (edge > bayer(i, j) ? 1 : 0));
+}
+
+/**
+ * `colorOf` gets the pixel's region and edge, and where it is (from the centre, as `regionAt` had
+ * it, and as a whole pixel of the sprite), so a region can be shaded across its surface.
+ *
+ * With `samples` above 1, each pixel is tried at samples × samples points across it and takes the
+ * region that covers most of it, if anything covers at least half: thin parts then come out an
+ * even width at any angle, where one try at the centre leaves them ragged on a diagonal.
+ */
 export function bakeShape(
   size: number,
   regionAt: (x: number, y: number) => string | null,
-  colorOf: (region: string, edge: Edge) => string,
+  colorOf: (region: string, edge: Edge, x: number, y: number, i: number, j: number) => string,
   outline: string | null,
+  samples = 1,
 ): Sprite {
   const c = size / 2;
   const grid: (string | null)[] = new Array(size * size);
+  const counts = new Map<string, number>();
   for (let j = 0; j < size; j++) {
-    for (let i = 0; i < size; i++) grid[j * size + i] = regionAt(i + 0.5 - c, j + 0.5 - c);
+    for (let i = 0; i < size; i++) {
+      if (samples <= 1) {
+        grid[j * size + i] = regionAt(i + 0.5 - c, j + 0.5 - c);
+        continue;
+      }
+      counts.clear();
+      let covered = 0;
+      for (let sy = 0; sy < samples; sy++) {
+        for (let sx = 0; sx < samples; sx++) {
+          const r = regionAt(i + (sx + 0.5) / samples - c, j + (sy + 0.5) / samples - c);
+          if (!r) continue;
+          covered++;
+          counts.set(r, (counts.get(r) ?? 0) + 1);
+        }
+      }
+      let best: string | null = null;
+      let most = 0;
+      for (const [r, n] of counts) if (n > most) [best, most] = [r, n];
+      grid[j * size + i] = covered * 2 >= samples * samples ? best : null;
+    }
   }
   const at = (i: number, j: number) => (i < 0 || j < 0 || i >= size || j >= size ? null : grid[j * size + i]);
   const canvas = createCanvas(size, size);
@@ -52,7 +109,7 @@ export function bakeShape(
       let color: string | null = null;
       if (r) {
         const edge: Edge = at(i - 1, j - 1) !== r ? 'lit' : at(i + 1, j + 1) !== r ? 'shade' : null;
-        color = colorOf(r, edge);
+        color = colorOf(r, edge, i + 0.5 - c, j + 0.5 - c, i, j);
       } else if (outline && (at(i - 1, j) || at(i + 1, j) || at(i, j - 1) || at(i, j + 1))) {
         color = outline;
       }
@@ -85,6 +142,26 @@ export function gridSprite(rows: string[], colors: Record<string, string>, ox?: 
     }
   }
   return { canvas, ox: ox ?? Math.floor(w / 2), oy: oy ?? Math.floor(h / 2) };
+}
+
+/**
+ * Text rows with a one-pixel `ink` outline round everything drawn, side by side (not across
+ * corners), one pixel bigger on every side. Rows can then be drawn as colour only, with ink inside
+ * just where parts meet.
+ */
+export function inked(rows: string[], ink = 'k'): string[] {
+  const w = Math.max(...rows.map((r) => r.length));
+  const on = (x: number, y: number) => y >= 0 && y < rows.length && x >= 0 && x < w && (rows[y][x] ?? '.') !== '.';
+  const out: string[] = [];
+  for (let y = -1; y <= rows.length; y++) {
+    let row = '';
+    for (let x = -1; x <= w; x++) {
+      if (on(x, y)) row += rows[y][x];
+      else row += on(x - 1, y) || on(x + 1, y) || on(x, y - 1) || on(x, y + 1) ? ink : '.';
+    }
+    out.push(row);
+  }
+  return out;
 }
 
 /** Draws a sprite with its anchor snapped to the low-res pixel grid. */

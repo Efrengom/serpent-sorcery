@@ -42,6 +42,11 @@ export function touchFirst(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 }
 
+/** Any touch screen at all, a laptop's or a Steam Deck's included, so touch steering can be used. */
+export function hasTouchScreen(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(any-pointer: coarse)').matches;
+}
+
 export function defaultOptions(): GameOptions {
   return { ...DEFAULT_VIEW, gameSpeed: 1, bindings: copyBindings(DEFAULT_BINDINGS), steerRight: false, autoAim: touchFirst(), vibration: touchFirst() };
 }
