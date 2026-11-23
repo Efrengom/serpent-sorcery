@@ -276,29 +276,73 @@ export function drawEdgeArrow(ctx: CanvasRenderingContext2D, x: number, y: numbe
   pixels(ctx, fill, color);
 }
 
+/**
+ * Where foes come through: a vortex, its rim bright on the side toward the light and glowing
+ * softly round, spiral arms turning and winding into a near-black heart, sparks drawn in along
+ * them. An Archmage's is bigger, with three arms and a ring of gold runes turning round its rim.
+ */
 export function drawPortals(ctx: CanvasRenderingContext2D, world: World, t: number): void {
   for (const p of world.portals) {
     const k = clamp(p.t / p.duration, 0, 1);
-    const big = p.kind === 'boss' ? 2.6 : ARCHETYPE[p.kind] === 'brute' ? 1.4 : 1;
+    const boss = p.kind === 'boss';
+    const big = boss ? 2.6 : ARCHETYPE[p.kind] === 'brute' ? 1.4 : 1;
     const r = Math.max(2, Math.round(((10 + 18 * k) * big) / P));
-    const x = p.x / P;
-    const y = p.y / P;
-    disc(ctx, x, y, r, PX.portal0);
-    pixels(ctx, circlePixels(x, y, r), PX.portal1);
-    const spin = t * 5;
-    pixels(
-      ctx,
-      circlePixels(x, y, Math.max(1, r - 1), (X, Y) => {
-        const a = Math.atan2(Y - y, X - x) + spin;
-        return Math.floor(((a % TAU) + TAU) / (TAU / 6)) % 2 === 0;
-      }),
-      PX.portal2,
-    );
-    const tick = Math.floor(t * 10);
+    const x = Math.round(p.x / P);
+    const y = Math.round(p.y / P);
+    if (!visible(x, y, r + 6)) continue;
+    const spin = t * (boss ? 2.2 : 3.5);
+    const arms = boss ? 3 : 2;
+    const glow: number[] = [];
+    const rim: number[] = [];
+    const rimLit: number[] = [];
+    const arm: number[] = [];
+    const armDeep: number[] = [];
+    const deep: number[] = [];
+    const heart: number[] = [];
+    for (let Y = y - r - 2; Y <= y + r + 2; Y++) {
+      for (let X = x - r - 2; X <= x + r + 2; X++) {
+        const dx = X - x;
+        const dy = Y - y;
+        const d = Math.hypot(dx, dy) / r;
+        if (d > 1 + 2 / r) continue;
+        if (d > 1) {
+          if (bayer(X, Y) < 0.3) glow.push(X, Y);
+          continue;
+        }
+        if (d > 1 - 1.2 / r) {
+          (dx + dy < 0 ? rimLit : rim).push(X, Y);
+          continue;
+        }
+        // Arms winding in as they turn.
+        if (Math.sin(arms * Math.atan2(dy, dx) - d * 7 + spin) > 0.5 - d * 0.3) {
+          (d > 0.45 ? arm : armDeep).push(X, Y);
+          continue;
+        }
+        (d < 0.35 || bayer(X, Y) > (d - 0.35) * 1.6 ? heart : deep).push(X, Y);
+      }
+    }
+    pixels(ctx, glow, PX.portal1);
+    pixels(ctx, heart, '#12020c');
+    pixels(ctx, deep, PX.portal0);
+    pixels(ctx, armDeep, PX.portal1);
+    pixels(ctx, arm, PX.portal2);
+    pixels(ctx, rim, PX.portal1);
+    pixels(ctx, rimLit, PX.portal2);
+    // Sparks drawn in, round and down.
     for (let i = 0; i < 3; i++) {
-      const a = hash(i, tick) * TAU;
-      const d = hash(i + 5, tick) * (r - 1);
-      px(ctx, x + Math.cos(a) * d, y + Math.sin(a) * d, PX.portal2);
+      const ph = (t * 0.9 + i / 3) % 1;
+      const a = i * 2.1 + ph * 4 + spin * 0.3;
+      const dd = (1 - ph) * (r - 1);
+      px(ctx, x + Math.cos(a) * dd, y + Math.sin(a) * dd, ph < 0.5 ? PX.white : PX.portal2);
+    }
+    if (boss) {
+      for (let n = 0; n < 8; n++) {
+        const a = (n / 8) * TAU + t * 0.6;
+        const rx = Math.round(x + Math.cos(a) * (r + 3));
+        const ry = Math.round(y + Math.sin(a) * (r + 3));
+        px(ctx, rx - 1, ry - 1, PX.ink, 3, 3);
+        px(ctx, rx, ry, n % 2 === 0 ? PX.gold1 : PX.gold2);
+      }
     }
   }
 }
@@ -1360,7 +1404,13 @@ export function drawShots(ctx: CanvasRenderingContext2D, world: World): void {
       pixels(ctx, linePixels(x - ux * (tail + 9), y - uy * (tail + 9), x - ux * tail, y - uy * tail, (i, X, Y) => bayer(X, Y) < 0.2 + i * 0.08), PX.ice1);
       blit(ctx, icicleShot(r, directionIndex(Math.atan2(p.vy, p.vx))), x, y);
     } else {
-      blit(ctx, shot(Math.max(2, Math.round(p.r / P)), Math.floor(p.spin) % SHOT_FRAMES), x, y);
+      // A short trail of embers behind the orb, thickening toward it.
+      const r = Math.max(2, Math.round(p.r / P));
+      const sp = Math.hypot(p.vx, p.vy) || 1;
+      const ux = p.vx / sp;
+      const uy = p.vy / sp;
+      pixels(ctx, linePixels(x - ux * (r + 6), y - uy * (r + 6), x - ux * (r + 1), y - uy * (r + 1), (i, X, Y) => bayer(X, Y) < 0.2 + i * 0.12), PX.hostile1);
+      blit(ctx, shot(r, Math.floor(p.spin) % SHOT_FRAMES), x, y);
     }
   }
 }
@@ -2601,27 +2651,66 @@ export function drawFinale(ctx: CanvasRenderingContext2D, world: World, t: numbe
   disc(ctx, x, y, Math.round((14 + 26 * k) / P), '#05010a');
 }
 
-/** The way down: a dark vortex with turning rings; a ring round it counts down to its pull. */
+/**
+ * The way down: a pit ringed with shaped stones, lit like everything else, a gold rune glowing in
+ * every other one; inside, it falls away from violet at the rim to black, spiral arms turning
+ * down into it and sparks drawn in. A ring round it counts down to its pull.
+ */
 export function drawDescent(ctx: CanvasRenderingContext2D, world: World, t: number, quiet: boolean): void {
   const d = world.descent;
   if (!d) return;
-  const x = d.x / P;
-  const y = d.y / P;
+  const x = Math.round(d.x / P);
+  const y = Math.round(d.y / P);
   const R = (DESCENT.radius * (0.4 + 0.8 * clamp(d.t / 0.6, 0, 1))) / P;
-  if (!visible(x, y, R + 6)) return;
-  pixels(ctx, circlePixels(x, y, R + 4, (X, Y) => bayer(X, Y) < 0.5), PX.purple2);
-  disc(ctx, x, y, Math.round(R), '#05010a');
-  pixels(ctx, circlePixels(x, y, R), PX.purple3);
+  if (!visible(x, y, R + 10)) return;
   const spin = quiet ? t * 0.8 : t * 2.4;
-  for (const [rr, color] of [
-    [R * 0.7, PX.gold1],
-    [R * 0.45, PX.cyan2],
-  ] as const) {
-    pixels(
-      ctx,
-      circlePixels(x, y, rr, (X, Y) => Math.floor((((Math.atan2(Y - y, X - x) + spin) % TAU) + TAU) / (TAU / 6)) % 2 === 0),
-      color,
-    );
+  const stones = Math.max(8, Math.round(R * 0.45));
+  const lists: Record<string, number[]> = {};
+  const put = (color: string, X: number, Y: number) => (lists[color] ??= []).push(X, Y);
+  const outer = R + 3;
+  for (let Y = Math.floor(y - outer - 1); Y <= y + outer + 1; Y++) {
+    for (let X = Math.floor(x - outer - 1); X <= x + outer + 1; X++) {
+      const dx = X - x;
+      const dy = Y - y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > outer) continue;
+      const a = Math.atan2(dy, dx);
+      if (dist > R) {
+        // The rim: stones with dark joints between them, the outer faces toward the light lit.
+        const f = (((a + TAU) % TAU) / TAU) * stones;
+        const joint = f - Math.floor(f) < 0.12;
+        if (joint || dist > outer - 0.6) {
+          put(PX.ink, X, Y);
+          continue;
+        }
+        const lit = (dx * -0.62 + dy * -0.62) / dist;
+        put(lit > 0.35 ? PX.golem3 : lit > -0.35 ? PX.golem2 : PX.golem1, X, Y);
+        continue;
+      }
+      const k = dist / R;
+      // Arms turning down into the dark.
+      if (k > 0.12 && Math.sin(4 * a - k * 9 + spin) > 0.62 - k * 0.25) {
+        put(k > 0.65 ? PX.purple3 : k > 0.35 ? PX.purple2 : PX.cyan2, X, Y);
+        continue;
+      }
+      if (k > 0.82) put(bayer(X, Y) < (k - 0.82) * 4 ? PX.purple2 : PX.purple1, X, Y);
+      else if (k > 0.5) put(bayer(X, Y) < (k - 0.5) * 3 ? PX.purple1 : PX.purple0, X, Y);
+      else put(bayer(X, Y) < k * 1.6 ? PX.purple0 : '#05010a', X, Y);
+    }
+  }
+  for (const [color, list] of Object.entries(lists)) pixels(ctx, list, color);
+  // A rune in every other stone, glowing and dimming.
+  const glow = quiet ? 1 : 0.5 + 0.5 * Math.sin(t * 3);
+  for (let n = 0; n < stones; n += 2) {
+    const a = ((n + 0.56) / stones) * TAU;
+    px(ctx, x + Math.cos(a) * (R + 1.5), y + Math.sin(a) * (R + 1.5), glow > 0.5 ? PX.gold1 : PX.gold0);
+  }
+  // Sparks drawn in.
+  for (let i = 0; i < 5; i++) {
+    const ph = (t * 0.6 + i / 5) % 1;
+    const a = i * 1.7 + ph * 3 + spin * 0.2;
+    const dd = (1 - ph) * (R - 1);
+    px(ctx, x + Math.cos(a) * dd, y + Math.sin(a) * dd, ph < 0.6 ? PX.white : PX.cyan2);
   }
   const k = clamp(d.t / DESCENT.pullAfter, 0, 1);
   pixels(

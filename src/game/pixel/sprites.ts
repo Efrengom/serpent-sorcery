@@ -1186,19 +1186,34 @@ export function boltHead(r: number): Sprite {
   );
 }
 
-export const SHOT_FRAMES = 2;
-/** Hostile orb: dark rim so it reads against every friendly effect, hot core, gentle pulse. */
+export const SHOT_FRAMES = 4;
+/**
+ * Hostile orb: a fireball rounded from a pale top-left to a deep bottom-right round a white-hot
+ * core, a twinkle turning on it, and a dark rim so it reads against every friendly effect; it
+ * swells and settles as it flies.
+ */
 export function shot(r: number, frame: number): Sprite {
   return cached(`shot:${r}:${frame}`, () => {
-    const rr = r + frame * 0.6;
+    const rr = r + (frame % 2) * 0.6;
+    const cross = frame >= 2;
     return bakeShape(
       2 * r + 6,
       (x, y) => {
         const d2 = x * x + y * y;
-        if (d2 <= (rr * 0.45) ** 2) return 'core';
+        if (d2 <= (rr * 0.42) ** 2) return 'core';
+        if (r >= 3 && d2 <= (rr + 0.25) ** 2) {
+          // A twinkle: a short cross, upright or turned, through the core.
+          const ax = cross ? Math.abs(x + y) / Math.SQRT2 : Math.abs(x);
+          const ay = cross ? Math.abs(x - y) / Math.SQRT2 : Math.abs(y);
+          if (Math.min(ax, ay) < 0.5 && Math.max(ax, ay) < rr * 0.85) return 'twinkle';
+        }
         return d2 <= (rr + 0.25) ** 2 ? 'b' : null;
       },
-      (region, e) => (region === 'core' ? PX.hostile4 : shade(e, [PX.hostile2, PX.hostile3, PX.hostile1])),
+      (region, _e, x, y, i, j) => {
+        if (region === 'core') return PX.hostile4;
+        if (region === 'twinkle') return PX.hostile3;
+        return [PX.hostile1, PX.hostile2, PX.hostile3][rampStep(domeLight(x, y, 0, 0, rr + 0.5), 3, i, j)];
+      },
       PX.hostile0,
     );
   });
@@ -1231,12 +1246,17 @@ export function sporeShot(r: number, frame: number): Sprite {
   });
 }
 
-/** An icicle in flight along heading `dir`: a long thin shard, sharp at the front, with a bright core and a dark rim. */
+/**
+ * An icicle in flight along heading `dir`: a long thin shard with a dark rim, its two faces down
+ * its length lit as faceted ice (the one turned to the light pale, the other a deeper blue) and its
+ * point white.
+ */
 export function icicleShot(r: number, dir: number): Sprite {
   return cached(`icicle:${r}:${dir}`, () => {
     const toLocal = local(dir);
     const front = 1.9 * r;
     const back = 2.6 * r;
+    const theta = (dir / DIRECTIONS) * TAU;
     return bakeShape(
       Math.ceil(2 * back) + 4,
       (x, y) => {
@@ -1244,9 +1264,17 @@ export function icicleShot(r: number, dir: number): Sprite {
         if (u > front || u < -back) return null;
         const w = u >= 0 ? 0.55 * r * (1 - u / front) : 0.55 * r * (1 + u / back);
         if (Math.abs(v) > w + 0.35) return null;
-        return Math.abs(v) < 0.5 && u > -back * 0.6 && u < front * 0.6 ? 'core' : 'shard';
+        if (u > front * 0.55) return 'tip';
+        return v < 0 ? 'left' : 'right';
       },
-      (region, e) => (region === 'core' ? PX.white : shade(e, RIME.ice)),
+      (region, e) => {
+        if (region === 'tip') return PX.white;
+        // A face's outward side, (0, s) in the shard's frame, turned to the screen and met with the light.
+        const s = region === 'left' ? -1 : 1;
+        const pale = -s * Math.sin(theta) * -0.62 + s * Math.cos(theta) * -0.62 > 0;
+        if (e === 'shade') return PX.ice1;
+        return pale ? (e === 'lit' ? PX.white : PX.ice3) : PX.ice2;
+      },
       PX.hood0,
     );
   });
