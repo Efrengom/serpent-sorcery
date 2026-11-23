@@ -2558,7 +2558,12 @@ function drawRift(ctx: CanvasRenderingContext2D, x: number, y: number, t: number
   }
   const color = SITE_INFO.rift.color;
   const mid = y + RIFT_TOP + RIFT_HALF.length / 2;
-  pixels(ctx, circlePixels(x, mid, 15, (X, Y) => ((X - x) / 9) ** 2 + ((Y - mid) / 15) ** 2 <= 1 && bayer(X, Y) < 0.35), PX.purple1);
+  // A soft violet glow round the tear.
+  const glow: number[] = [];
+  for (let Y = Math.floor(mid - 15); Y <= mid + 15; Y++) {
+    for (let X = x - 9; X <= x + 9; X++) if (((X - x) / 9) ** 2 + ((Y - mid) / 15) ** 2 <= 1 && bayer(X, Y) < 0.35) glow.push(X, Y);
+  }
+  pixels(ctx, glow, PX.purple1);
   // The floor cracked where it opened.
   const base = y + RIFT_TOP + RIFT_HALF.length - 1;
   for (const [dx, dy] of [
