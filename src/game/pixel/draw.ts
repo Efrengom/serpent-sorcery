@@ -808,6 +808,43 @@ const SNAKE_LOOK: Record<'rival' | 'salamander' | BossId, { plain: SegmentStyle;
   ascendant: { plain: 'boss', marked: 'bossSpot', head: 'boss', eye: PX.gold3, eyeHi: PX.white },
 };
 
+/**
+ * A Salamander's four legs, splayed from under its body (drawn before it, so the body covers their
+ * roots): a pair at its shoulders reaching forward and a pair at its hips reaching back, each foot
+ * stepping in turn with its opposite as it runs.
+ */
+function drawSalamanderLegs(ctx: CanvasRenderingContext2D, e: Enemy, radii: number[], time: number, flash: boolean): void {
+  const segs = e.segments;
+  for (const [pair, i] of [1, 4].entries()) {
+    if (i + 1 >= segs.length) continue;
+    let fx = segs[i - 1].x - segs[i + 1].x;
+    let fy = segs[i - 1].y - segs[i + 1].y;
+    const L = Math.hypot(fx, fy) || 1;
+    fx /= L;
+    fy /= L;
+    const cx = segs[i].x / P;
+    const cy = segs[i].y / P;
+    const r = radii[i];
+    const reach = pair === 0 ? 1.2 : -1.2;
+    for (const side of [-1, 1]) {
+      // Each foot steps with the one diagonally across from it, as a lizard runs.
+      const phase = (pair === 0) === side > 0 ? 0 : Math.PI;
+      const step = Math.sin(time * 9 + e.wobble * 5 + phase) * 1.6;
+      const sx = -fy * side;
+      const sy = fx * side;
+      // A stubby limb, rounded and outlined: a few discs from the root to the foot, a bright toe.
+      const joints = [0, 0.5, 1].map((t) => ({
+        x: cx + sx * (r - 1 + t * 2.8) + fx * (reach + step) * t,
+        y: cy + sy * (r - 1 + t * 2.8) + fy * (reach + step) * t,
+      }));
+      for (const p of joints) disc(ctx, p.x, p.y, 2, PX.ink);
+      for (const p of joints) disc(ctx, p.x, p.y, 1, flash ? PX.white : PX.hostile1);
+      const foot = joints[2];
+      px(ctx, foot.x + fx * 0.8, foot.y + fy * 0.8, flash ? PX.white : PX.hostile3);
+    }
+  }
+}
+
 /** The Ascendant's bands: Ouroboros, Sporemaw, Rimecoil and Pyrecoil, round and round. */
 const ASCENDANT_BANDS: SegmentStyle[] = ['bossSpot', 'sporeSpot', 'rimeSpot', 'pyreSpot'];
 
@@ -854,6 +891,7 @@ function drawEnemySnake(ctx: CanvasRenderingContext2D, e: Enemy, time: number, q
       pixels(ctx, circlePixels(x, y, R * 1.9 + ring * 2, (X, Y) => bayer(X, Y) < pulse - ring * 0.1), e.enraged ? PX.enrage : PX.gold1);
     }
   }
+  if (e.kind === 'salamander') drawSalamanderLegs(ctx, e, radii, time, flash);
   for (let i = n - 1; i >= 0; i--) blit(ctx, segmentOutline(radii[i]), segs[i].x / P, segs[i].y / P);
   for (let i = n - 1; i >= 0; i--) {
     const style: SegmentStyle = flash ? 'flash' : ascendant ? (i % 2 === 0 ? ASCENDANT_BANDS[(i / 2) % 4] : plain) : (boss ? i % 2 === 0 : i % 3 === 0) ? marked : plain;

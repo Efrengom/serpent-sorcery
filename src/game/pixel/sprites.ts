@@ -1,7 +1,7 @@
 import { ENEMIES, PIXEL_ART, SNAKE } from '../config';
 import { hash2 } from '../hash';
 import { TAU } from '../math';
-import { bakeShape, bayer, domeLight, gridSprite, rampStep, type Edge, type Sprite } from './bake';
+import { bakeShape, bayer, domeLight, gridSprite, hexRgb, rampStep, type Edge, type Sprite } from './bake';
 import { PX } from './palette';
 import { WIZARDS, type WizardId } from '../wizards';
 
@@ -132,7 +132,7 @@ const HEAD_STYLE: Record<
     band: [PX.gold1, PX.gold2, PX.gold0],
     star: [PX.gold1, PX.gold3, PX.gold1],
   },
-  /** A Salamander wears no hat: just a broad lizard head. */
+  /** A Salamander wears no hat: just a broad lizard head (see salamanderHead). */
   salamander: {
     radius: ENEMIES.salamander.radius,
     size: 40,
@@ -182,12 +182,17 @@ const HEAD_STYLE: Record<
 
 /** Spots on Sporemaw's cap: (u, v) from the cap's middle and radius, in head radii. */
 const CAP_SPOTS: [number, number, number][] = [
-  [-0.45, -0.42, 0.22],
-  [0.2, -0.6, 0.16],
-  [-0.62, 0.32, 0.18],
-  [0.12, 0.42, 0.24],
-  [0.55, 0.02, 0.13],
-  [-0.12, -0.04, 0.12],
+  [-0.42, -0.3, 0.21],
+  [0.16, -0.52, 0.15],
+  [-0.28, 0.44, 0.16],
+  [0.36, 0.22, 0.22],
+  [0.02, -0.06, 0.12],
+  [0.52, -0.2, 0.1],
+];
+/** Little toadstools sprouting from the sides of Sporemaw's head: (u, v) and radius, in head radii. */
+const SPROUTS: [number, number, number][] = [
+  [0.02, 0.88, 0.3],
+  [0.18, -0.86, 0.22],
 ];
 /** Rimecoil's icicles: angle off straight back, and length in head radii. */
 const CREST: [number, number][] = [
@@ -201,15 +206,29 @@ const CREST: [number, number][] = [
 /** Sporemaw's cap and Rimecoil's crest, in the head's frame (u forward), or null where neither lies. */
 function crownRegion(crown: 'cap' | 'crest', u: number, v: number, R: number, sway: number): string | null {
   if (crown === 'cap') {
-    // A broad toadstool cap over the back of the head, swaying a little: spots, a dark rim, glowing gills at the very edge.
+    // A broad toadstool cap over the back of the head, swaying a little: its rim scalloped, glowing
+    // gills striped round under it, and round white spots standing up from it, each shadowed on
+    // the side away from the light. Two little toadstools sprout from the sides of the head.
     const du = u + 0.8 * R;
     const dv = v - sway * 0.12 * R;
+    const a = Math.atan2(dv, du);
     const dc = Math.hypot(du, dv * 1.05);
-    const cr = 1.15 * R;
-    if (dc > cr) return null;
-    if (dc > cr - 1) return 'band';
-    for (const [su, sv, sr] of CAP_SPOTS) if (Math.hypot(du - su * R, dv - sv * R) <= sr * R) return 'star';
-    return dc > cr - 2.4 ? 'brim' : 'hat';
+    const cr = 1.15 * R * (1 + 0.03 * Math.sin(a * 7));
+    if (dc <= cr) {
+      if (dc > cr - 0.9) return 'brim';
+      if (dc > cr - 2.3) return Math.floor(((a + Math.PI) / TAU) * 36) % 3 === 0 ? 'brim' : 'band';
+      for (const [su, sv, sr] of CAP_SPOTS) {
+        const ds = Math.hypot(du - su * R, dv - sv * R);
+        if (ds <= sr * R) return 'star';
+        if (ds <= sr * R + 0.9 && du - su * R + (dv - sv * R) > 0) return 'spotShade';
+      }
+      return 'hat';
+    }
+    for (const [su, sv, sr] of SPROUTS) {
+      const ds = Math.hypot(u - su * R, v - sv * R);
+      if (ds <= sr * R) return ds <= sr * R * 0.35 ? 'sproutSpot' : 'sprout';
+    }
+    return null;
   }
   // Icicles fanning back from the crown of the head, bright at their tips, darker where they root.
   const u0 = -0.3 * R;
@@ -224,9 +243,68 @@ function crownRegion(crown: 'cap' | 'crest', u: number, v: number, R: number, sw
   return null;
 }
 
+/** A Salamander's colours, darkest to brightest: scorched to molten, a pale glint at the top. */
+const SALAMANDER5 = ['#6a1a0a', PX.hostile1, PX.hostile2, PX.hostile3, PX.flame2] as const;
+const SCORCHED5 = ['#2a0a04', '#4a1206', '#8a2a10', '#c8501c', '#ff8a4a'] as const;
+
+/**
+ * A Salamander's head from above, in its own frame (u forward): broad and flat, rounded behind and
+ * tapering to a blunt snout with two nostrils, a scorched ridge down the back of it, and two embers
+ * glowing behind the eyes (which are drawn on top).
+ */
+function salamanderHead(u: number, v: number, R: number): string | null {
+  const skull = ((u + 0.05 * R) / (0.9 * R)) ** 2 + (v / R) ** 2 <= 1;
+  const snout = ((u - 0.65 * R) / (0.85 * R)) ** 2 + (v / (0.62 * R)) ** 2 <= 1;
+  if (!skull && !snout) return null;
+  for (const s of [-1, 1]) {
+    if (Math.hypot(u - 1.22 * R, v - s * 0.26 * R) <= 0.55) return 'nostril';
+    if (Math.hypot(u + 0.45 * R, v - s * 0.5 * R) <= 0.24 * R) return 'ember';
+  }
+  if (Math.abs(v) <= 0.16 * R && u < -0.15 * R && u > -0.9 * R) return 'crest';
+  return 'head';
+}
+
+/** Foes' heads, shaded round, darkest to brightest. (The player's comes from its wizard's colours.) */
+const HEAD5: Partial<Record<HeadKind, readonly string[]>> = {
+  rival: ['#24060f', PX.rival0, PX.rival1, PX.rival2, PX.rival3],
+  boss: [PX.boss0, PX.boss1, PX.boss2, PX.boss3, PX.bossHi],
+  pyrecoil: ['#2a0a04', '#8a2a10', '#c8501c', '#ff7a3a', '#ffb070'],
+  sporemaw: ['#0a2a26', '#155246', '#1e6a5c', '#38a890', '#6ad0b8'],
+  rimecoil: [PX.hood1, PX.ice0, PX.ice1, PX.ice2, PX.ice3],
+};
+/** A rim-lit ramp ([base, lit, shade]) as three steps from dark to light. */
+const steps3 = (r: Ramp) => [r[2], r[0], r[1]] as const;
+
+/** A colour `t` of the way from `a` to `b`. */
+function mixHex(a: string, b: string, t: number): string {
+  const ca = hexRgb(a);
+  const cb = hexRgb(b);
+  return `#${ca.map((v, n) => Math.round(v + (cb[n] - v) * t).toString(16).padStart(2, '0')).join('')}`;
+}
+/** A rim-lit ramp spread to four steps from dark to light (a darker one added below), for shading round. */
+const steps4 = (r: Ramp) => [mixHex(r[2], PX.ink, 0.4), r[2], r[0], r[1]] as const;
+/** The same to five, a paler one added above, for a head. */
+const steps5 = (r: Ramp) => [mixHex(r[2], PX.ink, 0.45), r[2], r[0], r[1], mixHex(r[1], PX.white, 0.45)] as const;
+
+/**
+ * A snake's head from above, in its own frame (u forward): one smooth egg, broad behind and
+ * narrowing gently to a rounded snout, with nostrils near its tip on the big ones. Its eyes are
+ * drawn on top.
+ */
+function snakeHead(u: number, v: number, R: number, nostrils: boolean): string | null {
+  const along = (u - 0.1 * R) / (1.2 * R);
+  if (Math.abs(along) > 1) return null;
+  if (Math.abs(v) > R * (1 - 0.18 * along) * Math.sqrt(1 - along * along)) return null;
+  if (nostrils) for (const s of [-1, 1]) if (Math.hypot(u - 1.1 * R, v - s * 0.22 * R) <= 0.07 * R + 0.4) return 'nostril';
+  return 'head';
+}
+
 /**
  * A head wearing a floppy wizard hat, seen from above: the brim sits on the back of the head and
- * the cone trails behind, bending with `sway` (-1, 0, 1).
+ * the cone trails behind, bending with `sway` (-1, 0, 1). A foe's is shaded round: its head from a
+ * dark jaw to a bright crown, the cone across its curve (lit along one side whichever way it
+ * turns), the brim as a disc, and the band and the star at the tip catching the light; Sporemaw's
+ * toadstool cap is rounded too, its gills glowing at the rim, and Rimecoil's icicles bright-edged.
  */
 export function wizardHead(kind: HeadKind, dir: number, sway: number, variant: Variant = 'normal', wizard: WizardId = 'arcanist'): Sprite {
   return cached(`head:${kind}:${dir}:${sway}:${variant}:${kind === 'player' ? wizard : ''}`, () => {
@@ -243,36 +321,86 @@ export function wizardHead(kind: HeadKind, dir: number, sway: number, variant: V
     const starSize = big ? 2.6 : 1.6;
     // Thinner band on the big boss hat so it doesn't read as a mouth.
     const band = big ? [0.17, 0.23] : [0.14, 0.28];
+    // The player's head is shaded round in its wizard's colours (or red, hurt).
+    const H = kind === 'player' ? steps5(variant === 'hurt' ? st.hurt : st.head) : HEAD5[kind];
+    const theta = (dir / DIRECTIONS) * TAU;
+    // The light on the cone where it lies `s` (-1 to 1) across its width, turned to the screen.
+    const coneLight = (s: number) => {
+      const nx = -s * Math.sin(theta);
+      const ny = s * Math.cos(theta);
+      const nz = Math.sqrt(Math.max(0, 1 - s * s));
+      return Math.min(1, 0.12 + 0.88 * Math.max(0, nx * -0.62 + ny * -0.62 + nz * 0.48));
+    };
+    const headMid = toScreen(dir, 0.2 * R, 0);
+    const brimMid = toScreen(dir, u0, 0);
+    const capMid = toScreen(dir, -0.8 * R, sway * 0.12 * R);
     return bakeShape(
       st.size,
       (x, y) => {
         const { u, v } = toLocal(x, y);
+        if (kind === 'salamander') return salamanderHead(u, v, R);
         if (st.hatless) return ((u - 0.1 * R) / (1.35 * R)) ** 2 + (v / (1.05 * R)) ** 2 <= 1 ? 'head' : null;
-        if (st.crown) return crownRegion(st.crown, u, v, R, sway) ?? ((u / (1.2 * R)) ** 2 + (v / R) ** 2 <= 1 ? 'head' : null);
+        const head = () => (H ? snakeHead(u, v, R, big) : (u / (1.2 * R)) ** 2 + (v / R) ** 2 <= 1 ? 'head' : null);
+        if (st.crown) return crownRegion(st.crown, u, v, R, sway) ?? head();
         if (Math.abs(u - tipU) + Math.abs(v - bend) <= starSize) return 'star';
         if (u <= u0 + 0.5 && u >= tipU) {
           const t = (u0 - u) / (u0 - tipU);
           const half = 0.72 * R * Math.pow(1 - t, 0.85) + 0.35;
           if (Math.abs(v - bend * t * t) <= half) return t > band[0] && t < band[1] ? 'band' : 'hat';
         }
-        if (((u - u0) / (0.85 * R)) ** 2 + (v / (1.2 * R)) ** 2 <= 1) return 'brim';
-        if ((u / (1.2 * R)) ** 2 + (v / R) ** 2 <= 1) return 'head';
-        return null;
+        // A foe's brim is a little smaller, so more of its face shows in front of it.
+        const [brimU, brimA, brimB] = H ? [u0 - 0.1 * R, 0.72 * R, 1.1 * R] : [u0, 0.85 * R, 1.2 * R];
+        if (((u - brimU) / brimA) ** 2 + (v / brimB) ** 2 <= 1) return 'brim';
+        return head();
       },
-      (r, e) => {
-        if (variant === 'flash') return shade(e, FLASH);
-        switch (r) {
-          case 'head':
-            return shade(e, variant === 'hurt' ? st.hurt : st.head);
-          case 'hat':
-            return shade(e, st.hat);
-          case 'brim':
-            return shade(e, st.brim);
-          case 'band':
-            return shade(e, st.band);
-          default:
-            return shade(e, st.star);
+      (r, e, x, y, i, j) => {
+        if (variant === 'flash') return r === 'nostril' ? PX.flash : shade(e, FLASH);
+        if (kind === 'salamander') {
+          if (r === 'nostril') return PX.ink;
+          if (r === 'crest') return e === 'lit' ? SALAMANDER5[2] : SALAMANDER5[1];
+          if (r === 'ember') return e === 'shade' ? PX.flame0 : PX.flame1;
+          const c = toScreen(dir, 0.25 * R, 0);
+          return SALAMANDER5[rampStep(domeLight(x, y, c.x, c.y, 1.15 * R), 4, i, j)];
         }
+        if (!H) {
+          switch (r) {
+            case 'head':
+              return shade(e, variant === 'hurt' ? st.hurt : st.head);
+            case 'hat':
+              return shade(e, st.hat);
+            case 'brim':
+              return shade(e, st.brim);
+            case 'band':
+              return shade(e, st.band);
+            default:
+              return shade(e, st.star);
+          }
+        }
+        if (r === 'nostril') return PX.ink;
+        if (r === 'head') return H[1 + rampStep(domeLight(x, y, headMid.x, headMid.y, 1.25 * R), 4, i, j)];
+        if (st.crown === 'cap') {
+          if (r === 'star' || r === 'sproutSpot') return '#fff4fb';
+          if (r === 'spotShade') return PX.cap1;
+          if (r === 'band') return e === 'shade' ? PX.teal1 : PX.teal2;
+          if (r === 'brim') return PX.teal0;
+          if (r === 'sprout') return e === 'lit' ? PX.cap3 : e === 'shade' ? PX.cap1 : PX.cap2;
+          // The cap: deep magenta, rounded in smooth bands, one small highlight.
+          const light = domeLight(x, y, capMid.x, capMid.y, 1.25 * R);
+          if (light > 0.92) return '#ffc8ee';
+          return [PX.cap1, PX.cap2, PX.cap3][rampStep(light, 3, i, j)];
+        }
+        if (st.crown === 'crest') {
+          if (r === 'star') return e === 'shade' ? PX.ice3 : PX.white;
+          return r === 'brim' ? shade(e, [PX.ice1, PX.ice2, PX.ice0]) : shade(e, [PX.ice2, PX.ice3, PX.ice1]);
+        }
+        if (r === 'star') return e === 'shade' ? st.star[0] : st.star[1];
+        if (r === 'brim') return steps3(st.brim)[rampStep(domeLight(x, y, brimMid.x, brimMid.y, 1.3 * R), 3, i, j)];
+        // The cone (and the band round it), shaded across its curve.
+        const { u, v } = toLocal(x, y);
+        const t = Math.max(0, Math.min(1, (u0 - u) / (u0 - tipU)));
+        const half = 0.72 * R * Math.pow(1 - t, 0.85) + 0.35;
+        const k = rampStep(coneLight(Math.max(-1, Math.min(1, (v - bend * t * t) / half))), 3, i, j);
+        return steps3(r === 'band' ? st.band : st.hat)[k];
       },
       PX.ink,
     );
@@ -316,12 +444,28 @@ const SEGMENT: Record<SegmentStyle, Ramp> = {
   rimeSpot: [PX.ice0, PX.ice1, PX.hood1],
   flash: FLASH,
 };
-/** The spot in the middle of a boss's marked segments, and how big it is (share of the radius). */
-const SPOT: Partial<Record<SegmentStyle, [Ramp, number]>> = {
-  bossSpot: [[PX.gold0, PX.gold1, PX.gold0], 0.38],
-  pyreSpot: [EMBER.glow, 0.38],
-  sporeSpot: [FUNGUS.cap, 0.46],
-  rimeSpot: [[PX.ice3, PX.white, PX.ice2], 0.36],
+/** The jewel in the middle of a marked segment, dark to light, and how big it is (share of the radius). */
+const SPOT: Partial<Record<SegmentStyle, [readonly [string, string, string], number]>> = {
+  bossSpot: [[PX.gold0, PX.gold1, PX.gold2], 0.38],
+  pyreSpot: [[PX.hostile1, PX.flame0, PX.flame1], 0.38],
+  sporeSpot: [[PX.cap1, PX.cap2, PX.cap3], 0.46],
+  rimeSpot: [[PX.ice2, PX.ice3, PX.white], 0.36],
+  salamanderStripe: [[PX.hostile1, PX.flame0, PX.flame1], 0.34],
+};
+/** Foes' segments, shaded round like scales, darkest to brightest. (The player's come from its wizard's colours.) */
+const ROUNDED: Partial<Record<SegmentStyle, readonly [string, string, string, string]>> = {
+  salamander: [SALAMANDER5[0], SALAMANDER5[1], SALAMANDER5[2], SALAMANDER5[3]],
+  salamanderStripe: [SCORCHED5[0], SCORCHED5[1], SCORCHED5[2], SCORCHED5[3]],
+  rival: [PX.rival0, PX.rival1, PX.rival2, PX.rival3],
+  rivalStripe: ['#24060f', PX.rival0, PX.rival1, PX.rival2],
+  boss: [PX.boss1, PX.boss2, PX.boss3, PX.bossHi],
+  bossSpot: [PX.boss0, PX.boss1, PX.boss2, PX.boss3],
+  pyre: ['#1e0c08', '#3a1a14', '#5a2a1e', '#7a3a28'],
+  pyreSpot: ['#140806', '#1e0c08', '#3a1a14', '#5a2a1e'],
+  spore: ['#155246', '#1e6a5c', '#38a890', '#6ad0b8'],
+  sporeSpot: ['#0a2a26', '#155246', '#1e6a5c', '#38a890'],
+  rime: [PX.ice0, PX.ice1, PX.ice2, PX.ice3],
+  rimeSpot: [PX.hood1, PX.ice0, PX.ice1, PX.ice2],
 };
 
 /** Body segments are drawn in two passes (all outlines, then all fills) so the body reads as one tube. */
@@ -341,7 +485,12 @@ export function segmentFill(r: number, style: SegmentStyle, wizard: WizardId = '
         if (spot && d2 <= (r * spot[1]) ** 2) return 'spot';
         return d2 <= (r + 0.25) ** 2 ? 'b' : null;
       },
-      (region, e) => (region === 'spot' && spot ? shade(e, spot[0]) : shade(e, ramp)),
+      (region, e, x, y, i, j) => {
+        if (region === 'spot' && spot) return e === 'lit' ? spot[0][2] : spot[0][rampStep(domeLight(x, y, 0, 0, r * spot[1] + 0.5), 3, i, j)];
+        const round = own || style === 'hurt' ? steps4(ramp) : ROUNDED[style];
+        if (round) return round[rampStep(domeLight(x, y, 0, 0, r + 0.8), 4, i, j)];
+        return shade(e, ramp);
+      },
       null,
     ),
   );
