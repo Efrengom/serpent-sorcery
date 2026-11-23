@@ -1,7 +1,7 @@
 import { ENEMIES, PIXEL_ART, SNAKE } from '../config';
 import { hash2 } from '../hash';
 import { TAU } from '../math';
-import { bakeShape, bayer, gridSprite, type Edge, type Sprite } from './bake';
+import { bakeShape, bayer, domeLight, gridSprite, rampStep, type Edge, type Sprite } from './bake';
 import { PX } from './palette';
 import { WIZARDS, type WizardId } from '../wizards';
 
@@ -34,6 +34,16 @@ const local = (dir: number) => {
   const s = Math.sin(theta);
   return (x: number, y: number) => ({ u: x * c + y * s, v: -x * s + y * c });
 };
+
+/** Where a point in a foe's own frame (u forward, v to its right) lands on screen. */
+function toScreen(dir: number, u: number, v: number): { x: number; y: number } {
+  const theta = (dir / DIRECTIONS) * TAU;
+  return { x: u * Math.cos(theta) - v * Math.sin(theta), y: u * Math.sin(theta) + v * Math.cos(theta) };
+}
+
+/** Five steps from darkest to brightest, for shading a surface across with domeLight. */
+type Ramp5 = readonly [string, string, string, string, string];
+const CAP5 = [PX.cap0, PX.cap1, PX.cap2, PX.cap3, '#ffc4ec'] as const;
 
 // ---------------------------------------------------------------- wizard-hatted heads
 
@@ -339,8 +349,10 @@ export function segmentFill(r: number, style: SegmentStyle, wizard: WizardId = '
 
 // ---------------------------------------------------------------- burrowing (Burrow Viper, Sporemaw)
 
+const DIRT5: Ramp5 = [PX.dirt0, PX.dirt1, PX.dirt2, PX.dirt3, '#b8905c'];
+
 export const MOUND_FRAMES = 2;
-/** Heaped earth over something tunnelling just below: a lumpy dome with clods, rim-lit like everything else. */
+/** Heaped earth over something tunnelling just below: a lumpy dome with clods, lit like everything else. */
 export function mound(r: number, frame: number): Sprite {
   return cached(`mound:${r}:${frame}`, () =>
     bakeShape(
@@ -351,7 +363,10 @@ export function mound(r: number, frame: number): Sprite {
         if (d > r) return null;
         return d < r * 0.85 && hash2(Math.floor(x + 40), Math.floor(y + 40), 31 + frame) < 0.14 ? 'clod' : 'dirt';
       },
-      (region, e) => shade(e, region === 'clod' ? FUNGUS.clod : FUNGUS.dirt),
+      (region, _e, x, y, i, j) => {
+        const k = rampStep(domeLight(x, y, 0, 0, r + 0.5), 4, i, j);
+        return DIRT5[region === 'clod' ? Math.min(4, k + 1) : k];
+      },
       PX.dirt0,
     ),
   );
@@ -359,14 +374,20 @@ export function mound(r: number, frame: number): Sprite {
 
 // ---------------------------------------------------------------- the Hollows' foes
 
+const PUFF5: Ramp5 = [PX.puff0, PX.puff1, PX.puff2, PX.puff3, '#fff6fc'];
+const HIDE5: Ramp5 = ['#141a0c', '#232a18', '#3e4a2c', '#5e6e3e', '#80924e'];
+const BARK5: Ramp5 = [PX.bark0, PX.bark1, PX.bark2, PX.bark3, '#a8806a'];
+const SCALE5: Ramp5 = ['#2e2010', '#4e3820', '#7a5c34', '#a8844e', '#d4b072'];
+
 const SPORELING_SPOTS: [number, number][] = [
   [-0.35, -0.38],
   [0.42, -0.1],
   [-0.08, 0.45],
 ];
 /**
- * Sporeling: a tiny magenta toadstool seen from above. `squash` 1 is the landing (wide and flat),
- * -1 is mid-hop (a touch narrow), 0 standing.
+ * Sporeling: a tiny magenta toadstool seen from above, its cap rounded from a bright crown to a
+ * deep rim, pale spots on it. `squash` 1 is the landing (wide and flat), -1 is mid-hop (a touch
+ * narrow), 0 standing.
  */
 export function sporeling(squash: -1 | 0 | 1, flash: boolean): Sprite {
   return cached(`sporeling:${squash}:${flash}`, () => {
@@ -382,7 +403,11 @@ export function sporeling(squash: -1 | 0 | 1, flash: boolean): Sprite {
         for (const [px, py] of SPORELING_SPOTS) if ((ex - px) ** 2 + (ey - py) ** 2 <= 0.07) return 'spot';
         return 'cap';
       },
-      (r, e) => (flash ? shade(e, FLASH) : r === 'spot' ? PX.spot : shade(e, FUNGUS.cap)),
+      (r, e, x, y, i, j) => {
+        if (flash) return shade(e, FLASH);
+        if (r === 'spot') return PX.spot;
+        return CAP5[rampStep(domeLight(x, y, 0, 0, R * sx + 0.5, R * sy + 0.5), 4, i, j)];
+      },
       PX.ink,
     );
   });
@@ -398,22 +423,31 @@ const PUFF_WARTS: [number, number][] = [
   [-0.66, -0.18],
   [0.3, 0.05],
 ];
-/** Puffcap: a squat puffball with warts and a pore on top, swelling (0 to 3) as it gathers spores; the pore glows as it fills. */
+/**
+ * Puffcap: a squat puffball, rounded and soft, studded with warts that each catch the light, and a
+ * pore on top in a darker lip, swelling (0 to 3) as it gathers spores; the pore glows as it fills.
+ */
 export function puffcap(swell: number, flash: boolean): Sprite {
   return cached(`puffcap:${swell}:${flash}`, () => {
     const R = (ENEMIES.puffcap.radius / P) * (1 + swell * 0.1);
+    const pore = 1.2 + swell * 0.25;
     return bakeShape(
       22,
       (x, y) => {
         if (Math.hypot(x, y * 1.08) > R) return null;
-        if (Math.hypot(x + 0.4, y + 0.6) <= 1.2 + swell * 0.25) return 'pore';
+        const fromPore = Math.hypot(x + 0.4, y + 0.6);
+        if (fromPore <= pore) return 'pore';
+        if (fromPore <= pore + 0.8) return 'lip';
         for (const [wx, wy] of PUFF_WARTS) if (Math.hypot(x - wx * R, y - wy * R) <= 0.75) return 'wart';
         return 'body';
       },
-      (r, e) => {
+      (r, e, x, y, i, j) => {
         if (flash) return r === 'pore' ? PX.flash : shade(e, FLASH);
         if (r === 'pore') return swell >= 2 ? PX.spore2 : swell === 1 ? PX.spore1 : PX.puff0;
-        return shade(e, r === 'wart' ? FUNGUS.wart : FUNGUS.puff);
+        const k = rampStep(domeLight(x, y, 0, 0, R + 0.5), 5, i, j);
+        if (r === 'lip') return PUFF5[Math.max(0, k - 2)];
+        if (r === 'wart') return PUFF5[Math.max(0, k - 1)];
+        return PUFF5[Math.max(1, k)];
       },
       PX.ink,
     );
@@ -428,34 +462,49 @@ function segmentHit(px: number, py: number, ax: number, ay: number, bx: number, 
   return { d: Math.hypot(px - (ax + t * dx), py - (ay + t * dy)), t };
 }
 
-/** Thornback: a hulking mossy beast, a ridge of magenta thorns down its spine and more along its flanks; they flare while it charges. */
+/**
+ * Thornback: a hulking beast with clumps of moss over its back, a ridge of magenta thorns down its
+ * spine and more along its flanks, each dark at its root and bright at its tip (white-hot while it
+ * charges), and a broad head of bark in front.
+ */
 export function thornback(dir: number, hot: boolean, flash: boolean): Sprite {
   return cached(`thornback:${dir}:${hot}:${flash}`, () => {
     const R = ENEMIES.thornback.radius / P;
     const toLocal = local(dir);
     const flank: [number, number, number, number][] = [];
     for (const us of [0.3, -0.2, -0.7]) for (const s of [-1, 1]) flank.push([us * R, s * 0.72 * R, (us - 0.5) * R, s * 1.28 * R]);
+    const thornTones = hot ? [PX.thorn2, PX.thorn3, PX.white] : [PX.thorn1, PX.thorn2, PX.thorn3];
+    // The head's middle on screen, so it is lit as a rounded thing of its own.
+    const theta = (dir / DIRECTIONS) * TAU;
+    const headX = Math.cos(theta) * 0.95 * R;
+    const headY = Math.sin(theta) * 0.95 * R;
     return bakeShape(
       32,
       (x, y) => {
         const { u, v } = toLocal(x, y);
-        // The ridge: thorns down the spine, each pointing back.
+        // The ridge: thorns down the spine, each pointing back; `saw` runs from tip (0) to root (1).
         if (u > -1.2 * R && u < 0.45 * R) {
           const saw = ((((u + 1.2 * R) % 3.4) + 3.4) % 3.4) / 3.4;
-          if (Math.abs(v) <= 0.36 * R * saw) return 'thorn';
+          if (Math.abs(v) <= 0.36 * R * saw) return saw < 0.45 ? 'tip' : 'thorn';
         }
         for (const [ax, ay, bx, by] of flank) {
           const h = segmentHit(u, v, ax, ay, bx, by);
-          if (h.d <= 1.1 * (1 - h.t) + 0.3) return 'thorn';
+          if (h.d <= 1.1 * (1 - h.t) + 0.3) return h.t > 0.5 ? 'tip' : 'thorn';
         }
         if (((u - 0.95 * R) / (0.42 * R)) ** 2 + (v / (0.5 * R)) ** 2 <= 1) return 'head';
-        if ((u / (1.1 * R)) ** 2 + (v / (0.85 * R)) ** 2 <= 1) return 'body';
+        if ((u / (1.1 * R)) ** 2 + (v / (0.85 * R)) ** 2 <= 1) {
+          // Moss in clumps over the hide, fixed to the body so they turn with it.
+          return hash2(Math.floor(u / 2.2 + 20), Math.floor(v / 2.2 + 20), 77) < 0.3 ? 'moss' : 'hide';
+        }
         return null;
       },
-      (r, e) => {
+      (r, e, x, y, i, j) => {
         if (flash) return shade(e, FLASH);
-        if (r === 'thorn') return shade(e, hot ? [PX.thorn3, PX.white, PX.thorn2] : FUNGUS.thorn);
-        return shade(e, r === 'head' ? FUNGUS.bark : FUNGUS.hide);
+        if (r === 'tip') return thornTones[2];
+        if (r === 'thorn') return e === 'lit' ? thornTones[1] : thornTones[0];
+        if (r === 'head') return BARK5[1 + rampStep(domeLight(x, y, headX, headY, 0.6 * R), 4, i, j)];
+        const k = rampStep(domeLight(x, y, 0, 0, 1.2 * R), 4, i, j);
+        return HIDE5[r === 'moss' ? k + 1 : Math.max(1, k)];
       },
       PX.ink,
     );
@@ -463,33 +512,68 @@ export function thornback(dir: number, hot: boolean, flash: boolean): Sprite {
 }
 
 export const VIPER_FRAMES = 2;
-/** Burrow Viper: a sandy viper in an S-curve with dark diamonds down its back and a broad wedge of a head. */
+/**
+ * Burrow Viper: a sandy viper in an S-curve, rounded like a tube along its length, dark diamonds
+ * down its back, and a broad wedge of a head with a blunt snout.
+ */
 export function viper(dir: number, frame: number, flash: boolean): Sprite {
   return cached(`viper:${dir}:${frame}:${flash}`, () => {
     const R = ENEMIES.burrowViper.radius / P;
     const toLocal = local(dir);
+    const theta = (dir / DIRECTIONS) * TAU;
+    const c = Math.cos(theta);
+    const s = Math.sin(theta);
+    // The spine, from the neck back to the tip of the tail, in the viper's frame and on screen.
     const spine: [number, number][] = [];
     for (let i = 0; i <= 12; i++) {
-      const s = i / 12;
-      spine.push([0.55 * R - s * 2.1 * R, Math.sin(s * TAU * 0.85 + frame * Math.PI) * 0.45 * R * (0.35 + 0.65 * s)]);
+      const k = i / 12;
+      spine.push([0.45 * R - k * 2.0 * R, Math.sin(k * TAU * 0.85 + frame * Math.PI) * 0.45 * R * (0.35 + 0.65 * k)]);
     }
+    const onScreen = spine.map(([u, v]) => [u * c - v * s, u * s + v * c] as const);
+    const headWidth = (u: number) => {
+      if (u < 0.3 * R || u > 1.35 * R) return -1;
+      return u < 0.75 * R ? 0.22 * R + ((u - 0.3 * R) / (0.45 * R)) * 0.36 * R : 0.58 * R - ((u - 0.75 * R) / (0.6 * R)) * 0.33 * R;
+    };
     return bakeShape(
-      26,
+      28,
       (x, y) => {
         const { u, v } = toLocal(x, y);
-        if (((u - 0.8 * R) / (0.52 * R)) ** 2 + (v / (0.44 * R)) ** 2 <= 1) return 'head';
+        const hw = headWidth(u);
+        if (hw > 0 && Math.abs(v) <= hw) return 'head';
         for (let i = 1; i < spine.length; i++) {
           const [ax, ay] = spine[i - 1];
           const [bx, by] = spine[i];
           const h = segmentHit(u, v, ax, ay, bx, by);
-          const s = (i - 1 + h.t) / (spine.length - 1);
-          const w = 0.4 * R * (1 - 0.6 * s) + 0.35;
+          const k = (i - 1 + h.t) / (spine.length - 1);
+          const w = 0.34 * R * (1 - 0.65 * k) + 0.35;
           if (h.d > w) continue;
-          return h.d < w * 0.55 && ((s * 7) % 1) > 0.35 && ((s * 7) % 1) < 0.75 ? 'mark' : 'body';
+          const beat = (k * 7) % 1;
+          return h.d < w * 0.6 && beat > 0.3 && beat < 0.75 ? 'mark' : 'body';
         }
         return null;
       },
-      (r, e) => (flash ? shade(e, FLASH) : shade(e, r === 'mark' ? FUNGUS.clod : FUNGUS.scale)),
+      (r, e, x, y, i, j) => {
+        if (flash) return shade(e, FLASH);
+        if (r === 'head') return SCALE5[1 + rampStep(domeLight(x, y, c * 0.7 * R, s * 0.7 * R, 0.6 * R), 4, i, j)];
+        // Shade across the body as across a tube: light from where the pixel lies off the spine.
+        let best = Infinity;
+        let nx = 0;
+        let ny = 0;
+        let w = 1;
+        for (let n = 1; n < onScreen.length; n++) {
+          const [ax, ay] = onScreen[n - 1];
+          const [bx, by] = onScreen[n];
+          const h = segmentHit(x, y, ax, ay, bx, by);
+          if (h.d < best) {
+            best = h.d;
+            nx = ax + h.t * (bx - ax);
+            ny = ay + h.t * (by - ay);
+            w = 0.34 * R * (1 - 0.65 * ((n - 1 + h.t) / (onScreen.length - 1))) + 0.35;
+          }
+        }
+        const k = rampStep(domeLight(x, y, nx, ny, w + 0.6), 5, i, j);
+        return r === 'mark' ? SCALE5[1] : SCALE5[Math.max(2, k)];
+      },
       PX.ink,
     );
   });
@@ -497,34 +581,62 @@ export function viper(dir: number, frame: number, flash: boolean): Sprite {
 
 // ---------------------------------------------------------------- the Catacombs' foes
 
+const BONE4 = [PX.bone0, PX.bone1, PX.bone2, PX.bone3] as const;
+const HOOD4 = [PX.hood0, PX.hood1, PX.hood2, PX.hood3] as const;
+const ICE4 = [PX.ice1, PX.ice2, PX.ice3, PX.white] as const;
+const CRYPT5: Ramp5 = [PX.crypt0, PX.crypt1, PX.crypt2, PX.crypt3, '#a8b4cc'];
+const SPECTRE4 = [PX.spectre0, PX.spectre1, PX.spectre2, PX.spectre3] as const;
+
 export const RATTLER_FRAMES = 2;
-/** Bone Rattler: a skeleton from above (skull, spine, ribs, pelvis), arms reaching and legs swinging with each step. */
+/**
+ * Bone Rattler: a skeleton from above: a rounded skull, the brightest of it, with dark
+ * sockets (its eyes are drawn in them), a spine, two pairs of ribs straight across it with the floor
+ * showing between them, a pelvis,
+ * and arms reaching and legs swinging with each step, knobbed at the ends.
+ */
 export function rattler(dir: number, frame: number, flash: boolean): Sprite {
   return cached(`rattler:${dir}:${frame}:${flash}`, () => {
     const R = ENEMIES.rattler.radius / P;
     const toLocal = local(dir);
     const swing = frame === 0 ? 0.2 * R : -0.2 * R;
     const limbs: [number, number, number, number][] = [
-      [0.05 * R, -0.6 * R, 0.65 * R + swing, -0.88 * R],
-      [0.05 * R, 0.6 * R, 0.65 * R - swing, 0.88 * R],
-      [-1.0 * R, -0.3 * R, -1.6 * R - swing, -0.5 * R],
-      [-1.0 * R, 0.3 * R, -1.6 * R + swing, 0.5 * R],
+      [0.05 * R, -0.6 * R, 0.55 * R + swing, -1.05 * R],
+      [0.05 * R, 0.6 * R, 0.55 * R - swing, 1.05 * R],
+      [-1.55 * R, -0.3 * R, -2.1 * R - swing, -0.6 * R],
+      [-1.55 * R, 0.3 * R, -2.1 * R + swing, 0.6 * R],
     ];
+    const skull = toScreen(dir, 0.5 * R, 0);
+    const sockets = [-1, 1].map((s) => [0.55 * R * Math.cos(0.45), s * 0.55 * R * Math.sin(0.45)]);
     return bakeShape(
-      24,
+      28,
       (x, y) => {
         const { u, v } = toLocal(x, y);
-        if ((u - 0.5 * R) ** 2 + v * v <= (0.52 * R) ** 2) return 'skull';
-        if (Math.abs(v) <= 0.5 && u > -1.0 * R && u < 0.1 * R) return 'bone';
-        for (const [i, ub] of [-0.15, -0.4, -0.65].entries()) {
-          if (Math.abs(u - ub * R + 0.25 * Math.abs(v)) <= 0.5 && Math.abs(v) <= 0.62 * R * (1 - 0.15 * i)) return 'bone';
+        if ((u - 0.5 * R) ** 2 + v * v <= (0.62 * R) ** 2) {
+          for (const [su, sv] of sockets) if (Math.hypot(u - su, v - sv) <= 0.9) return 'socket';
+          return 'skull';
         }
-        if (((u + 1.0 * R) / (0.25 * R)) ** 2 + (v / (0.45 * R)) ** 2 <= 1) return 'bone';
-        for (const [ax, ay, bx, by] of limbs) if (segmentHit(u, v, ax, ay, bx, by).d <= 0.55) return 'bone';
+        // Bones a pixel and a half thick, with as much floor between them, so they stay whole and
+        // apart when turned to a diagonal.
+        if (Math.abs(v) <= 0.6 && u > -1.55 * R && u < 0.1 * R) return 'bone';
+        for (const [i, ub] of [-0.38, -0.98].entries()) {
+          if (Math.abs(u - ub * R) <= 0.75 && Math.abs(v) <= 0.68 * R * (1 - 0.15 * i)) return 'bone';
+        }
+        if (((u + 1.55 * R) / (0.24 * R)) ** 2 + (v / (0.45 * R)) ** 2 <= 1) return 'bone';
+        for (const [ax, ay, bx, by] of limbs) {
+          if (segmentHit(u, v, ax, ay, bx, by).d <= 0.7 || Math.hypot(u - bx, v - by) <= 1) return 'bone';
+        }
         return null;
       },
-      (_, e) => shade(e, flash ? FLASH : RIME.bone),
+      (r, e, x, y, i, j) => {
+        if (flash) return r === 'socket' ? PX.flash : shade(e, FLASH);
+        if (r === 'socket') return PX.ink;
+        // The skull, rounded by its own light, is the brightest of it whichever way it faces; the
+        // other bones keep one even tone, lit along one edge and shaded along the other.
+        if (r === 'skull') return BONE4[2 + rampStep(domeLight(x, y, skull.x, skull.y, 0.7 * R), 2, i, j)];
+        return shade(e, [PX.bone2, PX.bone3, PX.bone1]);
+      },
       PX.ink,
+      3,
     );
   });
 }
@@ -548,7 +660,7 @@ export function bonePile(flash: boolean): Sprite {
         }
         return null;
       },
-      (_, e) => shade(e, flash ? FLASH : RIME.bone),
+      (_, e, x, y, i, j) => (flash ? shade(e, FLASH) : BONE4[1 + rampStep(domeLight(x, y, 0, 0, 7), 3, i, j)]),
       PX.ink,
     );
   });
@@ -557,7 +669,7 @@ export function bonePile(flash: boolean): Sprite {
 /** A Bone Rattler's skull, looking up from its pile. */
 export function skull(flash: boolean): Sprite {
   return cached(`skull:${flash}`, () =>
-    gridSprite(['.kkkk.', 'kLWWWk', 'kbWWbk', 'kWWWDk', '.kWWk.', '..kk..'], {
+    gridSprite(['.kkkk.', 'kLWWWk', 'kbWWbk', 'kWWWDk', '.kWDk.', '..kk..'], {
       k: PX.ink,
       L: flash ? PX.white : PX.bone3,
       W: flash ? PX.white : PX.bone2,
@@ -568,45 +680,57 @@ export function skull(flash: boolean): Sprite {
 }
 
 /**
- * Frost Archer: a skeleton in a frost-blue hood, an ice bow held out in front. While it draws, the
+ * Frost Archer: a skeleton in a frost-blue hood seen from above, the hood's crown lighter over its
+ * shoulders and its cloak trailing behind, its pale skull of a face with dark sockets (its eyes are
+ * drawn in them), and an ice bow held out in front, bright along its top. While it draws, the
  * string comes back with an icicle nocked.
  */
 export function frostArcher(dir: number, drawn: boolean, flash: boolean): Sprite {
   return cached(`frostArcher:${dir}:${drawn}:${flash}`, () => {
     const R = ENEMIES.frostArcher.radius / P;
     const toLocal = local(dir);
-    const bowR = 1.25 * R;
-    const bowU = 0.05 * R;
-    const end = 1.0;
+    // The bow is held out in front, clear of the body: a shallow arc, its string straight between
+    // its tips until it is drawn back to the face.
+    const bowR = 1.9 * R;
+    const bowU = -0.35 * R;
+    const end = 0.55;
     const tipU = bowU + bowR * Math.cos(end);
     const tipV = bowR * Math.sin(end);
-    const nock = drawn ? -0.35 * R : tipU;
+    const nock = drawn ? 0.35 * R : tipU;
+    const face = toScreen(dir, 0.3 * R, 0);
     return bakeShape(
       28,
       (x, y) => {
         const { u, v } = toLocal(x, y);
-        if (drawn && u > nock && u < 1.55 * R && Math.abs(v) <= 0.5 * Math.min(1, (1.55 * R - u) / (0.4 * R))) return 'arrow';
+        if (drawn && u > nock && u < 1.9 * R && Math.abs(v) <= 0.5 * Math.min(1, (1.9 * R - u) / (0.4 * R))) return 'arrow';
         const a = Math.atan2(v, u - bowU);
         if (Math.abs(a) <= end && Math.abs(Math.hypot(u - bowU, v) - bowR) <= 0.6) return 'bow';
         for (const s of [-1, 1]) if (segmentHit(u, v, tipU, s * tipV, nock, 0).d <= 0.4) return 'string';
-        if ((u - 0.3 * R) ** 2 + v * v <= (0.5 * R) ** 2) return 'face';
-        if (x * x + y * y <= R * R) return 'robe';
-        if (u < 0 && u >= -1.6 * R && Math.abs(v) <= 0.8 * R * (1 + u / (1.6 * R))) return 'robe';
-        return null;
+        if ((u - 0.3 * R) ** 2 + v * v <= (0.5 * R) ** 2) {
+          for (const s of [-1, 1]) if (Math.hypot(u - 0.3 * R, v - s * 1.2) <= 0.8) return 'socket';
+          return 'face';
+        }
+        const inRobe = x * x + y * y <= R * R || (u < 0 && u >= -1.6 * R && Math.abs(v) <= 0.8 * R * (1 + u / (1.6 * R)));
+        if (!inRobe) return null;
+        return (u - 0.05 * R) ** 2 + v * v <= (0.8 * R) ** 2 ? 'crown' : 'robe';
       },
-      (r, e) => {
-        if (flash) return shade(e, FLASH);
+      (r, e, x, y, i, j) => {
+        if (flash) return r === 'socket' ? PX.flash : shade(e, FLASH);
         switch (r) {
           case 'arrow':
             return shade(e, [PX.ice3, PX.white, PX.ice2]);
           case 'bow':
-            return shade(e, RIME.ice);
+            return e === 'lit' ? ICE4[3] : e === 'shade' ? ICE4[0] : ICE4[2];
           case 'string':
             return PX.bone1;
+          case 'socket':
+            return PX.ink;
           case 'face':
-            return shade(e, RIME.bone);
+            return BONE4[1 + rampStep(domeLight(x, y, face.x, face.y, 0.6 * R), 3, i, j)];
+          case 'crown':
+            return HOOD4[1 + rampStep(domeLight(x, y, 0, 0, 1.25 * R), 3, i, j)];
           default:
-            return shade(e, RIME.hood);
+            return HOOD4[rampStep(domeLight(x, y, 0, 0, 1.25 * R), 3, i, j)];
         }
       },
       PX.ink,
@@ -614,7 +738,12 @@ export function frostArcher(dir: number, drawn: boolean, flash: boolean): Sprite
   });
 }
 
-/** Crypt Golem: a block of frozen crypt stone with ice crystals on its shoulders and cold cracks that blaze while it winds up. */
+/**
+ * Crypt Golem: a block of frozen crypt stone seen from above, the light sloping gently across its
+ * back, rime in clumps over it, a smaller block of a head at the front set off by a seam (its eyes
+ * are drawn on top), faceted ice crystals on its shoulders, and cold cracks that blaze while it
+ * winds up.
+ */
 export function golem(dir: number, hot: boolean, flash: boolean): Sprite {
   return cached(`golem:${dir}:${hot}:${flash}`, () => {
     const R = ENEMIES.golem.radius / P;
@@ -624,7 +753,7 @@ export function golem(dir: number, hot: boolean, flash: boolean): Sprite {
     const cracks: [number, number, number, number][] = [
       [-0.55 * r, -0.4 * r, -0.05 * r, -0.05 * r],
       [-0.05 * r, -0.05 * r, -0.35 * r, 0.55 * r],
-      [0.2 * r, 0.6 * r, 0.05 * r, 0.15 * r],
+      [-0.75 * r, 0.25 * r, -0.4 * r, 0.7 * r],
     ];
     const crystals: [number, number, number, number][] = [
       [-0.05 * R, -0.74 * R, 0.36 * R, 0.24 * R],
@@ -632,23 +761,31 @@ export function golem(dir: number, hot: boolean, flash: boolean): Sprite {
       [-0.45 * R, -0.62 * R, 0.24 * R, 0.17 * R],
       [-0.45 * R, 0.62 * R, 0.24 * R, 0.17 * R],
     ];
+    const centres = crystals.map(([cu, cv]) => toScreen(dir, cu, cv));
     return bakeShape(
       34,
       (x, y) => {
         const { u, v } = toLocal(x, y);
-        for (const [cu, cv, au, av] of crystals) if (Math.abs(u - cu) / au + Math.abs(v - cv) / av <= 1) return 'ice';
+        for (const [n, [cu, cv, au, av]] of crystals.entries()) if (Math.abs(u - cu) / au + Math.abs(v - cv) / av <= 1) return `ice${n}`;
         const dx = Math.max(Math.abs(u) - (r - rc), 0);
         const dy = Math.max(Math.abs(v) - (r - rc), 0);
         if (dx * dx + dy * dy > rc * rc) return null;
-        if ((u - 0.5 * R) ** 2 + v * v <= (0.3 * R) ** 2) return 'head';
+        if (u > 0.36 * r && Math.abs(v) <= 0.42 * r) return u < 0.36 * r + 0.7 || Math.abs(v) > 0.42 * r - 0.7 ? 'seam' : 'head';
         for (const [ax, ay, bx, by] of cracks) if (distToSegment(u, v, ax, ay, bx, by) <= 0.55) return 'crack';
-        return 'body';
+        return hash2(Math.floor(u / 2.4 + 30), Math.floor(v / 2.4 + 30), 91) < 0.13 ? 'rime' : 'body';
       },
-      (region, e) => {
+      (region, e, x, y, i, j) => {
         if (flash) return region === 'crack' ? PX.flash : shade(e, FLASH);
         if (region === 'crack') return hot ? PX.rimeGlow : PX.ice1;
-        if (region === 'ice') return shade(e, RIME.ice);
-        return shade(e, region === 'head' ? RIME.stoneDeep : RIME.stone);
+        if (region.startsWith('ice')) {
+          // Each crystal is faceted: the face toward the light bright, the other dim.
+          const c = centres[Number(region.slice(3))];
+          return e === 'lit' ? ICE4[3] : x - c.x + (y - c.y) < 0 ? ICE4[2] : ICE4[0];
+        }
+        if (region === 'rime') return e === 'shade' ? PX.crypt3 : '#b8c8e0';
+        const k = rampStep(Math.max(0, Math.min(1, 0.38 - (x + y) / (4.2 * r))), 4, i, j);
+        if (region === 'seam') return CRYPT5[Math.max(1, k)];
+        return shade(e, [CRYPT5[1 + k], CRYPT5[Math.min(4, 2 + k)], CRYPT5[Math.max(1, k)]]);
       },
       PX.ink,
     );
@@ -667,7 +804,11 @@ export function golemFist(raised: boolean, flash: boolean): Sprite {
         if (dx * dx + dy * dy > 1.44) return null;
         return y < -h + 1.6 ? 'knuckle' : 'fist';
       },
-      (r, e) => (flash ? shade(e, FLASH) : shade(e, r === 'knuckle' ? RIME.ice : RIME.stone)),
+      (r, e, x, y, i, j) => {
+        if (flash) return shade(e, FLASH);
+        if (r === 'knuckle') return e === 'lit' ? ICE4[3] : ICE4[1];
+        return CRYPT5[1 + rampStep(domeLight(x, y, 0, 0, h + 1), 3, i, j)];
+      },
       PX.ink,
     );
   });
@@ -675,14 +816,16 @@ export function golemFist(raised: boolean, flash: boolean): Sprite {
 
 export const WRAITH_FRAMES = 4;
 /**
- * Wraith: a hooded spectre trailing a tattered cloak that fades out in a dither. `phased` (inside
- * stone) leaves only every other pixel and no outline, so it shows faintly through the rock.
+ * Wraith: a hooded spectre, its hood rounded and palest on top, trailing a tattered cloak that
+ * dims from the hood back and fades out in a dither. `phased` (inside stone) leaves only every
+ * other pixel and no outline, so it shows faintly through the rock.
  */
 export function wraith(dir: number, frame: number, phased: boolean, flash: boolean): Sprite {
   return cached(`wraith:${dir}:${frame}:${phased}:${flash}`, () => {
     const R = ENEMIES.wraith.radius / P;
     const toLocal = local(dir);
     const size = 32;
+    const hood = toScreen(dir, 0.35 * R, 0);
     return bakeShape(
       size,
       (x, y) => {
@@ -692,7 +835,7 @@ export function wraith(dir: number, frame: number, phased: boolean, flash: boole
         const { u, v } = toLocal(x, y);
         if ((u - 0.55 * R) ** 2 + v * v <= (0.32 * R) ** 2) return 'face';
         if ((u - 0.35 * R) ** 2 + v * v <= (0.62 * R) ** 2) return 'hood';
-        for (const s of [-1, 1]) if (segmentHit(u, v, 0.1 * R, s * 0.55 * R, 0.8 * R, s * 1.05 * R).d <= 0.5) return 'cloak';
+        for (const s of [-1, 1]) if (segmentHit(u, v, 0.1 * R, s * 0.55 * R, 0.8 * R, s * 1.05 * R).d <= 0.5) return 'sleeve';
         if (u > 0.4 * R || u < -2.2 * R) return null;
         const t = (0.4 * R - u) / (2.6 * R);
         const wave = Math.sin(t * 5 + frame * (Math.PI / 2)) * 0.35 * R * t;
@@ -700,12 +843,14 @@ export function wraith(dir: number, frame: number, phased: boolean, flash: boole
         if (Math.abs(v - wave) > 0.78 * R * Math.pow(1 - t, 0.8) * tatter) return null;
         // The cloak thins to nothing towards its tail.
         if (t > 0.5 && bayer(i, j) > (1 - t) * 2) return null;
-        return 'cloak';
+        return t < 0.3 ? 'cloak' : 'tail';
       },
-      (r, e) => {
+      (r, e, x, y, i, j) => {
         if (flash) return r === 'face' ? PX.flash : shade(e, FLASH);
         if (r === 'face') return PX.spectre0;
-        return shade(e, RIME.spectre);
+        if (r === 'hood') return SPECTRE4[1 + rampStep(domeLight(x, y, hood.x, hood.y, 0.7 * R), 3, i, j)];
+        if (r === 'tail') return e === 'lit' ? SPECTRE4[2] : SPECTRE4[1];
+        return e === 'shade' ? SPECTRE4[1] : e === 'lit' ? SPECTRE4[3] : SPECTRE4[2];
       },
       phased ? null : PX.spectre0,
     );
@@ -714,36 +859,48 @@ export function wraith(dir: number, frame: number, phased: boolean, flash: boole
 
 // ---------------------------------------------------------------- chaser ("Gloomling")
 
-export const CHASER_FRAMES = 4;
+/** Two spikes' worth of turning, so a long spike comes round to where a long one was. */
+export const CHASER_FRAMES = 8;
+
+const GLOOM: Ramp5 = [PX.crim0, PX.crim1, PX.crim2, PX.crim3, '#ffc2d0'];
+const CINDER: Ramp5 = ['#5a1406', PX.hostile1, PX.hostile2, PX.hostile3, PX.flame2];
 
 /**
- * Spiky crimson blob; frames rotate the spikes so it appears to churn as it chases. Its dark face
- * sits (fx, fy) pixels off centre, toward where it is heading, with room for both eyes and a dark
- * pixel either side, so neither eye ever lands on the bright body.
+ * Spiky crimson blob, its spikes long and short by turns; frames turn them so it appears to churn
+ * as it chases. Its dark face sits (fx, fy) pixels off centre, toward where it is heading, with
+ * room for both eyes and a dark pixel either side, so neither eye ever lands on the bright body.
  */
 export function chaser(frame: number, flash: boolean, imp = false, fx = 0, fy = 0): Sprite {
   return cached(`chaser:${frame}:${flash}:${imp}:${fx}:${fy}`, () => {
-    // A Cinder Imp is smaller, with fewer, sharper flames for spikes, and a fuller body round the
-    // same face (so the face, shifted, still stops short of its rim).
+    // A Cinder Imp is smaller, with fewer flames for spikes, all long and brightening to their
+    // tips, and a fuller body round the same face (so the face, shifted, still stops short of its rim).
     const R = (imp ? ENEMIES.imp.radius : ENEMIES.chaser.radius) / P;
     const spikes = imp ? 6 : 10;
-    const phase = (frame / CHASER_FRAMES) * (TAU / spikes);
+    const step = TAU / spikes;
+    const phase = (frame / CHASER_FRAMES) * 2 * step;
     const inner = (imp ? 0.95 : 0.85) * R;
     const outer = 1.35 * R;
     const face = 2.6;
+    const ramp = imp ? CINDER : GLOOM;
     return bakeShape(
       20,
       (x, y) => {
         if (Math.hypot(x - fx, y - fy) <= face) return 'core';
         const d = Math.hypot(x, y);
+        if (d <= inner) return 'body';
         const a = Math.atan2(y, x);
-        const k = Math.pow((1 + Math.cos(spikes * (a - phase))) / 2, 3);
-        return d <= inner + (outer - inner) * k ? 'body' : null;
+        const n = Math.round((a - phase) / step);
+        const long = imp || ((n % 2) + 2) % 2 === 0 ? 1 : 0.6;
+        const k = Math.pow((1 + Math.cos(spikes * (a - phase))) / 2, 3) * long;
+        return d <= inner + (outer - inner) * k ? 'spike' : null;
       },
-      (r, e) => {
+      (r, e, x, y, i, j) => {
         if (flash) return r === 'core' ? PX.flash : shade(e, FLASH);
-        if (imp) return r === 'core' ? '#3a0e06' : shade(e, EMBER.melt);
-        return r === 'core' ? PX.crim0 : shade(e, [PX.crim2, PX.crim3, PX.crim1]);
+        if (r === 'core') return imp ? '#3a0e06' : PX.crim0;
+        const light = domeLight(x, y, 0, 0, outer);
+        if (r === 'spike' && imp) return ramp[Math.min(4, 2 + Math.floor(((Math.hypot(x, y) - inner) / (outer - inner)) * 3))];
+        if (r === 'spike') return ramp[1 + rampStep(light, 3, i, j)];
+        return ramp[rampStep(light, 5, i, j)];
       },
       PX.ink,
     );
@@ -752,23 +909,38 @@ export function chaser(frame: number, flash: boolean, imp = false, fx = 0, fy = 
 
 // ---------------------------------------------------------------- caster ("Hex Acolyte")
 
-/** Hooded robe seen from above, hood point trailing behind and a dark face opening in front. */
+const HEX_ROBE: Ramp5 = [PX.robe0, PX.robe1, PX.robe2, PX.robe3, '#ffb4e6'];
+const PYRE_ROBE: Ramp5 = ['#2a0a04', '#4a1206', '#8a2a10', '#c8501c', '#ff8a4a'];
+
+/**
+ * A hooded robe seen from above: the hood's crown, lighter, over darker shoulders, its point
+ * trailing behind with a fold down it, and a dark face opening in front. A Pyromancer wears
+ * scorched red.
+ */
 export function caster(dir: number, flash: boolean, pyro = false): Sprite {
   return cached(`caster:${dir}:${flash}:${pyro}`, () => {
     const R = ENEMIES.caster.radius / P;
     const toLocal = local(dir);
+    const robe = pyro ? PYRE_ROBE : HEX_ROBE;
     return bakeShape(
       26,
       (x, y) => {
         const { u, v } = toLocal(x, y);
-        if ((u - 0.3 * R) ** 2 + v * v <= (0.55 * R) ** 2) return 'face';
-        if (x * x + y * y <= R * R) return 'robe';
-        if (u < 0 && u >= -1.75 * R && Math.abs(v) <= 0.8 * R * (1 + u / (1.75 * R))) return 'robe';
-        return null;
+        if (((u - 0.45 * R) / (0.45 * R)) ** 2 + (v / (0.52 * R)) ** 2 <= 1) return 'face';
+        const inBody = x * x + y * y <= R * R;
+        const inTail = u < 0 && u >= -1.75 * R && Math.abs(v) <= 0.8 * R * (1 + u / (1.75 * R));
+        if (!inBody && !inTail) return null;
+        if ((u - 0.05 * R) ** 2 + v * v <= (0.78 * R) ** 2) return 'crown';
+        if (u < -0.75 * R && Math.abs(v) <= 0.5) return 'fold';
+        return 'robe';
       },
-      (r, e) => {
+      (r, e, x, y, i, j) => {
         if (flash) return r === 'face' ? PX.flash : shade(e, FLASH);
-        return r === 'face' ? PX.ink : shade(e, pyro ? EMBER.scorch : [PX.robe2, PX.robe3, PX.robe1]);
+        if (r === 'face') return PX.ink;
+        const light = domeLight(x, y, 0, 0, 1.25 * R);
+        if (r === 'crown') return robe[2 + rampStep(light, 3, i, j)];
+        if (r === 'fold') return robe[1];
+        return robe[1 + rampStep(light, 3, i, j)];
       },
       PX.ink,
     );
@@ -784,13 +956,17 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+const RUIN_STONE: Ramp5 = [PX.golem0, PX.golem1, PX.golem2, PX.golem3, '#b8b0cc'];
+const CHAR_STONE: Ramp5 = ['#140806', '#2a120c', '#3a1a14', '#5a2a1e', '#7a3a28'];
+
 /**
- * Rounded stone block with glowing cracks that run hot while it winds up and charges. The cracks
- * run over its back and flanks only, leaving the front plain stone for its eyes (drawn on top).
+ * A golem of ruin stone seen from above: a rounded block of stone plates with a boulder for each
+ * shoulder, a smaller block of a head at the front where its eyes sit (drawn on top), moss on its back, and
+ * glowing cracks over its back and flanks that run hot while it winds up and charges. A Magma Brute
+ * is cooled black rock, no moss, its cracks always aglow.
  */
 export function brute(dir: number, hot: boolean, flash: boolean, magma = false): Sprite {
   return cached(`brute:${dir}:${hot}:${flash}:${magma}`, () => {
-    // A Magma Brute: cooled black rock whose cracks always glow.
     const r = (magma ? ENEMIES.magmaBrute.radius : ENEMIES.brute.radius) / P;
     const rc = 2.5;
     const toLocal = local(dir);
@@ -800,20 +976,44 @@ export function brute(dir: number, hot: boolean, flash: boolean, magma = false):
       [-0.05 * r, 0.8 * r, -0.3 * r, 0.45 * r],
       [0.05 * r, -0.8 * r, -0.25 * r, -0.55 * r],
     ];
+    const seams: [number, number, number, number][] = [
+      [-0.15 * r, -0.95 * r, -0.15 * r, 0.95 * r],
+      [-0.95 * r, 0.1 * r, -0.15 * r, 0.1 * r],
+    ];
+    const moss: [number, number, number][] = [
+      [-0.55 * r, -0.45 * r, 1.5],
+      [-0.65 * r, 0.5 * r, 1.2],
+      [-0.1 * r, 0.6 * r, 1],
+    ];
+    const shoulder = 0.36 * r;
+    const stone = magma ? CHAR_STONE : RUIN_STONE;
     return bakeShape(
       30,
       (x, y) => {
         const { u, v } = toLocal(x, y);
         const dx = Math.max(Math.abs(u) - (r - rc), 0);
         const dy = Math.max(Math.abs(v) - (r - rc), 0);
-        if (dx * dx + dy * dy > rc * rc) return null;
+        const inBody = dx * dx + dy * dy <= rc * rc;
+        if (!inBody) {
+          for (const s of [-1, 1]) if ((u - 0.05 * r) ** 2 + (v - s * 0.88 * r) ** 2 <= shoulder * shoulder) return 'shoulder';
+          return null;
+        }
+        // The head: a smaller block at the front, set off by a seam, where the eyes sit.
+        if (u > 0.2 * r && Math.abs(v) <= 0.52 * r) return u < 0.2 * r + 0.7 || Math.abs(v) > 0.52 * r - 0.7 ? 'seam' : 'head';
         for (const [ax, ay, bx, by] of cracks) if (distToSegment(u, v, ax, ay, bx, by) <= 0.55) return 'crack';
+        if (!magma) for (const [mu, mv, mr] of moss) if (Math.hypot(u - mu, v - mv) <= mr) return 'moss';
+        for (const [ax, ay, bx, by] of seams) if (distToSegment(u, v, ax, ay, bx, by) <= 0.45) return 'seam';
         return 'body';
       },
-      (region, e) => {
+      (region, e, x, y, i, j) => {
         if (flash) return region === 'crack' ? PX.flash : shade(e, FLASH);
         if (region === 'crack') return hot ? PX.crackHot : magma ? PX.flame0 : PX.crack;
-        return shade(e, magma ? EMBER.char : [PX.golem2, PX.golem3, PX.golem1]);
+        if (region === 'moss') return e === 'lit' ? PX.moss1 : PX.moss0;
+        // Its back is nearly flat, so the light only slopes gently across it, lit edge to shaded.
+        const k = rampStep(Math.max(0, Math.min(1, 0.3 - (x + y) / (3.6 * r))), 4, i, j);
+        if (region === 'seam') return stone[Math.max(1, k)];
+        if (region === 'head') return shade(e, [stone[1 + k], stone[Math.min(4, 2 + k)], stone[Math.max(1, k)]]);
+        return shade(e, [stone[1 + k], stone[Math.min(4, 2 + k)], stone[Math.max(1, k)]]);
       },
       PX.ink,
     );

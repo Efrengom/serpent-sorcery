@@ -705,8 +705,8 @@ function drawFrostArcher(ctx: CanvasRenderingContext2D, e: Enemy, time: number, 
   if (flash) return;
   eyesAt(ctx, x + Math.cos(a) * R * 0.3, y + Math.sin(a) * R * 0.3, a, 1.2, Math.PI / 2, 1, PX.ice2, PX.ice2);
   if (drawn && windup(e, ENEMIES.frostArcher.telegraph) > 0.5 && (quiet || Math.floor(time * 10) % 2 === 0)) {
-    const tx = x + Math.cos(a) * R * 1.55;
-    const ty = y + Math.sin(a) * R * 1.55;
+    const tx = x + Math.cos(a) * R * 1.9;
+    const ty = y + Math.sin(a) * R * 1.9;
     px(ctx, tx - 1, ty, PX.white, 3, 1);
     px(ctx, tx, ty - 1, PX.white, 1, 3);
   }
