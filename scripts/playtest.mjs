@@ -2891,6 +2891,39 @@ try {
       howto.over <= 1 && howto.playBottom !== null && howto.playBottom <= 720 && !howto.maps && !thumbOnPC,
       { ...howto, thumbOnPC },
     );
+    // The Hall of Records grows with the screen: at 2560×1440 its cards and words are twice their
+    // 1280×720 size and both tabs still fit; at 1280×720 the achievements fit.
+    const hall = {};
+    for (const [w, h] of [
+      [1280, 720],
+      [2560, 1440],
+    ]) {
+      await page.setViewport({ width: w, height: h, hasTouch: false, isMobile: false });
+      await sleep(200);
+      await clickButton('Hall of Records');
+      await sleep(400);
+      for (const tab of ['achievements', 'bestiary']) {
+        await page.evaluate((t) => document.querySelector(`[data-tab=${t}]`)?.click(), tab);
+        await sleep(200);
+        hall[`${w} ${tab}`] = await page.evaluate(() => {
+          const root = document.querySelector('.records-screen');
+          return {
+            over: root.scrollHeight - root.clientHeight,
+            card: Math.round(document.querySelector('.achievement, .beast').getBoundingClientRect().width),
+            text: parseFloat(getComputedStyle(document.querySelector('.achievement-desc, .beast-lore')).fontSize),
+          };
+        });
+      }
+      await page.keyboard.press('Escape');
+      await sleep(300);
+    }
+    await page.setViewport({ width: 1280, height: 720, hasTouch: false, isMobile: false });
+    const [small, big] = [hall['1280 achievements'], hall['2560 achievements']];
+    check(
+      'the Hall of Records fills a 2560×1440 screen with cards and words twice their 1280×720 size, both tabs fitting',
+      small.over <= 1 && big.over <= 1 && hall['2560 bestiary'].over <= 1 && big.text === 2 * small.text && big.card >= 1.9 * small.card,
+      hall,
+    );
   }
 
   // ============================================================== Part V: the Archmage Ascendant and a won run
