@@ -426,9 +426,10 @@ export function PixelTitleSerpent({ wizard = 'arcanist' }: { wizard?: WizardId }
     const draw = (now: number) => {
       const t = now / 1000;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // The waves run back from the head (the last point) to the tail, as a snake's do when it swims forward.
       const pts = Array.from({ length: N }, (_, i) => ({
         x: 14 + i * 4.6,
-        y: canvas.height / 2 + 2 + Math.sin(i * 0.38 - t * 3) * 7,
+        y: canvas.height / 2 + 2 + Math.sin(i * 0.38 + t * 3) * 7,
       }));
       const radius = (i: number) => Math.max(2, Math.round(2 + (i / (N - 1)) * 3.5));
       for (let i = 0; i < N - 1; i++) blit(ctx, segmentOutline(radius(i)), pts[i].x, pts[i].y);
