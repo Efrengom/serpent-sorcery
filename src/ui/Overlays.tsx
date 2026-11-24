@@ -178,7 +178,7 @@ export function RelicPanel({ offer, onChoose }: { offer: RelicOffer; onChoose(re
   return (
     <div className="overlay relic-offer">
       <div className="overlay-inner wide">
-        <p className="eyebrow">{rift ? 'The rift yields its prize' : draft ? `Waystone · relic ${draft.n} of ${draft.total}` : 'On the threshold of the way down'}</p>
+        <p className="eyebrow">{rift ? 'The rift yields its prize' : !draft ? 'On the threshold of the way down' : draft.waystone ? `Waystone · relic ${draft.n} of ${draft.total}` : 'Heirloom · a relic to begin with'}</p>
         <h2 className="overlay-title gold">Choose a relic</h2>
         <p className="overlay-sub">{rift ? 'Carry one for the rest of the run' : `Carry one ${draft ? 'into' : 'to'} Depth ${depth}: ${nextMap}`}</p>
         <div className={`cards${armed ? ' armed' : ''}`} style={{ '--cols': relics.length } as CSSProperties}>

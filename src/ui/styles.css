@@ -2565,6 +2565,11 @@ kbd {
   gap: 6px;
 }
 
+/* In the shop, a duo's two sigils carry an ink outline, to stand out like the icons beside them. */
+.app.pixel .shop .card-pair svg {
+  filter: drop-shadow(1px 0 0 var(--px-ink)) drop-shadow(-1px 0 0 var(--px-ink)) drop-shadow(0 1px 0 var(--px-ink)) drop-shadow(0 -1px 0 var(--px-ink));
+}
+
 .app.pixel .upgrade-card.aspect {
   background: #1c2a52;
   box-shadow:
@@ -3107,6 +3112,138 @@ kbd {
   .app .records-screen .beast-count {
     font-size: calc(12 * var(--ub));
     margin-top: calc(3 * var(--ub));
+  }
+}
+
+/* The shop grows with a computer's screen the same way, in --u. Its eleven stat lines sit three
+   to a row as short cards (the icon down the side; its name, pips and price, then what it does now and next),
+   so all of them fit on a 1280×720 screen with its buttons. A phone keeps its own tiles. */
+@media (width > 559px) and (height > 500px) {
+  .app .shop {
+    --u: clamp(1px, min(100vw / 1280, 100vh / 720), 2.5px);
+    padding: calc(16 * var(--u)) calc(24 * var(--u));
+  }
+  .app .shop > .screen-title {
+    font-size: calc(44 * var(--u));
+    margin: 0 0 calc(4 * var(--u));
+  }
+  .app.pixel .shop > .screen-title {
+    text-shadow: calc(3 * var(--u)) calc(3 * var(--u)) 0 var(--px-ink);
+  }
+  .app .shop > .screen-sub {
+    font-size: calc(15 * var(--u));
+    margin: 0 0 calc(10 * var(--u));
+  }
+  .app .shop .shop-tabs {
+    gap: calc(10 * var(--u));
+    margin-bottom: calc(12 * var(--u));
+  }
+  .app .shop .btn {
+    font-size: calc(13.6 * var(--u));
+  }
+  .app .shop > .menu-buttons {
+    margin-top: calc(12 * var(--u));
+  }
+  .app .shop .card-name {
+    font-size: calc(15 * var(--u));
+  }
+  .app .shop .card-desc {
+    font-size: calc(14 * var(--u));
+  }
+  .app .shop .card-next {
+    font-size: calc(13 * var(--u));
+  }
+  .app .shop .card-pips {
+    gap: calc(5 * var(--u));
+    min-height: calc(10 * var(--u));
+  }
+  .app.pixel .shop .card-pips i {
+    width: calc(8 * var(--u));
+    height: calc(8 * var(--u));
+    border-width: calc(2 * var(--u));
+  }
+  /* Icons keep their pixel grid: three screen pixels to an icon pixel at 1280×720. */
+  .app .shop .shop-glyph {
+    width: calc(var(--icon-w) * 3 * var(--u));
+    height: calc(var(--icon-h) * 3 * var(--u));
+  }
+  .app .shop .relic-icon {
+    width: calc(var(--icon-w) * 3 * var(--u));
+    height: calc(var(--icon-h) * 3 * var(--u));
+  }
+  .app .shop .card-pair svg {
+    width: calc(42 * var(--u));
+    height: calc(42 * var(--u));
+  }
+  .app .shop .shard-px {
+    width: calc(var(--icon-w) * 2 * var(--u));
+    height: calc(var(--icon-h) * 2 * var(--u));
+  }
+  .app .shop .grimoire {
+    max-width: calc(1150 * var(--u));
+  }
+  .app .shop .grimoire .setup-head {
+    font-size: calc(18 * var(--u));
+    margin-bottom: calc(10 * var(--u));
+  }
+  .app .shop .grimoire .shop-grid {
+    grid-template-columns: repeat(auto-fit, minmax(calc(220 * var(--u)), calc(260 * var(--u))));
+    gap: calc(16 * var(--u));
+    max-width: calc(1150 * var(--u));
+    margin-bottom: calc(26 * var(--u));
+  }
+  .app .shop .grimoire .shop-card {
+    padding: calc(18 * var(--u)) calc(20 * var(--u));
+    gap: calc(8 * var(--u));
+  }
+  .app .shop .stat-lines {
+    grid-template-columns: repeat(auto-fill, minmax(calc(330 * var(--u)), 1fr));
+    gap: calc(10 * var(--u));
+    width: min(100%, calc(1232 * var(--u)));
+    max-width: none;
+    margin: 0 auto;
+  }
+  .app .shop .stat-lines .shop-card {
+    display: grid;
+    grid-template-columns: calc(48 * var(--u)) minmax(0, 1fr) auto;
+    grid-template-areas:
+      'icon name buy'
+      'icon pips buy'
+      'icon desc desc'
+      'icon next next';
+    align-items: center;
+    align-content: start;
+    column-gap: calc(12 * var(--u));
+    row-gap: calc(4 * var(--u));
+    padding: calc(10 * var(--u)) calc(14 * var(--u));
+    text-align: left;
+    line-height: 1.35;
+  }
+  .app .shop .stat-lines .shop-card > :first-child {
+    grid-area: icon;
+    justify-self: center;
+  }
+  .app .shop .stat-lines .card-name {
+    grid-area: name;
+    align-self: end;
+  }
+  .app .shop .stat-lines .card-pips {
+    grid-area: pips;
+    align-self: start;
+  }
+  .app .shop .stat-lines .card-desc {
+    grid-area: desc;
+    margin-top: calc(2 * var(--u));
+  }
+  .app .shop .stat-lines .card-next {
+    grid-area: next;
+  }
+  .app .shop .stat-lines .shop-card > .btn {
+    grid-area: buy;
+  }
+  /* The price alone: the card already says what it buys. */
+  .app .shop .stat-lines .learn-word {
+    display: none;
   }
 }
 
@@ -4743,7 +4880,8 @@ kbd {
 /* Permanent Upgrades, the Hall of Records, How to Play and Sigil Practice on a phone. The Hall's
    read-out of a tapped tile shows only there. */
 
-.records-detail {
+.records-detail,
+.shop-detail {
   display: none;
 }
 
@@ -4784,71 +4922,96 @@ kbd {
     max-width: none;
     margin: 0;
   }
+  /* Each line and unlock a small tile (its icon, name, pips and price), tapped to read it below. */
   .app.pixel .shop.phone-menu .shop-card {
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
     grid-template-areas:
-      'icon name buy'
-      'icon pips buy'
-      'icon desc buy'
-      'icon next buy';
+      'icon name name'
+      'icon pips buy';
     align-items: center;
     justify-items: start;
-    gap: 1px 10px;
-    padding: 6px 8px 6px 10px;
+    gap: 3px 8px;
+    padding: 5px 7px;
     text-align: left;
-    line-height: 1.25;
+    line-height: 1.2;
+    cursor: pointer;
+  }
+  .app.pixel .shop.phone-menu .grimoire-card {
+    grid-template-areas:
+      'icon name name'
+      'icon buy buy';
+  }
+  .app .shop.phone-menu .shop-card.open {
+    border-color: var(--cyan);
   }
   .app .shop.phone-menu .shop-card > :first-child {
     grid-area: icon;
     justify-self: center;
   }
-  .app .shop.phone-menu .shop-card > .card-glyph-px,
+  /* Two screen pixels to an icon pixel. */
+  .app .shop.phone-menu .shop-card > .shop-glyph,
   .app .shop.phone-menu .shop-card > .relic-icon {
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
   }
   .app .shop.phone-menu .card-pair {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
   }
   .app .shop.phone-menu .card-pair svg {
-    width: 16px;
-    height: 16px;
+    width: 13px;
+    height: 13px;
   }
   .app .shop.phone-menu .card-glyph {
-    font-size: 1.3rem;
+    font-size: 1.1rem;
   }
   .app.pixel .shop.phone-menu .card-name {
     grid-area: name;
-    font-size: 0.66rem;
+    font-size: 0.58rem;
   }
   .app .shop.phone-menu .card-pips {
     grid-area: pips;
-    gap: 4px;
+    gap: 3px;
     min-height: 0;
-    margin: 2px 0;
   }
   .app .shop.phone-menu .card-pips i {
     width: 7px;
     height: 7px;
   }
-  .app .shop.phone-menu .card-desc {
-    grid-area: desc;
-    font-size: 0.62rem;
-  }
-  .app .shop.phone-menu .card-next {
-    grid-area: next;
-    font-size: 0.6rem;
+  .app .shop.phone-menu .shop-card > .card-desc,
+  .app .shop.phone-menu .shop-card > .card-next {
+    display: none;
   }
   .app.pixel .shop.phone-menu .shop-card > .btn {
     grid-area: buy;
-    max-width: 96px;
-    padding: 0.45em 0.6em;
-    font-size: 0.56rem;
-    line-height: 1.25;
+    justify-self: end;
+    padding: 0.4em 0.55em;
+    font-size: 0.54rem;
+    line-height: 1.2;
     white-space: normal;
+  }
+  .app.pixel .shop.phone-menu .grimoire-card > .btn {
+    justify-self: start;
+  }
+  .app.pixel .shop.phone-menu .shop-detail {
+    display: block;
+    grid-area: detail;
+    min-height: 2.7em;
+    margin: 0;
+    padding: 5px 10px;
+    background: var(--px-panel);
+    border: 2px solid var(--panel-edge);
+    color: var(--ink-dim);
+    font-size: 0.66rem;
+    line-height: 1.3;
+  }
+  .app .shop-detail b {
+    color: var(--ink);
+  }
+  .app .shop-detail .detail-next {
+    color: var(--cyan);
   }
 
   /* -- the Hall of Records: the records as tiles; achievements and foes as small tiles, tapped to read */
@@ -5080,9 +5243,15 @@ kbd {
 /* Sideways: the bar holds what each menu needs most; the title gives way where it can't fit. */
 @media (max-height: 500px) {
   .app .shop.phone-menu.screen {
+    grid-template-rows: auto minmax(0, 1fr) auto;
     grid-template-areas:
       'back sub tabs go'
-      'pane pane pane pane';
+      'pane pane pane pane'
+      'detail detail detail detail';
+  }
+  .app .shop.phone-menu .shop-grid,
+  .app .shop.phone-menu .grimoire {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   .app .shop.phone-menu > .screen-title,
   .app .practice.phone-menu > .screen-title {
@@ -5127,12 +5296,13 @@ kbd {
     flex-wrap: wrap;
   }
   .app .shop.phone-menu.screen {
-    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
     grid-template-areas:
       'title title title'
       'sub sub sub'
       'tabs tabs tabs'
       'pane pane pane'
+      'detail detail detail'
       'back . go';
   }
   .app.pixel .shop.phone-menu > .screen-sub {
@@ -5140,7 +5310,7 @@ kbd {
   }
   .app .shop.phone-menu .shop-grid,
   .app .shop.phone-menu .grimoire {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .app .records-screen.phone-menu.screen {
     grid-template-rows: auto auto minmax(0, 1fr) auto auto;
