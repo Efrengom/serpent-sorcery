@@ -294,6 +294,12 @@ export function RelicIcon({ id, size = 24 }: { id: RelicId; size?: number }) {
   return <BitmapIcon icon={relicBitmap(id)} scale={Math.max(1, Math.round(size / RELIC_GRID))} className="relic-icon" />;
 }
 
+/** A relic's pixels and the file they're drawn in, for the inspector. */
+export function relicArt(id: RelicId): { bitmap: Bitmap; source: string } {
+  const source = id in RELIC_ICONS ? 'scripts/shop-icons.mjs' : RELIC_PIXELS[id] ? 'src/ui/art.tsx' : 'none: its outline in relics.ts, snapped';
+  return { bitmap: relicBitmap(id), source };
+}
+
 /** A serpent coiled around a foe, for Constrict. */
 export function CoilIcon({ size = 26 }: { size?: number }) {
   return <PixelIcon name="coil" scale={Math.max(2, Math.round(size / 9))} />;

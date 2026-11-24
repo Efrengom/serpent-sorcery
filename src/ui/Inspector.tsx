@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type HTMLAttributes,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { PIXEL_ART, SIM } from '../game/config';
 import {
   createStage,
@@ -23,14 +33,18 @@ import { MAP_ORDER, MAPS } from '../game/maps';
 import type { MapId } from '../game/maps/types';
 import { TAU, type Vec } from '../game/math';
 import { DEFAULT_VIEW, type ViewOptions } from '../game/options';
+import { RELIC_IDS, RELICS, type RelicId } from '../game/relics';
 import { Renderer } from '../game/render';
 import type { EliteKind, GestureView } from '../game/world';
+import { RelicIcon, relicArt } from './art';
+import type { Bitmap } from './shopIcons';
 import './inspector.css';
 
 /**
  * Development only (open the game with ?inspector): every sprite and effect on its own, without
  * playing. Pick a subject on the left; the middle shows it drawn by the game's own renderer,
  * idle or live; the right has what it is and ways to pose it. Drag to pan, scroll to zoom.
+ * Relics are icons, so the middle draws them as the menus do instead, over the stage.
  */
 
 const P = PIXEL_ART.worldPerPixel;
@@ -39,6 +53,11 @@ const SPEEDS = [0.25, 0.5, 1, 2];
 const SPEED_NAMES: Record<number, string> = { 0.25: '¼', 0.5: '½' };
 const BACKDROPS = { floor: null, dark: '#0a0614', light: '#8c86a0' } as const;
 type Backdrop = keyof typeof BACKDROPS;
+/** Relics' icons: 16×16, drawn 1× in the HUD and pause list and 3× on cards. */
+const ICON_ZOOMS = [1, 2, 3, 4, 6, 8, 12, 16, 24];
+/** Behind a relic, the floor's place is taken by a relic card's colour. */
+const ICON_BACKDROPS: Record<Backdrop, string> = { floor: '#2a1a40', dark: BACKDROPS.dark, light: BACKDROPS.light };
+type IconPixel = { x: number; y: number; ch: string; color: string | null };
 const NO_GESTURE: GestureView = { active: false, points: [], target: null, lock: null, fade: null, reading: null };
 const ELITE_NAMES: Record<EliteKind, string> = { shielded: 'Shielded', swift: 'Swift', splitting: 'Splitting' };
 const TURN = TAU / 16;
@@ -66,6 +85,9 @@ export default function Inspector() {
   const [grid, setGrid] = useState(false);
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState<Vec | null>(null);
+  const [iconZoom, setIconZoom] = useState(8);
+  const [pixel, setPixel] = useState<IconPixel | null>(null);
+  const icon = subject.relic ?? null;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -73,8 +95,8 @@ export default function Inspector() {
   const stageRef = useRef<Stage | null>(null);
   /** The view's offset from what it follows, in world units (dragging pans). */
   const pan = useRef<Vec>({ x: 0, y: 0 });
-  const loop = useRef({ playing, speed, boxes, grid });
-  loop.current = { playing, speed, boxes, grid };
+  const loop = useRef({ playing, speed, boxes, grid, icon: !!icon });
+  loop.current = { playing, speed, boxes, grid, icon: !!icon };
   /** Steps waiting to run while paused (the Step button). */
   const pendingSteps = useRef(0);
   /** The options the stage has now (the state above only redraws the panel). */
@@ -95,6 +117,7 @@ export default function Inspector() {
     setOptions(next);
     setSubject(s);
     setFloor(null);
+    setPixel(null);
     pan.current = { x: 0, y: 0 };
     history.replaceState(null, '', `#${encodeURIComponent(s.id)}`);
   }, []);
@@ -155,7 +178,8 @@ export default function Inspector() {
       const dt = Math.min(SIM.maxFrame, (now - last) / 1000);
       last = now;
       const st = stageRef.current;
-      if (st) {
+      // A relic's icon covers the stage, so nothing is run or drawn under it.
+      if (st && !loop.current.icon) {
         const { playing, speed } = loop.current;
         let run = 0;
         if (playing) {
@@ -215,9 +239,14 @@ export default function Inspector() {
     pendingSteps.current += 2;
   }, []);
 
-  const zoomBy = useCallback((d: number) => {
-    setZoom((z) => ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, ZOOMS.indexOf(z) + d))]);
-  }, []);
+  const zoomBy = useCallback(
+    (d: number) => {
+      const along = (list: number[]) => (z: number) => list[Math.max(0, Math.min(list.length - 1, list.indexOf(z) + d))];
+      if (icon) setIconZoom(along(ICON_ZOOMS));
+      else setZoom(along(ZOOMS));
+    },
+    [icon],
+  );
 
   // Keys: arrows pick, Space plays, the rest are on their buttons.
   useEffect(() => {
@@ -307,14 +336,28 @@ export default function Inspector() {
           onWheel={(e) => zoomBy(e.deltaY < 0 ? 1 : -1)}
         />
         <canvas ref={overlayRef} className="insp-overlay" aria-hidden="true" />
+        {icon && (
+          <div className="insp-icons" style={{ background: ICON_BACKDROPS[backdrop] }}>
+            {icon === 'all' ? (
+              <RelicSheet zoom={iconZoom} grid={grid} onPick={(id) => choose(SUBJECTS.find((s) => s.relic === id)!)} />
+            ) : (
+              <RelicView id={icon} zoom={iconZoom} grid={grid} pixel={pixel} onPixel={setPixel} onZoom={zoomBy} />
+            )}
+          </div>
+        )}
         <div className="insp-status">
           <span>{subject.name}</span>
-          <span>{MAPS[map].name}</span>
-          <span>{zoom}× zoom</span>
-          {!playing && <span className="insp-paused">Paused</span>}
-          {cursor && (
+          {!icon && <span>{MAPS[map].name}</span>}
+          <span>{icon ? iconZoom : zoom}× zoom</span>
+          {!icon && !playing && <span className="insp-paused">Paused</span>}
+          {!icon && cursor && (
             <span>
               x {Math.round(cursor.x)} y {Math.round(cursor.y)} · art px {Math.floor(cursor.x / P)}, {Math.floor(cursor.y / P)}
+            </span>
+          )}
+          {icon && pixel && (
+            <span>
+              art px {pixel.x}, {pixel.y} · {pixel.color ? `${pixel.ch} ${pixel.color}` : 'clear'}
             </span>
           )}
         </div>
@@ -334,7 +377,34 @@ export default function Inspector() {
               <p key={i}>{v}</p>
             ),
           )}
+          {icon && icon !== 'all' && (
+            <div>
+              <dt>Pixels</dt>
+              <dd>{relicArt(icon).source}</dd>
+            </div>
+          )}
         </dl>
+
+        {icon && (
+          <>
+            <Section title="View">
+              <Choice value={iconZoom} options={ICON_ZOOMS.map((z) => [z, `${z}×`])} onPick={setIconZoom} />
+              <Choice<Backdrop> value={backdrop} options={[['floor', 'Card'], ['dark', 'Dark'], ['light', 'Light']]} onPick={setBackdrop} />
+              <div className="insp-row">
+                <Btn on={grid} onClick={() => setGrid((g) => !g)} keyHint="G">
+                  Pixel grid
+                </Btn>
+              </div>
+              <p className="insp-hint">The game draws relics at 1× (the HUD, the pause list) and 3× (cards). The grid shows from 4×.</p>
+            </Section>
+            {icon !== 'all' && (
+              <Section title="Palette">
+                <Palette bitmap={relicArt(icon).bitmap} active={pixel?.ch ?? null} />
+              </Section>
+            )}
+            <p className="insp-keys">↑ ↓ pick · + − or scroll to zoom · G grid</p>
+          </>
+        )}
 
         {f.live && (
           <Section title="Behaviour" hint="L">
@@ -349,47 +419,51 @@ export default function Inspector() {
           </Section>
         )}
 
-        <Section title="Time">
-          <div className="insp-row">
-            <Btn onClick={() => setPlaying((p) => !p)} keyHint="Space">
-              {playing ? 'Pause' : 'Play'}
-            </Btn>
-            <Btn onClick={step} keyHint=".">
-              Step
-            </Btn>
-          </div>
-          <Choice value={speed} options={SPEEDS.map((s) => [s, `${SPEED_NAMES[s] ?? s}×`])} onPick={setSpeed} />
-        </Section>
+        {!icon && (
+          <Section title="Time">
+            <div className="insp-row">
+              <Btn onClick={() => setPlaying((p) => !p)} keyHint="Space">
+                {playing ? 'Pause' : 'Play'}
+              </Btn>
+              <Btn onClick={step} keyHint=".">
+                Step
+              </Btn>
+            </div>
+            <Choice value={speed} options={SPEEDS.map((s) => [s, `${SPEED_NAMES[s] ?? s}×`])} onPick={setSpeed} />
+          </Section>
+        )}
 
-        <Section title="View">
-          <Choice value={zoom} options={ZOOMS.map((z) => [z, `${z}×`])} onPick={setZoom} />
-          <Choice<Backdrop> value={backdrop} options={[['floor', 'Floor'], ['dark', 'Dark'], ['light', 'Light']]} onPick={setBackdrop} />
-          <Choice value={map} options={MAP_ORDER.map((m) => [m, MAPS[m].name.replace(/^The /, '')])} onPick={(m) => setFloor(m)} />
-          <div className="insp-row">
-            <Btn on={boxes} onClick={() => setBoxes((b) => !b)} keyHint="B">
-              Hitboxes
-            </Btn>
-            <Btn on={grid} onClick={() => setGrid((g) => !g)} keyHint="G">
-              Pixel grid
-            </Btn>
-          </div>
-          <div className="insp-row">
-            <Btn on={view.safeWarnings} onClick={() => setView((v) => ({ ...v, safeWarnings: !v.safeWarnings }))}>
-              Safe warnings
-            </Btn>
-            <Btn on={view.reduceFlashing} onClick={() => setView((v) => ({ ...v, reduceFlashing: !v.reduceFlashing }))}>
-              Less flashing
-            </Btn>
-          </div>
-          <div className="insp-row">
-            <Btn on={view.shake > 0} onClick={() => setView((v) => ({ ...v, shake: v.shake > 0 ? 0 : 1 }))}>
-              Shake
-            </Btn>
-            <Btn onClick={() => (pan.current = { x: 0, y: 0 })} keyHint="0">
-              Recenter
-            </Btn>
-          </div>
-        </Section>
+        {!icon && (
+          <Section title="View">
+            <Choice value={zoom} options={ZOOMS.map((z) => [z, `${z}×`])} onPick={setZoom} />
+            <Choice<Backdrop> value={backdrop} options={[['floor', 'Floor'], ['dark', 'Dark'], ['light', 'Light']]} onPick={setBackdrop} />
+            <Choice value={map} options={MAP_ORDER.map((m) => [m, MAPS[m].name.replace(/^The /, '')])} onPick={(m) => setFloor(m)} />
+            <div className="insp-row">
+              <Btn on={boxes} onClick={() => setBoxes((b) => !b)} keyHint="B">
+                Hitboxes
+              </Btn>
+              <Btn on={grid} onClick={() => setGrid((g) => !g)} keyHint="G">
+                Pixel grid
+              </Btn>
+            </div>
+            <div className="insp-row">
+              <Btn on={view.safeWarnings} onClick={() => setView((v) => ({ ...v, safeWarnings: !v.safeWarnings }))}>
+                Safe warnings
+              </Btn>
+              <Btn on={view.reduceFlashing} onClick={() => setView((v) => ({ ...v, reduceFlashing: !v.reduceFlashing }))}>
+                Less flashing
+              </Btn>
+            </div>
+            <div className="insp-row">
+              <Btn on={view.shake > 0} onClick={() => setView((v) => ({ ...v, shake: v.shake > 0 ? 0 : 1 }))}>
+                Shake
+              </Btn>
+              <Btn onClick={() => (pan.current = { x: 0, y: 0 })} keyHint="0">
+                Recenter
+              </Btn>
+            </div>
+          </Section>
+        )}
 
         {(f.hit || f.kill || f.heading || f.live || subject.every) && (
           <Section title="Subject">
@@ -487,7 +561,7 @@ export default function Inspector() {
           </Section>
         )}
 
-        <p className="insp-keys">↑ ↓ pick · Space play · . step · + − zoom · drag to pan, double-click to recenter</p>
+        {!icon && <p className="insp-keys">↑ ↓ pick · Space play · . step · + − zoom · drag to pan, double-click to recenter</p>}
       </aside>
     </div>
   );
@@ -522,6 +596,121 @@ function Choice<T>({ value, options, onPick }: { value: T; options: [T, string][
         </Btn>
       ))}
     </div>
+  );
+}
+
+/** A relic's icon at the zoom, with the art-pixel grid over it from 4× up. */
+function BigIcon({
+  id,
+  zoom,
+  grid,
+  children,
+  ...on
+}: { id: RelicId; zoom: number; grid: boolean; children?: ReactNode } & Pick<HTMLAttributes<HTMLSpanElement>, 'onPointerMove' | 'onPointerLeave'>) {
+  return (
+    <span className={`insp-big${grid && zoom >= 4 ? ' grid' : ''}`} style={{ '--z': `${zoom}px` } as CSSProperties} {...on}>
+      <RelicIcon id={id} size={16 * zoom} />
+      {children}
+    </span>
+  );
+}
+
+/** One relic: large, the pointer reading out the pixel under it, then as the game shows it. */
+function RelicView({
+  id,
+  zoom,
+  grid,
+  pixel,
+  onPixel,
+  onZoom,
+}: {
+  id: RelicId;
+  zoom: number;
+  grid: boolean;
+  pixel: IconPixel | null;
+  onPixel(p: IconPixel | null): void;
+  onZoom(d: number): void;
+}) {
+  const r = RELICS[id];
+  const { bitmap } = relicArt(id);
+  const read = (e: ReactPointerEvent<HTMLSpanElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    const x = Math.floor((e.clientX - box.left) / zoom);
+    const y = Math.floor((e.clientY - box.top) / zoom);
+    const ch = bitmap.rows[y]?.[x];
+    onPixel(ch === undefined ? null : { x, y, ch, color: bitmap.colors[ch] ?? null });
+  };
+  return (
+    <div className="insp-relic" onWheel={(e) => onZoom(e.deltaY < 0 ? 1 : -1)}>
+      <BigIcon id={id} zoom={zoom} grid={grid} onPointerMove={read} onPointerLeave={() => onPixel(null)}>
+        {pixel && <span className="insp-pick" style={{ left: pixel.x * zoom, top: pixel.y * zoom, width: zoom, height: zoom }} />}
+      </BigIcon>
+      <div className="insp-ingame">
+        <figure>
+          <div className="insp-card" style={{ '--relic': r.color } as CSSProperties}>
+            <RelicIcon id={id} size={48} />
+            <b>{r.name}</b>
+            <small>{r.map ? `Relic of the ${MAPS[r.map].name}` : 'Relic'}</small>
+          </div>
+          <figcaption>Relic choice · 3×</figcaption>
+        </figure>
+        <figure>
+          <span className="insp-chip">
+            <RelicIcon id={id} size={16} />
+          </span>
+          <figcaption>HUD · 1×</figcaption>
+        </figure>
+        <figure>
+          <div className="insp-listing">
+            <RelicIcon id={id} size={16} />
+            <span>
+              <b>{r.name}</b> {r.description}
+            </span>
+          </div>
+          <figcaption>Pause list · 1×</figcaption>
+        </figure>
+      </div>
+    </div>
+  );
+}
+
+/** Every relic side by side: at the zoom, then 3× and 1× as the game draws them. */
+function RelicSheet({ zoom, grid, onPick }: { zoom: number; grid: boolean; onPick(id: RelicId): void }) {
+  return (
+    <div className="insp-sheet" style={{ '--z': `${zoom}px` } as CSSProperties}>
+      {RELIC_IDS.map((id) => (
+        <button key={id} className="insp-sheet-cell" data-relic={id} title={RELICS[id].description} onClick={() => onPick(id)}>
+          <BigIcon id={id} zoom={zoom} grid={grid} />
+          <span className="insp-sheet-small">
+            <RelicIcon id={id} size={48} />
+            <span className="insp-chip">
+              <RelicIcon id={id} size={16} />
+            </span>
+          </span>
+          <span className="insp-sheet-name">{RELICS[id].name}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Each colour in a bitmap, most used first, with its letter and how many pixels use it. */
+function Palette({ bitmap, active }: { bitmap: Bitmap; active: string | null }) {
+  const counts = new Map<string, number>();
+  for (const row of bitmap.rows) for (const ch of row) if (bitmap.colors[ch]) counts.set(ch, (counts.get(ch) ?? 0) + 1);
+  return (
+    <ul className="insp-palette">
+      {[...counts]
+        .sort((a, b) => b[1] - a[1])
+        .map(([ch, n]) => (
+          <li key={ch} className={ch === active ? 'on' : undefined}>
+            <span className="insp-swatch" style={{ background: bitmap.colors[ch] }} />
+            <code>{ch}</code>
+            <span>{bitmap.colors[ch]}</span>
+            <span className="insp-count">{n} px</span>
+          </li>
+        ))}
+    </ul>
   );
 }
 

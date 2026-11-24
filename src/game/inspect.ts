@@ -10,6 +10,7 @@ import { MAP_ORDER, MAPS } from './maps';
 import type { BreakableLook, MapId } from './maps/types';
 import { clamp, TAU, type Vec } from './math';
 import { emptyMetaLevels } from './progression';
+import { RELIC_IDS, RELICS, type RelicId } from './relics';
 import { SITE_INFO, SITE_KINDS, SITES, type SiteKind } from './sites';
 import { castSpell, tickCooldowns, updateBeams, updateBolts, updateEchoes, updateFrost, updateNovas, updateWard } from './spells';
 import { castUltimate, ULTIMATES, updateUltimate, type UltimateId } from './ultimates';
@@ -22,11 +23,12 @@ import { createWorld, type BlastLook, type EliteKind, type Enemy, type EnemyShot
  * the game on its own, drawn by the real renderer on a real world with nothing else in it. A
  * subject is put on a stage (a map's world, cleared, with the subject on open floor in the
  * middle) and stepped there: idle, where only its animation runs, or live, where its own logic
- * runs against a serpent that can't be hurt.
+ * runs against a serpent that can't be hurt. Relics, which are only ever icons, are drawn as the
+ * menus draw them instead.
  */
 
-export type SubjectGroup = 'Serpents' | 'Foes' | 'Archmages' | 'Spells' | 'Ultimates' | 'Objects' | 'Ground' | 'Sites' | 'Floors';
-export const SUBJECT_GROUPS: SubjectGroup[] = ['Serpents', 'Foes', 'Archmages', 'Spells', 'Ultimates', 'Objects', 'Ground', 'Sites', 'Floors'];
+export type SubjectGroup = 'Serpents' | 'Foes' | 'Archmages' | 'Spells' | 'Ultimates' | 'Objects' | 'Ground' | 'Sites' | 'Floors' | 'Relics';
+export const SUBJECT_GROUPS: SubjectGroup[] = ['Serpents', 'Foes', 'Archmages', 'Spells', 'Ultimates', 'Objects', 'Ground', 'Sites', 'Floors', 'Relics'];
 
 /** Held while a foe idles; in a live run they come and go as they would in play. */
 export type FoeStatus = 'frozen' | 'chilled' | 'stunned' | 'shocked' | 'burrowed' | 'collapsed';
@@ -75,6 +77,8 @@ export interface Subject {
   features: SubjectFeatures;
   /** Shows the serpent: always, never, or only live (the target foes hunt). */
   serpent: 'always' | 'never' | 'live';
+  /** Not on the stage but an icon: a relic's, or every relic's side by side ('all'). */
+  relic?: RelicId | 'all';
   /** Puts it on a cleared stage. */
   place(stage: Stage): void;
   /** Done again every `every` seconds: a spell recast, a shot fired, a blast marked. */
@@ -906,6 +910,40 @@ function floorSubject(map: MapId): Subject {
   };
 }
 
+// Relics stand on the first map's stage, which is built anyway, with nothing on it: the screen draws their icons over it.
+
+function relicSubject(id: RelicId): Subject {
+  const r = RELICS[id];
+  return {
+    id: `relic:${id}`,
+    group: 'Relics',
+    name: r.name,
+    map: MAP_ORDER[0],
+    notes: [
+      ['', r.description],
+      ['Found', r.known ? 'Known from the start' : `In the Grimoire, ${r.cost} shards`],
+      ...(r.map ? [['Map', `${MAPS[r.map].name}, whose hazards it blunts`] as [string, string]] : []),
+      ['Colour', r.color],
+    ],
+    features: FEATURES,
+    serpent: 'never',
+    relic: id,
+    place: () => undefined,
+  };
+}
+
+const allRelics: Subject = {
+  id: 'relics',
+  group: 'Relics',
+  name: 'All relics',
+  map: MAP_ORDER[0],
+  notes: [['', `All ${RELIC_IDS.length} relics side by side, at the zoom and at the sizes the game draws them. Click one to look at it alone.`]],
+  features: FEATURES,
+  serpent: 'never',
+  relic: 'all',
+  place: () => undefined,
+};
+
 export const SUBJECTS: Subject[] = [
   ...WIZARD_IDS.map(serpentSubject),
   ...MAP_ORDER.flatMap((m) => MAPS[m].roster.map((k) => foeSubject(k as Exclude<EnemyKind, 'boss'>))),
@@ -926,6 +964,8 @@ export const SUBJECTS: Subject[] = [
   ...(Object.keys(BLAST_NAMES) as BlastLook[]).map(blastSubject),
   ...SITE_KINDS.map(siteSubject),
   ...MAP_ORDER.map(floorSubject),
+  allRelics,
+  ...RELIC_IDS.map(relicSubject),
 ];
 
 /** The landmarks of a stage's map, to jump the view to. */
