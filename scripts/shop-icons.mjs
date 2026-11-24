@@ -1,5 +1,5 @@
-// Draws the shop's icons (its stat lines, the Grimoire's tools, each map's waystone and the relics
-// the Grimoire sells) and writes them to src/ui/shopIcons.ts as rows of pixels.
+// Draws the shop's icons (its stat lines, the Grimoire's tools and each map's waystone) and the
+// relics', and writes them to src/ui/shopIcons.ts as rows of pixels.
 //
 // Each icon is a 16×16 mask of materials, built from simple shapes below. Every material is shaded
 // as a rounded form lit from the top left, as the sprites are, from its highlight to its shadow;
@@ -74,12 +74,36 @@ function stamp(g, x, y, rows) {
   rows.forEach((r, j) => [...r].forEach((c, i) => c !== ' ' && inside(x + i, y + j) && (g[y + j][x + i] = c)));
 }
 
-/** Points along an arc round (cx, cy), from a0 to a1 degrees. */
-function arc(cx, cy, r, a0, a1) {
-  return Array.from({ length: 9 }, (_, i) => {
-    const a = ((a0 + ((a1 - a0) * i) / 8) * Math.PI) / 180;
+/** n + 1 points along an arc round (cx, cy), from a0 to a1 degrees. */
+function arc(cx, cy, r, a0, a1, n = 8) {
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const a = ((a0 + ((a1 - a0) * i) / n) * Math.PI) / 180;
     return [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
   });
+}
+
+/** A line through the points that thins from r0 at its start to r1 at its end. */
+function taper(g, pts, r0, r1, ch) {
+  for (let i = 0; i + 1 < pts.length; i++) line(g, [pts[i], pts[i + 1]], r0 + ((r1 - r0) * i) / Math.max(1, pts.length - 2), ch);
+}
+
+/** A scale: round at the top, pointed at the bottom, with an ink rim, over whatever is there. */
+function scale(g, cx, cy, w, h, ch) {
+  const shape = (ww, hh) => [...arc(cx, cy - hh * 0.12, ww / 2, 180, 360, 12), [cx, cy + hh / 2]];
+  poly(g, shape(w + 2.2, h + 2.4), 'k');
+  poly(g, shape(w, h), ch);
+}
+
+/** Draws on a layer of its own, then sets that down over what's there, ringed in ink where it lies over `over` (any of it, if not given). */
+function inked(g, draw, over = null) {
+  const layer = blank();
+  draw(layer);
+  const on = (x, y) => inside(x, y) && layer[y][x] !== '.';
+  for (let y = 0; y < N; y++)
+    for (let x = 0; x < N; x++) {
+      if (on(x, y)) g[y][x] = layer[y][x];
+      else if ((on(x - 1, y) || on(x + 1, y) || on(x, y - 1) || on(x, y + 1)) && (!over || over.includes(g[y][x]))) g[y][x] = 'k';
+    }
 }
 
 /** A diamond-shaped gem with an ink rim, over whatever is there. */
@@ -362,7 +386,8 @@ const SHOP = {
 };
 
 const RELICS = {
-  // A smooth blue stone with a rune, ringing out echoes.
+  // The relics the Grimoire sells.
+  // Echo Stone: a smooth blue stone with a rune, ringing out echoes.
   echoStone: () => {
     const g = blank();
     disc(g, 6.5, 8, 4.8, 'S');
@@ -426,15 +451,192 @@ const RELICS = {
     ]),
     mats: { Y: GOLD, G: GLASS, P: PURPLE },
   }),
+
+  // The relics every save knows from the start.
+  // Ouroboros Coil: a serpent in a ring, its jaws closed on its own tail.
+  ouroboros: () => {
+    const g = blank();
+    // From its neck at the top left, down and round the ring, thinning as it goes.
+    const body = arc(8, 8.6, 4.8, 228, -52, 32);
+    taper(g, body, 1.6, 0.55, 'B');
+    // Its head at the top, facing along the ring.
+    poly(g, [[3.6, 3.4], [4.6, 1.6], [6.6, 0.8], [9, 1.2], [10.8, 2.2], [11.8, 3.6], [11.2, 4.8], [9.6, 5.6], [7, 6], [4.8, 5.6]], 'H');
+    stamp(g, 6, 2, ['ek']);
+    // The tail's end, running on into its mouth: inked against the head alone, so the ring runs unbroken into the jaws.
+    inked(g, (l) => line(l, [...body.slice(-6), [10.4, 4.3]], 0.55, 'B'), 'H');
+    stamp(g, 8, 4, ['kk']);
+    return { grid: g, mats: { B: TEAL, H: TEAL }, fixed: { e: '#ffffff' } };
+  },
+  // Tail Sigil: a serpent's tail, tapering to a sigil ringed in light, firing a bolt.
+  tailSigil: () => {
+    const g = blank();
+    taper(g, [[15, 14.4], [12, 13], [9, 13.4], [6.4, 11.8], [5.4, 9], [6, 7]], 1.9, 0.8, 'B');
+    disc(g, 6.4, 4.4, 2.6, 'k');
+    disc(g, 6.4, 4.4, 2.0, 'G');
+    stamp(g, 6, 4, ['w']);
+    line(g, [[9.6, 3.2], [14.4, 1.2]], 0.55, 'c');
+    stamp(g, 14, 0, ['w']);
+    return {
+      grid: g,
+      mats: { B: TEAL, G: { ramp: ['#ffffff', '#e6dcff', '#c9b8ff', '#7d6ab8'], core: [6.2, 4.2], radius: 2.8 } },
+      fixed: { c: '#c9b8ff', w: '#ffffff' },
+    };
+  },
+  // Glass Fang: a serpent's fang of glass, hooked and cracked, in its gum.
+  glassFang: () => {
+    const g = blank();
+    poly(g, [[3.8, 3.2], [12.4, 3.2], [12.2, 7], [10.6, 11], [7.6, 14.2], [4.2, 15.6], [6.8, 11.6], [5.4, 7.4]], 'F');
+    poly(g, [[2.2, 0.4], [13.8, 0.4], [13.8, 3.6], [2.2, 3.6]], 'M');
+    stamp(g, 9, 5, ['c', ' c', 'c', ' c']);
+    stamp(g, 6, 5, ['w', 'w', ' w']);
+    return {
+      grid: g,
+      mats: { F: ['#ffffff', '#bfe6ff', '#7fb2e0', '#3f6a9c'], M: ['#ffb3c2', '#e0607e', '#a8304e', '#5a1428'] },
+      fixed: { c: '#3f6a9c', w: '#ffffff' },
+    };
+  },
+  // Hunter's Mark: a target's reticle.
+  huntersMark: () => {
+    const g = blank();
+    line(g, arc(8, 8, 4.9, 0, 360, 36), 1.0, 'R');
+    for (const [a, b] of [[[8, 0.4], [8, 3.4]], [[8, 12.6], [8, 15.6]], [[0.4, 8], [3.4, 8]], [[12.6, 8], [15.6, 8]]]) line(g, [a, b], 0.9, 'R');
+    disc(g, 8, 8, 1.5, 'C');
+    const red = ['#ffd0da', '#ff7a8f', '#d0405a', '#7a1a30'];
+    return { grid: g, mats: { R: red, C: red } };
+  },
+  // Sacrificial Scales: three of the serpent's scales.
+  sacrificialScales: () => {
+    const g = blank();
+    scale(g, 5.2, 5.6, 6, 8, 'A');
+    scale(g, 10.8, 5.6, 6, 8, 'B');
+    scale(g, 8, 10.4, 6.6, 8.6, 'C');
+    const orange = ['#ffe0c0', '#ffb070', '#e07a3a', '#8a3e14'];
+    return { grid: g, mats: { A: orange, B: orange, C: orange } };
+  },
+  // Thick Hide: a plated shell.
+  thickHide: () => {
+    const g = blank();
+    poly(g, arc(8, 8.5, 6.9, 0, 360, 36).map(([x, y]) => [x, 8.5 + (y - 8.5) * 0.86]), 'H');
+    // Its plates: a hexagon in the middle, and seams from its corners out to the rim (never past it).
+    const seams = blank();
+    const hex = arc(8, 8.5, 2.7, 0, 360, 6);
+    line(seams, hex, 0.5, 'l');
+    for (const [x, y] of hex.slice(0, 6)) line(seams, [[x, y], [8 + (x - 8) * 2.6, 8.5 + (y - 8.5) * 2.3]], 0.5, 'l');
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (seams[y][x] === 'l' && g[y][x] === 'H') g[y][x] = 'l';
+    return { grid: g, mats: { H: ['#e8ffb8', '#a6d65a', '#6a9a2e', '#34561a'] }, fixed: { l: '#34561a' } };
+  },
+  // Stoneshaper's Charm: a stone pillar with a rune glowing on it.
+  stoneshaper: () => {
+    const g = fromRows([
+      '',
+      '..CCCCCCCCCCCC..',
+      '...CCCCCCCCCC...',
+      '.....SSSSSS.....',
+      '.....SSSSSS.....',
+      '.....SSSSSS.....',
+      '.....SSSSSS.....',
+      '.....SSSSSS.....',
+      '.....SSSSSS.....',
+      '.....SSSSSS.....',
+      '.....SSSSSS.....',
+      '.....SSSSSS.....',
+      '...CCCCCCCCCC...',
+      '..CCCCCCCCCCCC..',
+    ]);
+    stamp(g, 6, 5, [' gg ', 'gwwg', 'gwwg', ' gg ']);
+    return { grid: g, mats: { C: STONE, S: STONE }, fixed: { g: '#c9b8ff', w: '#ffffff' } };
+  },
+  // Thornhide: a pink pod bristling with thorns.
+  thornhide: () => {
+    const g = blank();
+    for (let k = 0; k < 8; k++) {
+      const a = (k * Math.PI) / 4 + Math.PI / 8;
+      const [c, s] = [Math.cos(a), Math.sin(a)];
+      poly(g, [[8 + c * 7.6, 8 + s * 7.6], [8 + c * 3.6 - s * 1.5, 8 + s * 3.6 + c * 1.5], [8 + c * 3.6 + s * 1.5, 8 + s * 3.6 - c * 1.5]], 'T');
+    }
+    disc(g, 8, 8, 4.4, 'P');
+    return {
+      grid: g,
+      mats: { P: ['#ffd0f4', '#e86ad8', '#a8389c', '#5a1450'], T: ['#ffffff', '#f6c0ee', '#b8489e', '#5a1450'] },
+    };
+  },
+  // Rimewalker: a fur-cuffed boot of ice blue, its sole spiked for the ice, frost glinting by it.
+  rimewalker: () => {
+    const g = fromRows([
+      '',
+      '',
+      '..FFFFFFF.......',
+      '.FFFFFFFFF......',
+      '..BBBBBBB.......',
+      '..BBBBBBB.......',
+      '..BBBBBBB.......',
+      '..BBBBBBBB......',
+      '..BBBBBBBBBB....',
+      '..BBBBBBBBBBBB..',
+      '..BBBBBBBBBBBBB.',
+      '..BBBBBBBBBBBBB.',
+      '.SSSSSSSSSSSSSS.',
+      '..III..III..III.',
+      '...I....I....I..',
+    ]);
+    // Tufts of the fur hanging over the shaft, and the frost.
+    stamp(g, 2, 4, ['F  F  F']);
+    stamp(g, 11, 1, [' x ', 'xwx', ' x ']);
+    return {
+      grid: g,
+      mats: {
+        F: ['#ffffff', '#eef4ff', '#c4d0e8', '#8090b8'],
+        B: { ramp: ['#c8ecff', '#6fb4ec', '#3a78c0', '#1d3f78'], flat: 1.8 },
+        S: STEEL,
+        I: ['#ffffff', '#d8f6ff', '#8fd8ff', '#3f86c8'],
+      },
+      fixed: { x: '#9fd8ff', w: '#ffffff' },
+    };
+  },
+  // Emberwalk: an obsidian boot, cracked and glowing from below, standing in flames.
+  emberwalk: () => {
+    const g = fromRows([
+      '',
+      '',
+      '..CCCCCCC.......',
+      '.CCCCCCCCC......',
+      '..BBBBBBB.......',
+      '..BBBBBBB.......',
+      '..BBBBBBB.......',
+      '..BBBBBBBB......',
+      '..BBBBBBBBBB....',
+      '..BBBBBBBBBBBB..',
+      '..BBBBBBBBBBBBB.',
+      '..BBBBBBBBBBBBB.',
+      '.SSSSSSSSSSSSSS.',
+    ]);
+    // A crack of lava up the shaft and over the foot.
+    stamp(g, 4, 4, [' o', 'y', 'o', ' o', '  y', '   oo']);
+    // Flames licking up round its sole, tallest in the middle, from a bed of fire at the bottom.
+    poly(g, [[-0.5, 16.5], [-0.5, 12.6], [1, 10.4], [2.6, 13], [4.4, 9.4], [6.2, 12.8], [8.4, 8.8], [10.4, 12.6], [12.4, 9.6], [14, 12.6], [15.2, 10.6], [16.5, 12.8], [16.5, 16.5]], 'F');
+    stamp(g, 12, 1, ['  o', 'y', '   y']);
+    return {
+      grid: g,
+      mats: {
+        C: ['#c8b8c8', '#7a6a80', '#4e4058', '#2a2032'],
+        B: { ramp: ['#b0a0b8', '#625270', '#3e3050', '#22182e'], flat: 1.6 },
+        S: ['#ffb070', '#c03a1a', '#7a1e0e', '#3a0c06'],
+        F: { ramp: FLAME, glow: true },
+      },
+      fixed: { o: '#ff8a3c', y: '#ffd45e' },
+    };
+  },
 };
 
 // ---------------------------------------------------------------- shading
 
 /**
  * Turns an icon's mask into pixels. Uppercase letters are materials, each `[highlight, base,
- * shade, deep]` or `{ ramp, flat, core, radius }`: shaded as a dome over its own shape lit by
- * LIGHT (`flat` scales its slopes), or, with `core`, by distance from a hot point (for fire).
- * Lowercase letters are detail pixels in `fixed` colours; 'k' is ink. Ink rings the materials.
+ * shade, deep]` or `{ ramp, flat, core, radius, glow }`: shaded as a dome over its own shape lit
+ * by LIGHT (`flat` scales its slopes); with `core`, by distance from a hot point; with `glow`, by
+ * how deep inside itself a pixel is, hottest deepest, the bottom edge not counting as an edge
+ * (flames, rising from below the icon). Lowercase letters are detail pixels in `fixed` colours;
+ * 'k' is ink. Ink rings the materials.
  */
 function shade(spec) {
   const g = spec.grid;
@@ -456,7 +658,7 @@ function shade(spec) {
     const cells = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (own(x, y)) cells.push([x, y]);
     const edge = [];
-    for (let y = -1; y <= N; y++) for (let x = -1; x <= N; x++) if (!own(x, y)) edge.push([x, y]);
+    for (let y = -1; y <= N; y++) for (let x = -1; x <= N; x++) if (!own(x, y) && !(def.glow && y === N)) edge.push([x, y]);
     // A dome over the material: its height rises with the distance in from its edge.
     const dist = new Map();
     let R = 0;
@@ -477,6 +679,9 @@ function shade(spec) {
       if (def.core) {
         const d = Math.hypot(x + 0.5 - def.core[0], y + 0.5 - def.core[1]) / def.radius;
         tone = d < 0.3 ? 0 : d < 0.6 ? 1 : d < 0.95 ? 2 : 3;
+      } else if (def.glow) {
+        const d = dist.get(`${x},${y}`);
+        tone = d >= 3 ? 0 : d >= 2 ? 1 : d >= 1.4 ? 2 : 3;
       } else {
         const n = [-(height(x + 1, y) - height(x - 1, y)) * 0.5 * flat, -(height(x, y + 1) - height(x, y - 1)) * 0.5 * flat, 1];
         const lit = (n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2]) / Math.hypot(...n);
@@ -528,7 +733,7 @@ ${block(shop)}
 
 export type ShopIconName = keyof typeof SHOP_ICONS;
 
-/** The relics the Grimoire sells, drawn the same way (the others are drawn from their outlines). */
+/** The relics, drawn the same way (but for the Gambler's Die and the Frenzied Heart, drawn in art.tsx). */
 export const RELIC_ICONS = {
 ${block(relics)}
 } satisfies Record<string, Bitmap>;

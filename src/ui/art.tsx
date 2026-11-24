@@ -207,8 +207,7 @@ const RELIC_GRID = 16;
 const relicBitmaps = new Map<RelicId, Bitmap>();
 
 /**
- * Relics drawn by hand (16×16 like the rest): the six the Grimoire sells (see shopIcons.ts), and two
- * whose shape is too fine to snap to the grid on its own.
+ * Relics drawn by hand, 16×16: all but two from scripts/shop-icons.mjs (see shopIcons.ts), and these two.
  * The Gambler's Die: a bone-white die showing three, lit on its upper-left and shaded lower-right.
  * The Frenzied Heart: a red heart with a bright bolt zig-zagging across it.
  */
@@ -259,8 +258,8 @@ const RELIC_PIXELS: Partial<Record<RelicId, Bitmap>> = {
 };
 
 /**
- * A relic's vector shape snapped to a 16×16 grid: solid colour inside, lit on its upper-left
- * edges and shaded on its lower-right, with an ink outline round it.
+ * A relic's pixels: drawn by hand, or else (for a relic not yet drawn) its vector shape snapped to a
+ * 16×16 grid, solid colour inside, lit on its upper-left edges and shaded on its lower-right, inked round.
  */
 function relicBitmap(id: RelicId): Bitmap {
   const cached = RELIC_PIXELS[id] ?? relicBitmaps.get(id);
