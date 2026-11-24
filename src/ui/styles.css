@@ -1974,6 +1974,60 @@ kbd {
   font-family: var(--title-font);
 }
 
+/* -- scrollbars. With a mouse, they're drawn like the buttons: a stepped purple thumb (gold while
+   dragged) in an inked track. A menu keeps their room on both sides whether it scrolls or not, so
+   a tab that scrolls doesn't nudge the menu sideways, and it stays centred. Touch screens keep
+   their own floating ones. */
+@media (hover: hover) and (pointer: fine) {
+  .app .screen {
+    scrollbar-gutter: stable both-edges;
+  }
+  .app ::-webkit-scrollbar {
+    width: 16px;
+    height: 16px;
+  }
+  /* The track: a channel cut in ink, its far wall catching the light. */
+  .app ::-webkit-scrollbar-track {
+    background: var(--px-ink);
+    box-shadow: inset -2px 0 0 var(--px-panel-2);
+  }
+  .app ::-webkit-scrollbar-corner {
+    background: var(--px-ink);
+  }
+  /* The thumb: lit on its upper left, shaded lower right, with three ridges to grip in its middle. */
+  .app ::-webkit-scrollbar-thumb {
+    border: 2px solid var(--px-ink);
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='7' shape-rendering='crispEdges'%3E%3Cpath fill='%232a1f48' d='M0 0h6v1H0zM0 3h6v1H0zM0 6h6v1H0z'/%3E%3Cpath fill='%23a996e0' d='M0 1h6v1H0zM0 4h6v1H0z'/%3E%3C/svg%3E") center no-repeat, var(--px-edge);
+    box-shadow:
+      inset 2px 2px 0 #9b88d4,
+      inset -2px -2px 0 var(--px-hi);
+  }
+  .app ::-webkit-scrollbar-thumb:hover {
+    background-color: #8470c6;
+    box-shadow:
+      inset 2px 2px 0 #c4b4f4,
+      inset -2px -2px 0 #5d4a8e;
+  }
+  .app ::-webkit-scrollbar-thumb:active {
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='7' shape-rendering='crispEdges'%3E%3Cpath fill='%23b9761a' d='M0 0h6v1H0zM0 3h6v1H0zM0 6h6v1H0z'/%3E%3Cpath fill='%23fff3c4' d='M0 1h6v1H0zM0 4h6v1H0z'/%3E%3C/svg%3E") center no-repeat, #ffd45e;
+    box-shadow:
+      inset 2px 2px 0 #fff3c4,
+      inset -2px -2px 0 #b9761a;
+  }
+  .app ::-webkit-scrollbar-button {
+    display: none;
+  }
+  /* Without those (Firefox), the browser's own thin one in the same colours. Chromium would drop
+     the drawn one if it saw these, so only browsers without it do. */
+  @supports not selector(::-webkit-scrollbar) {
+    .app,
+    .app * {
+      scrollbar-color: var(--px-edge) var(--px-ink);
+      scrollbar-width: thin;
+    }
+  }
+}
+
 .app.pixel .pixel-icon,
 .app.pixel .pixel-sigil,
 .app.pixel .pixel-title-serpent {
@@ -3244,6 +3298,15 @@ kbd {
   /* The price alone: the card already says what it buys. */
   .app .shop .stat-lines .learn-word {
     display: none;
+  }
+}
+
+/* With a mouse, the room kept for the scrollbar on each side (see "scrollbars") stands in for as
+   much of the shop's side padding, so the stat lines keep the width that fits them on the screen. */
+@media (hover: hover) and (pointer: fine) and (width > 559px) and (height > 500px) {
+  .app .shop {
+    padding-left: calc(24 * var(--u) - 16px);
+    padding-right: calc(24 * var(--u) - 16px);
   }
 }
 
