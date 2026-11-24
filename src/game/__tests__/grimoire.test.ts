@@ -4,17 +4,18 @@ import { difficulty, eliteChance } from '../enemies';
 import { grimoireSetup, playableHeat, startMaps, unlockBlocker, UNLOCK_IDS, UNLOCKS, type UnlockId } from '../grimoire';
 import { buyUnlock, commitRunResult, defaultSave, sanitizeSave, type SaveData } from '../persistence';
 import { computeReward, emptyMetaLevels, KNOWN_DUOS } from '../progression';
-import { KNOWN_RELICS } from '../relics';
+import { KNOWN_RELICS, offerRelics, RELIC_CHOICES } from '../relics';
+import { mulberry32 } from '../math';
 import { createWorld, WAYSTONE_LEVELS } from '../world';
 
 const rich = (more: Partial<SaveData> = {}): SaveData => ({ ...defaultSave(), currency: 10000, ...more });
 
 describe('the Grimoire (M1)', () => {
-  it('sells 20 one-time unlocks for several thousand shards', () => {
+  it('sells 23 one-time unlocks for several thousand shards', () => {
     const count = (kind: string) => UNLOCKS.filter((u) => u.kind === kind).length;
-    expect([count('relic'), count('duo'), count('tool'), count('waystone'), count('ultimate')]).toEqual([8, 3, 5, 3, 1]);
+    expect([count('relic'), count('duo'), count('tool'), count('waystone'), count('ultimate')]).toEqual([8, 3, 8, 3, 1]);
     const total = UNLOCKS.reduce((s, u) => s + u.cost, 0);
-    expect(total).toBeGreaterThan(5000);
+    expect(total).toBeGreaterThan(7000);
     expect(new Set(UNLOCK_IDS).size).toBe(UNLOCK_IDS.length);
   });
 
@@ -47,13 +48,40 @@ describe('the Grimoire (M1)', () => {
   });
 });
 
+describe("Phoenix Scale, Heirloom and Seer's Eye", () => {
+  const world = (owned: UnlockId[], more = {}) => createWorld(emptyMetaLevels(), () => undefined, 4, { wizard: 'arcanist', curses: [], grimoire: grimoireSetup(owned), ...more });
+
+  it('adds the three new tools to a run', () => {
+    const g = grimoireSetup(['phoenix', 'heirloom', 'seersEye']);
+    expect([g.phoenix, g.heirloom, g.relicChoices]).toEqual([true, true, 4]);
+    const none = grimoireSetup([]);
+    expect([none.phoenix, none.heirloom, none.relicChoices]).toEqual([false, false, RELIC_CHOICES]);
+    const w = world(['phoenix', 'seersEye']);
+    expect([w.phoenix, w.relicChoices, w.draft]).toEqual([true, 4, null]);
+  });
+
+  it("Heirloom opens every run with one relic choice, on top of a waystone's", () => {
+    expect(world(['heirloom']).draft).toEqual({ relics: 1, levels: 0, waystone: false });
+    const deep = world(['heirloom', 'way:catacombs'], { startDepth: 3, waystone: true });
+    expect(deep.draft).toEqual({ relics: 3, levels: 2 * WAYSTONE_LEVELS, waystone: true });
+  });
+
+  it("Seer's Eye shows four relics in every relic choice", () => {
+    expect(offerRelics(world([]), mulberry32(1))).toHaveLength(RELIC_CHOICES);
+    const w = world(['seersEye']);
+    const offer = offerRelics(w, mulberry32(1));
+    expect(offer).toHaveLength(4);
+    expect(new Set(offer).size).toBe(4);
+  });
+});
+
 describe('waystones (M2)', () => {
   it('starts on any map whose waystone is learned, with a catch-up draft', () => {
     expect(startMaps([])).toEqual(['ruins']);
     expect(startMaps(['way:catacombs'])).toEqual(['ruins', 'catacombs']);
     const w = createWorld(emptyMetaLevels(), () => undefined, 3, { wizard: 'arcanist', curses: [], startDepth: 3, waystone: true });
     expect(w.map.def.id).toBe('catacombs');
-    expect(w.draft).toEqual({ relics: 2, levels: 2 * WAYSTONE_LEVELS });
+    expect(w.draft).toEqual({ relics: 2, levels: 2 * WAYSTONE_LEVELS, waystone: true });
     // A development start (?depth=N) skips the catch-up.
     expect(createWorld(emptyMetaLevels(), () => undefined, 3, { wizard: 'arcanist', curses: [], startDepth: 3 }).draft).toBeNull();
   });

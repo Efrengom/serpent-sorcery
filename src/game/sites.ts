@@ -4,7 +4,7 @@ import { burst, floater } from './effects';
 import { ringPoint, spawnElite } from './enemies';
 import { clamp, dist, mulberry32, TAU, type Vec } from './math';
 import { COLORS } from './palette';
-import { computeReward, xpToNext, type RunMods } from './progression';
+import { computeReward, shardBonus, xpToNext, type RunMods } from './progression';
 import { RELICS, takeRelic, type RelicId } from './relics';
 import { shardMultiplier } from './curses';
 import { clearanceAt } from './terrain';
@@ -187,6 +187,7 @@ export function runShards(world: World): number {
     bonusShards: world.bonusShards,
     heat: world.heat,
     won: world.won,
+    shardBonus: shardBonus(world.meta),
   });
   return Math.max(0, reward - world.spentShards);
 }
@@ -231,7 +232,7 @@ export function siteOffer(world: World, site: Site): SiteOffer {
           return { id, name: w.name, description: w.blurb, cost, affordable: cost <= shards };
         }
         const b = BUFF_INFO[id as TimedBuff];
-        return { id, name: `Elixir of ${b.name}`, description: `${b.blurb} for ${Math.round(buffDuration(id as TimedBuff))}s`, cost, affordable: cost <= shards };
+        return { id, name: `Elixir of ${b.name}`, description: `${b.blurb} for ${Math.round(buffDuration(id as TimedBuff, world.meta))}s`, cost, affordable: cost <= shards };
       }),
   };
 }

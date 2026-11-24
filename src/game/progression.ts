@@ -8,6 +8,7 @@ import {
   ASPECT_FROM_LEVEL,
   ASPECT_IDS,
   ASPECTS,
+  BREAKABLES,
   COOLDOWN_FLOOR,
   DUO_IDS,
   DUOS,
@@ -40,8 +41,9 @@ export function survivalXpRate(seconds: number): number {
   return PROGRESSION.survivalXpBase + PROGRESSION.survivalXpPerMinute * (seconds / 60);
 }
 
-export function segmentsForLevel(level: number): number {
-  return Math.min(SNAKE.maxSegments, SNAKE.startSegments + (level - 1) * SNAKE.segmentsPerLevel);
+/** Body segments at a level; `bonus` is Long Coils' extra length from the start. */
+export function segmentsForLevel(level: number, bonus = 0): number {
+  return Math.min(SNAKE.maxSegments, SNAKE.startSegments + bonus + (level - 1) * SNAKE.segmentsPerLevel);
 }
 
 // ---------------------------------------------------------------- Run upgrades
@@ -124,11 +126,53 @@ export function overchargeMods(o: OverchargeLevels): Partial<RunMods> {
   };
 }
 
+/** Ranks bought of each permanent stat line (see META_UPGRADES). */
 export interface MetaLevels {
   health: number;
+  hide: number;
+  mending: number;
   damage: number;
-  pickup: number;
+  fluency: number;
   wisdom: number;
+  pickup: number;
+  length: number;
+  lingering: number;
+  fortune: number;
+  hoard: number;
+}
+
+/** What one rank of each permanent stat line does. The shop's text and the effects both read these. */
+export const META_TUNING = {
+  /** Max health, spell damage, crystal pickup reach and XP. */
+  health: 10,
+  damage: 0.08,
+  pickup: 0.15,
+  wisdom: 0.1,
+  /** Ironscale Hide: less damage from foes. */
+  hide: 0.04,
+  /** Mending Coils: health regained per second. */
+  mending: 0.2,
+  /** Rune Fluency: shorter spell cooldowns. */
+  fluency: 0.03,
+  /** Long Coils: body segments from the start. */
+  length: 3,
+  /** Lingering Elixirs: longer timed buffs. */
+  lingering: 0.2,
+  /** Fortune's Eye: points of a small urn's buff chance, and a large urn's chance of a second buff. */
+  fortuneSmall: 0.01,
+  fortuneLarge: 0.1,
+  /** Serpent's Hoard: more Arcane Shards from a run. */
+  hoard: 0.1,
+};
+
+/** Long Coils' extra body segments. */
+export function bodyBonus(meta: MetaLevels): number {
+  return META_TUNING.length * meta.length;
+}
+
+/** Serpent's Hoard's multiplier on a run's shards. */
+export function shardBonus(meta: MetaLevels): number {
+  return 1 + META_TUNING.hoard * meta.hoard;
 }
 
 export interface PlayerStats {
@@ -280,28 +324,29 @@ export function emptyUpgradeLevels(): UpgradeLevels {
 }
 
 export function emptyMetaLevels(): MetaLevels {
-  return { health: 0, damage: 0, pickup: 0, wisdom: 0 };
+  return { health: 0, hide: 0, mending: 0, damage: 0, fluency: 0, wisdom: 0, pickup: 0, length: 0, lingering: 0, fortune: 0, hoard: 0 };
 }
 
 export function computeStats(up: UpgradeLevels, meta: MetaLevels, mods: RunMods = NO_MODS): PlayerStats {
+  const t = META_TUNING;
   return {
-    damageMult: (1 + 0.15 * up.potency) * (1 + 0.08 * meta.damage) * mods.damageMult,
+    damageMult: (1 + 0.15 * up.potency) * (1 + t.damage * meta.damage) * mods.damageMult,
     boltCount: 1 + up.multibolt,
     boltPierce: up.pierce,
     chains: SPELLS.lightning.chains + up.chains + mods.chains,
     novaRadius: SPELLS.nova.radius * (1 + 0.2 * up.novaRadius),
     novaDamageMult: 1 + 0.1 * up.novaRadius,
-    cooldownMult: Math.max(COOLDOWN_FLOOR, Math.max(0.6, 1 - 0.08 * up.haste) * mods.cooldownMult),
-    maxHp: Math.max(10, Math.round((SNAKE.baseMaxHp + 10 * meta.health + 20 * up.vitality + mods.maxHp) * mods.maxHpMult)),
-    pickupRadius: SNAKE.basePickupRadius * (1 + 0.15 * meta.pickup) * (1 + 0.35 * up.magnet) * mods.pickupMult,
-    regenPerSec: 0.6 * up.regen,
-    xpMult: (1 + 0.1 * meta.wisdom) * mods.xpMult,
+    cooldownMult: Math.max(COOLDOWN_FLOOR, Math.max(0.6, 1 - 0.08 * up.haste) * (1 - t.fluency * meta.fluency) * mods.cooldownMult),
+    maxHp: Math.max(10, Math.round((SNAKE.baseMaxHp + t.health * meta.health + 20 * up.vitality + mods.maxHp) * mods.maxHpMult)),
+    pickupRadius: SNAKE.basePickupRadius * (1 + t.pickup * meta.pickup) * (1 + 0.35 * up.magnet) * mods.pickupMult,
+    regenPerSec: 0.6 * up.regen + t.mending * meta.mending,
+    xpMult: (1 + t.wisdom * meta.wisdom) * mods.xpMult,
     wardCharges: SPELLS.ward.charges + up.wardRunes + mods.wardCharges,
     wardDuration: SPELLS.ward.duration + 1.5 * up.wardRunes,
     frostRadius: SPELLS.frost.radius * (1 + 0.18 * up.deepFrost) * mods.frostRadiusMult,
     frostSlow: Math.max(0.2, SPELLS.frost.slow - 0.07 * up.deepFrost),
     frostDamageMult: 1 + 0.25 * up.deepFrost,
-    damageTaken: mods.damageTakenMult,
+    damageTaken: mods.damageTakenMult * (1 - t.hide * meta.hide),
     ultimateCooldownMult: mods.ultimateCooldownMult,
   };
 }
@@ -573,6 +618,8 @@ export interface RunSummary {
   won?: boolean;
   /** Shards already spent at merchants (E1), taken off the total. */
   spent?: number;
+  /** Serpent's Hoard's multiplier (1 = none), on top of the curses' cap. */
+  shardBonus?: number;
 }
 
 /** The most curses can multiply a run's shards by. */
@@ -581,7 +628,9 @@ export const MAX_SHARD_MULT = 3;
 export function computeReward(run: RunSummary): number {
   const t = Math.max(0, run.time);
   const heat = Number.isFinite(run.heat) ? Math.max(0, Math.min(HEAT.max, run.heat!)) : 0;
-  const mult = Math.max(1, Math.min(MAX_SHARD_MULT, Number.isFinite(run.shardMult) ? run.shardMult! : 1)) * (1 + HEAT.shards * heat);
+  const hoardMax = 1 + META_TUNING.hoard * metaMaxLevel('hoard');
+  const hoard = Number.isFinite(run.shardBonus) ? Math.max(1, Math.min(hoardMax, run.shardBonus!)) : 1;
+  const mult = Math.max(1, Math.min(MAX_SHARD_MULT, Number.isFinite(run.shardMult) ? run.shardMult! : 1)) * (1 + HEAT.shards * heat) * hoard;
   const spent = Number.isFinite(run.spent) ? Math.max(0, run.spent!) : 0;
   return Math.max(
     0,
@@ -609,34 +658,86 @@ export interface MetaDef {
   describe: (level: number) => string;
 }
 
+const per = (v: number) => Math.round(v * 100);
+
+/** The shop's stat lines, in the order it shows them, three to a row: staying alive, power, reach and growth, then loot. */
 export const META_UPGRADES: Record<MetaId, MetaDef> = {
   health: {
     id: 'health',
     name: 'Hardy Scales',
     glyph: '♥',
     costs: [25, 50, 90, 140, 200],
-    describe: (l) => `Start each run with +${10 * l} max health.`,
+    describe: (l) => `+${META_TUNING.health * l} max health.`,
+  },
+  hide: {
+    id: 'hide',
+    name: 'Ironscale Hide',
+    glyph: '⬢',
+    costs: [35, 70, 120, 180],
+    describe: (l) => `Foes deal ${per(META_TUNING.hide * l)}% less damage.`,
+  },
+  mending: {
+    id: 'mending',
+    name: 'Mending Coils',
+    glyph: '✚',
+    costs: [30, 70, 120],
+    describe: (l) => `Regenerate ${r1(META_TUNING.mending * l)} health a second.`,
   },
   damage: {
     id: 'damage',
     name: 'Sharpened Focus',
     glyph: '✦',
     costs: [30, 60, 100, 150, 220],
-    describe: (l) => `Start each run with +${8 * l}% spell damage.`,
+    describe: (l) => `+${per(META_TUNING.damage * l)}% spell damage.`,
   },
-  pickup: {
-    id: 'pickup',
-    name: 'Lodestone Fangs',
-    glyph: '◇',
-    costs: [20, 45, 80],
-    describe: (l) => `Start each run with +${15 * l}% crystal pickup radius.`,
+  fluency: {
+    id: 'fluency',
+    name: 'Rune Fluency',
+    glyph: '↻',
+    costs: [40, 80, 130, 200],
+    describe: (l) => `Spell cooldowns ${per(META_TUNING.fluency * l)}% shorter.`,
   },
   wisdom: {
     id: 'wisdom',
     name: 'Ancient Wisdom',
     glyph: '❂',
     costs: [40, 90, 160],
-    describe: (l) => `Gain +${10 * l}% experience from all sources.`,
+    describe: (l) => `+${per(META_TUNING.wisdom * l)}% experience.`,
+  },
+  pickup: {
+    id: 'pickup',
+    name: 'Lodestone Fangs',
+    glyph: '◇',
+    costs: [20, 45, 80],
+    describe: (l) => `+${per(META_TUNING.pickup * l)}% crystal pickup reach.`,
+  },
+  length: {
+    id: 'length',
+    name: 'Long Coils',
+    glyph: '∿',
+    costs: [25, 55, 95],
+    describe: (l) => `Start ${META_TUNING.length * l} segments longer: Constrict sooner.`,
+  },
+  lingering: {
+    id: 'lingering',
+    name: 'Lingering Elixirs',
+    glyph: '⚗︎',
+    costs: [25, 55, 95],
+    describe: (l) => `Timed buffs last ${per(META_TUNING.lingering * l)}% longer.`,
+  },
+  fortune: {
+    id: 'fortune',
+    name: "Fortune's Eye",
+    glyph: '☘',
+    costs: [30, 65, 110],
+    describe: (l) => `A buff in ${per(BREAKABLES.small.buff + META_TUNING.fortuneSmall * l)}% of small urns, two in ${per(META_TUNING.fortuneLarge * l)}% of large.`,
+  },
+  hoard: {
+    id: 'hoard',
+    name: "Serpent's Hoard",
+    glyph: '◆',
+    costs: [50, 110, 190],
+    describe: (l) => `+${per(META_TUNING.hoard * l)}% Arcane Shards from every run.`,
   },
 };
 

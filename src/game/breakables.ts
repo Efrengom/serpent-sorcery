@@ -3,6 +3,7 @@ import { dropCrystals } from './combat';
 import { burst, floater } from './effects';
 import { dist2, TAU } from './math';
 import { COLORS } from './palette';
+import { META_TUNING, type MetaLevels } from './progression';
 import type { Breakable, BuffId, Pickup, PickupKind, TimedBuff, World } from './world';
 
 /**
@@ -28,9 +29,14 @@ export const BUFF_INFO: Record<BuffId, { name: string; blurb: string; color: str
 
 export const HEAL_COLOR = '#ff5a7a';
 
-/** Seconds a timed buff lasts. */
-export function buffDuration(id: TimedBuff): number {
-  return BUFFS[id].duration;
+/** Seconds a timed buff lasts, longer with Lingering Elixirs. */
+export function buffDuration(id: TimedBuff, meta?: MetaLevels): number {
+  return BUFFS[id].duration * (1 + META_TUNING.lingering * (meta?.lingering ?? 0));
+}
+
+/** A small urn's chance of a buff, and a large one's of a second buff (Fortune's Eye). */
+export function urnBuffChance(meta: MetaLevels): { small: number; secondLarge: number } {
+  return { small: BREAKABLES.small.buff + META_TUNING.fortuneSmall * meta.fortune, secondLarge: META_TUNING.fortuneLarge * meta.fortune };
 }
 
 // ---------------------------------------------------------------- placing and refilling
@@ -177,13 +183,14 @@ function dropLoot(world: World, b: Breakable): void {
     world.recap.breakableXp += xp;
     dropCrystals(world, b.x, b.y, xp);
     if (world.rng() < BREAKABLES.small.heal * (low ? 2 : 1)) spawnPickup(world, 'heal', b.x, b.y);
-    if (world.rng() < BREAKABLES.small.buff) spawnPickup(world, rollBuff(world), b.x, b.y);
+    if (world.rng() < urnBuffChance(world.meta).small) spawnPickup(world, rollBuff(world), b.x, b.y);
     return;
   }
   world.recap.breakableXp += BREAKABLES.large.xp;
   dropCrystals(world, b.x, b.y, BREAKABLES.large.xp);
   if (world.rng() < BREAKABLES.large.heal) spawnPickup(world, low ? 'bigHeal' : 'heal', b.x, b.y);
   spawnPickup(world, rollBuff(world), b.x, b.y);
+  if (world.rng() < urnBuffChance(world.meta).secondLarge) spawnPickup(world, rollBuff(world), b.x, b.y);
 }
 
 /** A buff, by the weights in BUFFS. */
@@ -272,7 +279,7 @@ export function grantBuff(world: World, id: BuffId): void {
     world.bonusShards += shards;
     label = `+${shards} Arcane Shards`;
   } else {
-    world.buffs[id] = buffDuration(id);
+    world.buffs[id] = buffDuration(id, world.meta);
   }
   floater(world, s.x, s.y - 34, label, info.color, { size: 20, life: 1.2 });
   burst(world, s.x, s.y, info.color, 16, 220, { kind: 'glow', size: 6, life: 0.5 });

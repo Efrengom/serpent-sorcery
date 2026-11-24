@@ -11,6 +11,7 @@ import type { BreakableLook, MapId } from './maps/types';
 import { mulberry32, type Vec } from './math';
 import { createFlowField, refreshFlowField, type FlowField } from './nav';
 import {
+  bodyBonus,
   combineMods,
   computeStats,
   emptyOvercharge,
@@ -18,6 +19,7 @@ import {
   KNOWN_DUOS,
   NO_MODS,
   overchargeMods,
+  segmentsForLevel,
   type MetaLevels,
   type OverchargeLevels,
   type PlayerStats,
@@ -25,7 +27,7 @@ import {
   type UpgradeLevels,
 } from './progression';
 import { emptyRecap, type HurtSource, type RunRecap } from './recap';
-import { KNOWN_RELICS, relicMods, type RelicId } from './relics';
+import { KNOWN_RELICS, RELIC_CHOICES, relicMods, type RelicId } from './relics';
 import { placeSites, siteMods, type PactId, type RiftState, type Site } from './sites';
 import type { UltimateId } from './ultimates';
 import { PathTrail, Snake } from './snake';
@@ -333,8 +335,22 @@ export interface ConstrictFlash {
 export interface RunSetup {
   wizard: WizardId;
   curses: CurseId[];
-  /** What the save's Grimoire adds: extra rerolls and banishes, a fourth card, the duos and relics unlocked, a primed ultimate. */
-  grimoire?: { rerolls: number; banishes: number; fourthCard: boolean; duos: DuoId[]; relics: RelicId[]; ultReady: boolean };
+  /**
+   * What the save's Grimoire adds: extra rerolls and banishes, a fourth card, the duos and relics
+   * unlocked, a primed ultimate, the Phoenix Scale, an Heirloom relic to start with, and how many
+   * relics each relic choice shows (Seer's Eye).
+   */
+  grimoire?: {
+    rerolls: number;
+    banishes: number;
+    fourthCard: boolean;
+    duos: DuoId[];
+    relics: RelicId[];
+    ultReady: boolean;
+    phoenix?: boolean;
+    heirloom?: boolean;
+    relicChoices?: number;
+  };
   /** Heat (M3), and whether `startDepth` comes from a waystone (M2: the run catches up with a draft). */
   heat?: number;
   waystone?: boolean;
@@ -558,12 +574,19 @@ export interface World {
   stars: Star[];
   ultRings: UltRing[];
   zeroUntil: number;
-  /** A waystone start's catch-up still to come: relic choices, then level-ups (M2). */
-  draft: { relics: number; levels: number } | null;
-  /** Relics carried (R4), the ones the save knows, and the three on offer at the way down until one is chosen. */
+  /**
+   * Relic choices and level-ups still to come before play: a waystone start's catch-up (M2), and
+   * the Grimoire's Heirloom (one relic choice). `waystone` says whose it is, for the panels.
+   */
+  draft: { relics: number; levels: number; waystone: boolean } | null;
+  /** Relics carried (R4), the ones the save knows, and those on offer at the way down until one is chosen. */
   relics: RelicId[];
   relicPool: RelicId[];
   relicOffer: RelicId[] | null;
+  /** How many relics a relic choice shows: three, four with the Grimoire's Seer's Eye. */
+  relicChoices: number;
+  /** The Grimoire's Phoenix Scale, while it hasn't yet saved the serpent this run. */
+  phoenix: boolean;
   /** Relic clocks and counters: the Tail Sigil's next shot, when the Bell can ring again, Scales shed on this map, kills and casts. */
   relicState: { tail: number; bellReady: number; sacrificed: boolean; kills: number; casts: number };
   stats: PlayerStats;
@@ -674,6 +697,14 @@ export function createWorld(
   const depth = Math.max(1, Math.floor(setup.startDepth ?? 1));
   const map = buildLayout(mapForIndex(depth - 1), mapSeed(seed, depth - 1));
   const snake = new Snake(map.start.x, map.start.y, map.startHeading);
+  // Long Coils: the body starts longer.
+  if (bodyBonus(meta) > 0) {
+    snake.segmentCount = snake.segmentTarget = segmentsForLevel(1, bodyBonus(meta));
+    snake.updateSegments();
+  }
+  const waystone = !!setup.waystone && depth > 1;
+  const draftRelics = (waystone ? depth - 1 : 0) + (grimoire?.heirloom ? 1 : 0);
+  const draftLevels = waystone ? WAYSTONE_LEVELS * (depth - 1) : 0;
   const camera = createCamera(snake.x, snake.y);
   clampCamera(camera, map.width, map.height);
   const flow = createFlowField(map);
@@ -736,10 +767,12 @@ export function createWorld(
     stars: [],
     ultRings: [],
     zeroUntil: 0,
-    draft: setup.waystone && depth > 1 ? { relics: depth - 1, levels: WAYSTONE_LEVELS * (depth - 1) } : null,
+    draft: draftRelics > 0 || draftLevels > 0 ? { relics: draftRelics, levels: draftLevels, waystone } : null,
     relics: [],
     relicPool: grimoire ? [...grimoire.relics] : [...KNOWN_RELICS],
     relicOffer: null,
+    relicChoices: Math.max(1, Math.floor(grimoire?.relicChoices ?? RELIC_CHOICES)),
+    phoenix: !!grimoire?.phoenix,
     relicState: { tail: 0, bellReady: 0, sacrificed: false, kills: 0, casts: 0 },
     stats,
     hp: stats.maxHp,

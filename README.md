@@ -230,7 +230,7 @@ Once nothing else is left to offer, endless **overcharge** cards fill the offer:
 
 ## Relics
 
-Stepping into the way down after a boss offers **three relics** to carry for the rest of the run; pick one, or leave them and heal 40%. One of the three is always the next map's own relic, which blunts its hazards: Stoneshaper's Charm (stone doesn't hurt), Thornhide (brambles, half from spores), Rimewalker (ice doesn't widen turns, half from icicles) and Emberwalk (lava and burning ground, half from eruptions). The others range from the Ouroboros Coil (+1% damage per 4 body segments), the Tail Sigil (the tail fires bolts) and Glass Fang (+40% damage, −25% health) to Sacrificial Scales (once per map a killing blow sheds a third of the body instead) and Hunter's Mark (elites and bosses take 25% more). Carried relics show as icons under the HUD bars, with their effects in the pause menu. Ten are known from the start; the Grimoire unlocks eight more.
+Stepping into the way down after a boss offers **three relics** (four with the Grimoire's Seer's Eye) to carry for the rest of the run; pick one, or leave them and heal 40%. One of the three is always the next map's own relic, which blunts its hazards: Stoneshaper's Charm (stone doesn't hurt), Thornhide (brambles, half from spores), Rimewalker (ice doesn't widen turns, half from icicles) and Emberwalk (lava and burning ground, half from eruptions). The others range from the Ouroboros Coil (+1% damage per 4 body segments), the Tail Sigil (the tail fires bolts) and Glass Fang (+40% damage, −25% health) to Sacrificial Scales (once per map a killing blow sheds a third of the body instead) and Hunter's Mark (elites and bosses take 25% more). Carried relics show as icons under the HUD bars, with their effects in the pause menu. Ten are known from the start; the Grimoire unlocks eight more.
 
 ## Shrines, rifts, chests and merchants
 
@@ -243,9 +243,25 @@ Each map has two **sites** by its landmarks (three from the Catacombs on), on th
 | **Cursed Chest** | A relic at once, but foes hit 40% harder for 45 s and three elite guards come |
 | **Wandering Merchant** | Sells a healing draught, a relic or a tome (a level), and an elixir (a buff), for the shards the run will bank. Prices rise each depth; it can be visited again. |
 
-## The Grimoire, waystones and heat
+## The shop: stat lines, the Grimoire, waystones and heat
 
-The **Permanent Upgrades** screen has a second tab, the **Grimoire**: one-time unlocks that add options rather than power. It sells the eight locked relics, three duos, extra rerolls and banishes, a fourth card at every level-up, a primed ultimate, and **waystones**. A waystone (once you've reached that map) lets a run start on the Hollows, the Catacombs or the Ember Depths, picked in the atlas on the setup screen. To catch up, the run first chooses a relic and drafts twelve level-ups for each map it skips, through the usual panel, with **Auto-pick the rest** to hurry.
+The **Permanent Upgrades** screen spends the Arcane Shards runs bank. Its first tab has eleven **stat lines**, bought rank by rank:
+
+| Line | Each rank | Ranks |
+| --- | --- | --- |
+| Hardy Scales | +10 max health | 5 |
+| Ironscale Hide | foes deal 4% less damage | 4 |
+| Mending Coils | +0.2 health regained a second | 3 |
+| Sharpened Focus | +8% spell damage | 5 |
+| Rune Fluency | spell cooldowns 3% shorter (still no lower than half) | 4 |
+| Ancient Wisdom | +10% experience | 3 |
+| Lodestone Fangs | +15% crystal pickup reach | 3 |
+| Long Coils | the body starts 3 segments longer, so Constrict comes sooner | 3 |
+| Lingering Elixirs | timed buffs (from urns and merchants) last 20% longer | 3 |
+| Fortune's Eye | small urns hold a buff 1 point more often (3% to 6%), large ones a second buff 10% of the time | 3 |
+| Serpent's Hoard | +10% Arcane Shards from every run, on top of curses and heat | 3 |
+
+The second tab, the **Grimoire**, has one-time unlocks that add options rather than power. It sells the eight locked relics, three duos, extra rerolls and banishes, a fourth card at every level-up, a primed ultimate, **Seer's Eye** (every relic choice shows four), **Heirloom** (every run begins with a relic choice), the **Phoenix Scale** (once a run, a killing blow leaves you at half health with a free Nova and 3 s of safety; Sacrificial Scales goes first) and **waystones**. A waystone (once you've reached that map) lets a run start on the Hollows, the Catacombs or the Ember Depths, picked in the atlas on the setup screen. To catch up, the run first chooses a relic and drafts twelve level-ups for each map it skips, through the usual panel, with **Auto-pick the rest** to hurry.
 
 Winning a run, or reaching Depth 5 (the Ruins again), unlocks **heat**. Each heat level gives foes 12% more health, 6% more damage and 3% more elites, and the run 15% more shards. Winning or reaching Depth 5 at a heat unlocks the next, up to 10. It's set on the setup screen.
 
