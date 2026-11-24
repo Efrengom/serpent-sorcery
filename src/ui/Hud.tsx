@@ -2,11 +2,14 @@ import { BUFF_INFO } from '../game/breakables';
 import type { HudSnapshot } from '../game/engine';
 import { ICON_PATHS } from '../game/icons';
 import { formatTime } from '../game/math';
+import { unlockDef } from '../game/grimoire';
 import { RELICS } from '../game/relics';
-import { PixelIcon, RelicIcon } from './art';
+import { PixelIcon, RelicIcon, ShopGlyph } from './art';
 import { useFullscreen } from './fullscreen';
 import { useKeyLabel } from './Options';
 import { SigilIcon, SPELL_UI } from './SigilIcon';
+
+const { name: PHOENIX_NAME, description: PHOENIX_TEXT } = unlockDef('phoenix');
 
 interface Props {
   hud: HudSnapshot | null;
@@ -71,13 +74,18 @@ export function Hud({ hud, muted, onPause, onToggleMute, onUltimate }: Props) {
                 XP {Math.floor(hud.xp)} / {hud.xpNext}
               </span>
             </div>
-            {hud.relics.length > 0 && (
+            {(hud.relics.length > 0 || hud.phoenix) && (
               <div className="relic-row">
                 {hud.relics.map((id) => (
                   <span key={id} className="relic-chip" data-relic={id} title={`${RELICS[id].name}: ${RELICS[id].description}`}>
                     <RelicIcon id={id} size={16} />
                   </span>
                 ))}
+                {hud.phoenix && (
+                  <span className="relic-chip phoenix-chip" data-phoenix title={`${PHOENIX_NAME}: ${PHOENIX_TEXT}`}>
+                    <ShopGlyph id="phoenix" scale={1} className="" />
+                  </span>
+                )}
               </div>
             )}
           </div>

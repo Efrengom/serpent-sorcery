@@ -16,7 +16,7 @@ import type { DailySetup } from '../game/daily';
 import type { SaveData } from '../game/persistence';
 import { META_IDS, META_UPGRADES, metaMaxLevel, metaNextCost, type MetaId } from '../game/progression';
 import { isWizardUnlocked, playableWizard, WIZARD_IDS, WIZARDS, type WizardId } from '../game/wizards';
-import { PixelIcon, PixelTitleSerpent, RelicIcon, Shard, UpgradeGlyph, WizardPortrait } from './art';
+import { PixelIcon, PixelTitleSerpent, RelicIcon, Shard, ShopGlyph, WizardPortrait } from './art';
 import { desktop } from '../desktop';
 import { useFullscreen } from './fullscreen';
 import { useInstall } from './install';
@@ -794,8 +794,6 @@ const UNLOCK_GROUPS: { kind: UnlockKind; title: string }[] = [
   { kind: 'ultimate', title: 'Ultimate' },
 ];
 
-const TOOL_GLYPH: Record<string, string> = { reroll1: '↻', reroll2: '↻', banish1: '✕', banish2: '✕', fourthCard: '▦' };
-
 function UnlockIcon({ def }: { def: UnlockDef }) {
   if (def.kind === 'relic') return <RelicIcon id={def.id.slice(6) as RelicId} size={44} />;
   if (def.kind === 'duo') {
@@ -807,7 +805,7 @@ function UnlockIcon({ def }: { def: UnlockDef }) {
       </span>
     );
   }
-  return <UpgradeGlyph id={def.id} glyph={def.kind === 'waystone' ? '⟱' : def.kind === 'ultimate' ? '✸' : TOOL_GLYPH[def.id]} />;
+  return <ShopGlyph id={def.id} />;
 }
 
 /** The shop's parts: the stat lines, then the Grimoire's groups. A phone shows one at a time, the ultimate with the tools. */
@@ -815,7 +813,7 @@ type ShopPane = 'stats' | Exclude<UnlockKind, 'ultimate'>;
 const shopPaneOf = (kind: UnlockKind): ShopPane => (kind === 'ultimate' ? 'tool' : kind);
 
 /** The Grimoire: one-time unlocks that widen what a run can find and do. */
-function GrimoireGrid({ save, onBuy, pane }: { save: SaveData; onBuy(id: UnlockId): void; pane: ShopPane }) {
+function GrimoireGrid({ save, onBuy, pane, open, onOpen }: { save: SaveData; onBuy(id: UnlockId): void; pane: ShopPane; open: string | null; onOpen(id: string, toggle?: boolean): void }) {
   return (
     <div className="grimoire">
       {UNLOCK_GROUPS.map((g) => (
@@ -826,7 +824,7 @@ function GrimoireGrid({ save, onBuy, pane }: { save: SaveData; onBuy(id: UnlockI
               const blocker = unlockBlocker(u.id, save.grimoire, save.records.maps);
               const owned = save.grimoire.includes(u.id);
               return (
-                <div key={u.id} className={`shop-card grimoire-card${owned ? ' maxed' : ''}`} data-unlock={u.id}>
+                <div key={u.id} className={`shop-card grimoire-card${owned ? ' maxed' : ''}${open === u.id ? ' open' : ''}`} data-unlock={u.id} onClick={() => onOpen(u.id, true)}>
                   <UnlockIcon def={u} />
                   <span className="card-name">{u.name}</span>
                   <span className="card-desc">{u.description}</span>
@@ -834,7 +832,9 @@ function GrimoireGrid({ save, onBuy, pane }: { save: SaveData; onBuy(id: UnlockI
                     className="btn small primary"
                     disabled={blocker !== null || save.currency < u.cost}
                     onClick={(e) => {
+                      e.stopPropagation();
                       onBuy(u.id);
+                      onOpen(u.id);
                       if (e.detail > 0) e.currentTarget.blur();
                     }}
                   >
@@ -870,14 +870,40 @@ export function ShopScreen({
 }) {
   useKey(BACK, onBack);
   // A larger screen has two tabs, the stat lines and the whole Grimoire; a phone has one per group.
-  const [pane, setPane] = useState<ShopPane>('stats');
+  const [pane, setPaneState] = useState<ShopPane>('stats');
   const tab = pane === 'stats' ? 'stats' : 'grimoire';
+  // On a phone each line and unlock is a tile; the one tapped (or just bought) is read out below them.
+  const [open, setOpenState] = useState<string | null>(null);
+  const setPane = (p: ShopPane) => {
+    setPaneState(p);
+    setOpenState(null);
+  };
+  const setOpen = (id: string, toggle = false) => setOpenState(toggle && open === id ? null : id);
   const learned = (pane: ShopPane) => {
     const all = UNLOCKS.filter((u) => shopPaneOf(u.kind) === pane);
     return `${all.filter((u) => save.grimoire.includes(u.id)).length} / ${all.length}`;
   };
   const ranks = META_IDS.reduce((n, id) => n + save.meta[id], 0);
   const maxRanks = META_IDS.reduce((n, id) => n + metaMaxLevel(id), 0);
+  let detail: ReactNode = pane === 'stats' ? 'Tap a line to read it.' : 'Tap an unlock to read it.';
+  const openLine = META_IDS.find((id) => id === open);
+  const openUnlock = UNLOCKS.find((u) => u.id === open);
+  if (pane === 'stats' && openLine) {
+    const def = META_UPGRADES[openLine];
+    const level = save.meta[openLine];
+    detail = (
+      <>
+        <b>{def.name}</b> {level > 0 ? def.describe(level) : 'Not yet learned.'}
+        {level < metaMaxLevel(openLine) && <span className="detail-next"> Next: {def.describe(level + 1)}</span>}
+      </>
+    );
+  } else if (pane !== 'stats' && openUnlock) {
+    detail = (
+      <>
+        <b>{openUnlock.name}</b> {openUnlock.description}
+      </>
+    );
+  }
   return (
     <div className="screen shop phone-menu">
       <h2 className="screen-title">Permanent Upgrades</h2>
@@ -908,9 +934,9 @@ export function ShopScreen({
         ]}
       />
       {tab === 'grimoire' ? (
-        <GrimoireGrid save={save} onBuy={onBuyUnlock} pane={pane} />
+        <GrimoireGrid save={save} onBuy={onBuyUnlock} pane={pane} open={open} onOpen={setOpen} />
       ) : (
-      <div className={`shop-grid ${paneClass('stats', pane)}`}>
+      <div className={`shop-grid stat-lines ${paneClass('stats', pane)}`}>
         {META_IDS.map((id) => {
           const def = META_UPGRADES[id];
           const level = save.meta[id];
@@ -918,8 +944,8 @@ export function ShopScreen({
           const cost = metaNextCost(id, level);
           const affordable = cost !== null && save.currency >= cost;
           return (
-            <div key={id} className={`shop-card${cost === null ? ' maxed' : ''}`}>
-              <UpgradeGlyph id={id} glyph={def.glyph} />
+            <div key={id} className={`shop-card${cost === null ? ' maxed' : ''}${open === id ? ' open' : ''}`} data-meta={id} onClick={() => setOpen(id, true)}>
+              <ShopGlyph id={id} />
               <span className="card-name">{def.name}</span>
               <span className="card-pips">
                 {Array.from({ length: max }, (_, k) => (
@@ -932,7 +958,9 @@ export function ShopScreen({
                 className="btn small primary"
                 disabled={!affordable}
                 onClick={(e) => {
+                  e.stopPropagation();
                   onBuy(id);
+                  setOpen(id);
                   // After a mouse purchase, drop focus so a later Enter/Space can't buy again by accident.
                   // Keyboard activation (detail === 0) keeps focus for deliberate keyboard use.
                   if (e.detail > 0) e.currentTarget.blur();
@@ -952,6 +980,7 @@ export function ShopScreen({
         })}
       </div>
       )}
+      <p className="shop-detail">{detail}</p>
       <div className="menu-buttons row">
         <button className="btn" onClick={onBack}>
           Back <kbd>Esc</kbd>

@@ -6,7 +6,7 @@ import { spawnEnemy } from './enemies';
 import { clamp, dist2, TAU } from './math';
 import { COLORS } from './palette';
 import { hurtKey, type DamageSource, type HurtSource } from './recap';
-import { hasRelic, onRelicKill, RELIC_TUNING, relicShare, ringBell, sacrifice } from './relics';
+import { hasRelic, onRelicKill, phoenixRise, RELIC_TUNING, relicShare, ringBell, sacrifice } from './relics';
 import { castSpell, frostAt, spawnBolt } from './spells';
 import { bastionUp, zeroBrittle } from './ultimates';
 import { clearanceAt, pushOut } from './terrain';
@@ -276,8 +276,10 @@ export function hurtPlayer(world: World, amount: number, source: HurtSource): bo
   const key = hurtKey(source);
   world.recap.taken[key] = (world.recap.taken[key] ?? 0) + Math.min(dmg, world.hp);
   world.hp = Math.max(0, world.hp - dmg);
-  if (world.hp <= 0 && !sacrifice(world)) world.recap.killedBy = key;
-  world.invuln = SNAKE.invulnTime;
+  // A killing blow can be turned: Sacrificial Scales first (once a map), then the Phoenix Scale (once a run).
+  if (world.hp <= 0 && !sacrifice(world) && !phoenixRise(world, () => castSpell(world, 'nova', null))) world.recap.killedBy = key;
+  // Either keeps its own, longer moment of safety.
+  world.invuln = Math.max(world.invuln, SNAKE.invulnTime);
   world.hurtFlash = 1;
   addShake(world, 0.45);
   hitStop(world, HIT_STOP.hurt, true);

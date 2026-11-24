@@ -22,8 +22,10 @@ import { COLORS } from './palette';
 import type { RunResult } from './persistence';
 import { applyChoice, banishFromOffer, rerollOffer, rollOffer, skipLevelUp } from './levelup';
 import {
+  bodyBonus,
   computeReward,
   segmentsForLevel,
+  shardBonus,
   spellCooldown,
   survivalXpRate,
   xpToNext,
@@ -87,8 +89,9 @@ export interface HudSnapshot {
   bossIncoming: number | null;
   /** Timed buffs running now, with seconds left out of their full length. */
   buffs: { id: TimedBuff; left: number; total: number }[];
-  /** Relics carried, in the order they were taken. */
+  /** Relics carried, in the order they were taken, and whether the Phoenix Scale is still unspent. */
   relics: RelicId[];
+  phoenix: boolean;
   /** A rift being fought (elites slain of those needed, seconds left), and a cursed chest's curse. */
   rift: { kills: number; need: number; left: number } | null;
   curse: number;
@@ -101,8 +104,8 @@ export interface RelicOffer {
   relics: RelicId[];
   nextMap: string;
   depth: number;
-  /** A waystone start's catch-up: which of its relic choices this is. */
-  draft: { n: number; total: number } | null;
+  /** A start-of-run draft (a waystone's catch-up, or the Heirloom): which of its relic choices this is. */
+  draft: { n: number; total: number; waystone: boolean } | null;
   /** A won rift's reward, rather than the way down's. */
   source?: 'rift';
 }
@@ -150,8 +153,8 @@ export class Game {
   /** The level-up offer on screen, and the level it's for. */
   private offer: UpgradeChoice[] = [];
   private offerLevel = 1;
-  /** A waystone start's catch-up in progress: relic choices made so far, and level-ups drafted in all. */
-  private draftRelics = { n: 0, total: 0 };
+  /** A start-of-run draft in progress: relic choices made so far (and whether a waystone's), and level-ups drafted in all. */
+  private draftRelics = { n: 0, total: 0, waystone: false };
   private draftLevels = 0;
   private finished = false;
   private destroyed = false;
@@ -235,13 +238,14 @@ export class Game {
   }
 
   /**
-   * A waystone start catches up before play (M2): a relic choice for each map skipped, then a
-   * draft of level-ups through the usual panel. The clock doesn't run until it's done.
+   * Choices before play: a waystone start catches up (M2) with a relic choice for each map
+   * skipped, then a draft of level-ups through the usual panel; the Heirloom adds one relic choice.
+   * The clock doesn't run until it's done.
    */
   private beginDraft(): void {
     const draft = this.world.draft;
     if (!draft) return;
-    this.draftRelics = { n: 0, total: draft.relics };
+    this.draftRelics = { n: 0, total: draft.relics, waystone: draft.waystone };
     this.draftLevels = 0;
     this.nextDraftStep();
   }
@@ -269,7 +273,7 @@ export class Game {
     }
     // Every level of the catch-up at once: the body grows to match, then each is drafted in turn.
     w.level += levels;
-    w.snake.segmentTarget = w.snake.segmentCount = segmentsForLevel(w.level);
+    w.snake.segmentTarget = w.snake.segmentCount = segmentsForLevel(w.level, bodyBonus(w.meta));
     w.snake.updateSegments();
     refreshStats(w);
     w.hp = w.stats.maxHp;
@@ -808,7 +812,7 @@ export class Game {
       gained++;
     }
     if (gained > 0) {
-      w.snake.segmentTarget = segmentsForLevel(w.level);
+      w.snake.segmentTarget = segmentsForLevel(w.level, bodyBonus(w.meta));
       // The Ouroboros Coil grows with the body.
       refreshStats(w);
       this.pendingLevelUps += gained;
@@ -848,7 +852,7 @@ export class Game {
     if (this.finished || this.destroyed) return;
     this.finished = true;
     const w = this.world;
-    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills, shardMult: shardMultiplier(w.curses), bonusShards: w.bonusShards, heat: w.heat, won: w.won, spent: w.spentShards };
+    const summary = { time: w.time, kills: w.kills, level: w.level, bossKills: w.bossKills, shardMult: shardMultiplier(w.curses), bonusShards: w.bonusShards, heat: w.heat, won: w.won, spent: w.spentShards, shardBonus: shardBonus(w.meta) };
     const result: RunResult = {
       ...summary,
       runId: this.runId,
@@ -899,8 +903,9 @@ export class Game {
         ? { name: BOSSES[w.boss.bossId].name, hp: Math.max(0, w.boss.hp), maxHp: w.boss.maxHp, enraged: w.boss.enraged }
         : null,
       bossIncoming: !w.boss && incoming <= 30 && incoming > 0 ? incoming : null,
-      buffs: TIMED_BUFFS.filter((id) => w.buffs[id] > 0).map((id) => ({ id, left: w.buffs[id], total: buffDuration(id) })),
+      buffs: TIMED_BUFFS.filter((id) => w.buffs[id] > 0).map((id) => ({ id, left: w.buffs[id], total: buffDuration(id, w.meta) })),
       relics: [...w.relics],
+      phoenix: w.phoenix,
       rift: w.rift ? { kills: riftKills(w), need: w.rift.need, left: riftLeft(w) } : null,
       curse: w.chestCurse,
       ultimate: {

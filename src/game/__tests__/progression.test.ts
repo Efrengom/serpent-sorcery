@@ -10,6 +10,8 @@ import {
   computeStats,
   emptyMetaLevels,
   emptyUpgradeLevels,
+  META_IDS,
+  metaMaxLevel,
   rollUpgradeChoices,
   segmentsForLevel,
   spellCooldown,
@@ -91,7 +93,7 @@ describe('run upgrades', () => {
 
   it('meta upgrades raise starting stats', () => {
     const base = computeStats(emptyUpgradeLevels(), emptyMetaLevels());
-    const boosted = computeStats(emptyUpgradeLevels(), { health: 2, damage: 1, pickup: 1, wisdom: 1 });
+    const boosted = computeStats(emptyUpgradeLevels(), { ...emptyMetaLevels(), health: 2, damage: 1, pickup: 1, wisdom: 1 });
     expect(boosted.maxHp).toBe(base.maxHp + 20);
     expect(boosted.damageMult).toBeGreaterThan(base.damageMult);
     expect(boosted.pickupRadius).toBeGreaterThan(base.pickupRadius);
@@ -168,7 +170,7 @@ describe('rewards and persistence', () => {
       }),
     );
     expect(weird.currency).toBe(0);
-    expect(weird.meta).toEqual({ health: 5, damage: 0, pickup: 1, wisdom: 0 });
+    expect(weird.meta).toEqual({ ...emptyMetaLevels(), health: 5, pickup: 1 });
     expect(weird.records.bestTime).toBe(0);
     expect(weird.records.totalRuns).toBe(3);
     expect(weird.settings).toEqual({ muted: false, volume: 1, musicVolume: 0.55, wizard: 'arcanist', curses: [], heat: 0, startMap: 'ruins', ...defaultOptions() });
@@ -187,21 +189,18 @@ describe('rewards and persistence', () => {
   it('only buyMeta can raise permanent upgrade levels', () => {
     const rng = mulberry32(99);
     for (let i = 0; i < 200; i++) {
-      const meta = {
-        health: Math.floor(rng() * 6),
-        damage: Math.floor(rng() * 6),
-        pickup: Math.floor(rng() * 4),
-        wisdom: Math.floor(rng() * 4),
-      };
+      const meta = emptyMetaLevels();
+      for (const id of META_IDS) meta[id] = Math.floor(rng() * (metaMaxLevel(id) + 1));
       const base = { ...defaultSave(), currency: Math.floor(rng() * 500), meta };
       // Banking any run leaves upgrades untouched.
       const run = { runId: `r${i}`, time: rng() * 900, kills: Math.floor(rng() * 900), level: 1 + Math.floor(rng() * 30), bossKills: Math.floor(rng() * 3), reward: 0 };
       expect(commitRunResult(base, run).save.meta).toEqual(meta);
       // Loading never raises a level; it can only clamp invalid values down.
-      const noisy = { ...base, meta: { health: meta.health + rng() * 3, damage: -rng() * 2, pickup: meta.pickup, wisdom: 'x' } };
+      const noisy = { ...base, meta: { ...meta, health: meta.health + rng() * 3, damage: -rng() * 2, wisdom: 'x', hoard: meta.hoard + 5 } };
       const loaded = parseSave(JSON.stringify(noisy)).meta;
       for (const k of Object.keys(loaded) as (keyof typeof loaded)[]) {
-        expect(loaded[k]).toBeLessThanOrEqual(Math.max(0, Number(noisy.meta[k]) || 0));
+        expect(loaded[k]).toBeLessThanOrEqual(Math.max(0, Number((noisy.meta as Record<string, unknown>)[k]) || 0));
+        expect(loaded[k]).toBeLessThanOrEqual(metaMaxLevel(k));
       }
       // A round trip preserves levels exactly.
       expect(parseSave(JSON.stringify(base)).meta).toEqual(meta);

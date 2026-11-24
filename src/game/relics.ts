@@ -2,7 +2,7 @@ import { SNAKE, SPELLS, type SpellId } from './config';
 import { addShake, burst, floater } from './effects';
 import { mapForIndex } from './maps';
 import type { MapId } from './maps/types';
-import { segmentsForLevel, type RunMods } from './progression';
+import { bodyBonus, segmentsForLevel, type RunMods } from './progression';
 import type { HurtSource } from './recap';
 import type { World } from './world';
 
@@ -200,6 +200,9 @@ export const RELICS: Record<RelicId, RelicDef> = {
 export const RELIC_IDS = Object.keys(RELICS) as RelicId[];
 export const KNOWN_RELICS: RelicId[] = RELIC_IDS.filter((id) => RELICS[id].known);
 
+/** Relics a relic choice shows, before the Grimoire's Seer's Eye adds one. */
+export const RELIC_CHOICES = 3;
+
 /** Tuning for the relics that act as things happen. */
 export const RELIC_TUNING = {
   segmentsPerPercent: 4,
@@ -238,7 +241,7 @@ export function relicMods(world: World): Partial<RunMods>[] {
   const t = RELIC_TUNING;
   const out: Partial<RunMods>[] = [];
   for (const id of world.relics) {
-    if (id === 'ouroboros') out.push({ damageMult: 1 + 0.01 * Math.floor(segmentsForLevel(world.level) / t.segmentsPerPercent) });
+    if (id === 'ouroboros') out.push({ damageMult: 1 + 0.01 * Math.floor(segmentsForLevel(world.level, bodyBonus(world.meta)) / t.segmentsPerPercent) });
     else if (id === 'glassFang') out.push({ damageMult: t.glassDamage, maxHpMult: t.glassHealth });
     else if (id === 'thickHide') out.push({ damageTakenMult: t.thickHide });
     else if (id === 'lodestar') out.push({ pickupMult: t.lodestarPickup, xpMult: t.lodestarXp });
@@ -249,7 +252,7 @@ export function relicMods(world: World): Partial<RunMods>[] {
 }
 
 /**
- * The three relics offered on the way down: the next map's own relic (if the save knows it and
+ * The relics offered on the way down (three, four with Seer's Eye): the next map's own relic (if the save knows it and
  * the run doesn't have it), then random others the save knows. Fewer when few are left. A
  * waystone start offers for the map it starts on (`mapIndex`).
  */
@@ -262,7 +265,7 @@ export function offerRelics(world: World, rng: () => number, mapIndex = world.ma
     const j = Math.floor(rng() * (i + 1));
     [rest[i], rest[j]] = [rest[j], rest[i]];
   }
-  return [...(own ? [own] : []), ...rest].slice(0, 3);
+  return [...(own ? [own] : []), ...rest].slice(0, world.relicChoices);
 }
 
 /** Takes a relic for the rest of the run. Returns false if the run already has it. */
@@ -313,6 +316,28 @@ export function sacrifice(world: World): boolean {
   burst(world, s.x, s.y, RELICS.sacrificialScales.color, 40, 320, { kind: 'shard', size: 4, life: 0.8 });
   floater(world, s.x, s.y - 34, 'Scales shed!', RELICS.sacrificialScales.color, { size: 20, life: 1.2 });
   addShake(world, 0.5);
+  world.sfx('evolve');
+  return true;
+}
+
+/** The Grimoire's Phoenix Scale: the health it leaves, and the seconds of safety after. */
+export const PHOENIX = { health: 0.5, safety: 3, color: '#ffb347' };
+
+/**
+ * Phoenix Scale (a Grimoire unlock, not a relic): once a run, a killing blow leaves the serpent at
+ * half health instead, with a free Nova and a moment of safety. Sacrificial Scales goes first.
+ */
+export function phoenixRise(world: World, nova: () => void): boolean {
+  if (!world.phoenix) return false;
+  const s = world.snake;
+  world.phoenix = false;
+  world.hp = Math.max(1, Math.round(world.stats.maxHp * PHOENIX.health));
+  world.invuln = PHOENIX.safety;
+  nova();
+  burst(world, s.x, s.y, PHOENIX.color, 44, 340, { kind: 'glow', size: 8, life: 0.9 });
+  burst(world, s.x, s.y, '#ff5a3a', 30, 260, { size: 4, life: 0.7 });
+  world.banner = { text: 'Phoenix Scale!', sub: 'Risen once. The next fall is the last.', t: 0, max: 2.4, color: PHOENIX.color };
+  addShake(world, 0.6);
   world.sfx('evolve');
   return true;
 }

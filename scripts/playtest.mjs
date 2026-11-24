@@ -3085,7 +3085,8 @@ try {
     await sleep(200);
     const chestHud = await page.evaluate(() => ({ chip: document.querySelector('.curse-status')?.textContent ?? null, relics: window.__serpent.debug().world.relics.length }));
     check('a cursed chest opens on touch: a relic at once, and a curse shown on the HUD', !!chest && chest.banner === 'A cursed chest!' && /Cursed/.test(chestHud.chip ?? '') && chestHud.relics === relics0 + 1, { chest, chestHud });
-    const rift = await steerInto(3, () => (window.__serpent.debug().world.rift ? document.querySelector('.rift-status')?.textContent ?? 'open' : null));
+    // Once the rift is open, wait for the HUD to show its count (it renders a moment later).
+    const rift = await steerInto(3, () => (window.__serpent.debug().world.rift ? (document.querySelector('.rift-status')?.textContent ?? null) : null));
     await page.evaluate(async () => {
       const { killEnemy } = await import('/src/game/combat.ts');
       const { spawnEnemy } = await import('/src/game/enemies.ts');

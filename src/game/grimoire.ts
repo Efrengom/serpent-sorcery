@@ -2,13 +2,14 @@ import { DUO_IDS, DUOS, HEAT, type DuoId } from './config';
 import { MAP_ORDER, MAPS } from './maps';
 import type { MapId } from './maps/types';
 import { KNOWN_DUOS } from './progression';
-import { KNOWN_RELICS, RELIC_IDS, RELICS, type RelicId } from './relics';
+import { KNOWN_RELICS, PHOENIX, RELIC_CHOICES, RELIC_IDS, RELICS, type RelicId } from './relics';
 import type { RunSetup } from './world';
 
 /**
- * The Grimoire (M1): one-time unlocks bought with Arcane Shards, beside the four stat lines. They
+ * The Grimoire (M1): one-time unlocks bought with Arcane Shards, beside the stat lines. They
  * add options to runs rather than raw power: relics and duos to find, more rerolls and banishes,
- * a fourth card, waystones to start deeper, and an ultimate that starts charged.
+ * a fourth card, waystones to start deeper, an ultimate that starts charged, a scale that saves
+ * the serpent once a run, a relic to start with, and a fourth relic in every relic choice.
  */
 
 export type UnlockId =
@@ -19,6 +20,9 @@ export type UnlockId =
   | 'banish1'
   | 'banish2'
   | 'fourthCard'
+  | 'phoenix'
+  | 'heirloom'
+  | 'seersEye'
   | `way:${MapId}`
   | 'ultReady';
 
@@ -42,6 +46,15 @@ const TOOLS: UnlockDef[] = [
   { id: 'banish1', kind: 'tool', name: 'Rite of Exile', description: 'One more banish every run.', cost: 180 },
   { id: 'banish2', kind: 'tool', name: 'Greater Exile', description: 'Another banish every run.', cost: 400, after: 'banish1' },
   { id: 'fourthCard', kind: 'tool', name: 'Fourth Rune', description: 'Every level-up offers four cards instead of three.', cost: 900 },
+  { id: 'seersEye', kind: 'tool', name: "Seer's Eye", description: 'Every relic choice shows four relics instead of three.', cost: 300 },
+  { id: 'heirloom', kind: 'tool', name: 'Heirloom', description: 'Every run begins with a relic of your choice.', cost: 700 },
+  {
+    id: 'phoenix',
+    kind: 'tool',
+    name: 'Phoenix Scale',
+    description: `Once a run, a killing blow leaves you at ${Math.round(PHOENIX.health * 100)}% health instead, with a free Nova and ${PHOENIX.safety} s of safety.`,
+    cost: 1000,
+  },
 ];
 
 const WAYSTONE_COST: Partial<Record<MapId, number>> = { hollows: 250, catacombs: 450, ember: 650 };
@@ -93,6 +106,9 @@ export function grimoireSetup(owned: readonly string[]): NonNullable<RunSetup['g
     duos: [...KNOWN_DUOS, ...DUO_IDS.filter((id) => has(`duo:${id}`))],
     relics: [...KNOWN_RELICS, ...RELIC_IDS.filter((id) => has(`relic:${id}`))],
     ultReady: has('ultReady'),
+    phoenix: has('phoenix'),
+    heirloom: has('heirloom'),
+    relicChoices: RELIC_CHOICES + (has('seersEye') ? 1 : 0),
   };
 }
 

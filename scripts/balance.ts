@@ -28,7 +28,7 @@ import { hazardAt, onIce, updateHazards } from '../src/game/hazards';
 import { MAP_ORDER } from '../src/game/maps';
 import { mulberry32 } from '../src/game/math';
 import { applyChoice, rollOffer } from '../src/game/levelup';
-import { emptyMetaLevels, segmentsForLevel, spellCooldown, survivalXpRate, xpToNext } from '../src/game/progression';
+import { bodyBonus, emptyMetaLevels, META_IDS, metaMaxLevel, segmentsForLevel, spellCooldown, survivalXpRate, xpToNext } from '../src/game/progression';
 import { castSpell, regenPerSecond, spawnBolt, tickCooldowns, updateBeams, updateBolts, updateEchoes, updateFrost, updateNovas, updateWard } from '../src/game/spells';
 import { aimLines, attackLane } from '../src/game/telegraph';
 import { clearanceAt } from '../src/game/terrain';
@@ -39,7 +39,8 @@ const [SECONDS, SEEDS, DEPTH, LEVEL] = [240, 3, 2, 0].map((d, i) => {
   const v = Number(process.argv[2 + i]);
   return Number.isFinite(v) && process.argv[2 + i] !== undefined ? v : d;
 });
-const SHOP = process.argv[6] === 'max' ? { health: 5, damage: 5, pickup: 3, wisdom: 3 } : emptyMetaLevels();
+const SHOP = emptyMetaLevels();
+if (process.argv[6] === 'max') for (const id of META_IDS) SHOP[id] = metaMaxLevel(id);
 /** Maps a whole run plays (depth 0), or the level every map starts from (fixed depth). */
 const MAPS_PER_RUN = LEVEL || 5;
 const START_LEVEL = LEVEL || 10;
@@ -54,7 +55,7 @@ function setUp(id: MapId, seed: number): World {
     w.level++;
     pickCard(w, rng);
   }
-  w.snake.segmentTarget = w.snake.segmentCount = segmentsForLevel(w.level);
+  w.snake.segmentTarget = w.snake.segmentCount = segmentsForLevel(w.level, bodyBonus(w.meta));
   w.hp = w.stats.maxHp;
   return w;
 }
@@ -193,7 +194,7 @@ function step(w: World, rng: () => number): void {
   while (w.xp >= xpToNext(w.level)) {
     w.xp -= xpToNext(w.level);
     w.level++;
-    w.snake.segmentTarget = segmentsForLevel(w.level);
+    w.snake.segmentTarget = segmentsForLevel(w.level, bodyBonus(w.meta));
     refreshStats(w);
     pickCard(w, rng);
   }

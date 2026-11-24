@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import type { SpellId } from '../game/config';
 import { buildLayout } from '../game/maps';
 import { RUINS } from '../game/maps/ruins';
@@ -7,11 +7,11 @@ import { PX } from '../game/pixel/palette';
 import { segmentFill, segmentOutline, wizardHead } from '../game/pixel/sprites';
 import { blit } from '../game/pixel/bake';
 import { RELICS, type RelicId } from '../game/relics';
+import { RELIC_ICONS, SHOP_ICONS, type Bitmap, type ShopIconName } from './shopIcons';
 import type { WizardId } from '../game/wizards';
 
 // ---------------------------------------------------------------- bitmap icons
 
-type Bitmap = { rows: string[]; colors: Record<string, string> };
 
 const ICONS = {
   shard: {
@@ -108,42 +108,6 @@ const ICONS = {
     rows: ['.kkkkk.', 'kwwwwwk', 'kwkwkwk', 'kwwwwwk', '.kwwwk.', '.kwkwk.', '..kkk..'],
     colors: { k: PX.ink, w: PX.hurt2 },
   },
-  // The Grimoire: a reroll's circling arrow, a banish's cross, four cards, a waystone and a primed burst.
-  // Three quarters of a ring turning clockwise, its arrowhead pointing down at the upper right.
-  reroll: {
-    rows: [
-      '....kkkkk.....',
-      '...kwwwwwk....',
-      '..kwyyyyywk...',
-      '.kwyykkkwykkk.',
-      'kwyyk.kwyywwwk',
-      'kwyk...kwyyyk.',
-      'kwyk....kwyk..',
-      'kwyk.....kk...',
-      'kwywk.........',
-      '.kwywkkk......',
-      '..kwywwwk.....',
-      '...kwyyyk.....',
-      '....kkkk......',
-    ],
-    colors: { k: PX.ink, y: PX.gold1, w: PX.gold3 },
-  },
-  banish: {
-    rows: ['kk.....kk', 'krk...krk', '.krk.krk.', '..krkrk..', '...krk...', '..krkrk..', '.krk.krk.', 'krk...krk', 'kk.....kk'],
-    colors: { k: PX.ink, r: PX.hurt1 },
-  },
-  cards: {
-    rows: ['kkkk.kkkk', 'kwpk.kwpk', 'kppk.kppk', 'kkkk.kkkk', '.........', 'kkkk.kkkk', 'kwpk.kwpk', 'kppk.kppk', 'kkkk.kkkk'],
-    colors: { k: PX.ink, w: PX.gold3, p: PX.gold1 },
-  },
-  waystone: {
-    rows: ['...kkk...', '..kpppk..', '.kpwwwpk.', '.kpw.wpk.', '.kpw.wpk.', '.kpw.wpk.', 'kkpwwwpkk', 'kmmmmmmmk', 'kkkkkkkkk'],
-    colors: { k: PX.ink, p: PX.portal2, w: PX.portal1, m: PX.golem3 },
-  },
-  burst: {
-    rows: ['....y....', '.y..y..y.', '..y.w.y..', '...www...', 'yywwwwwyy', '...www...', '..y.w.y..', '.y..y..y.', '....y....'],
-    colors: { y: PX.gold1, w: PX.gold3 },
-  },
 } satisfies Record<string, Bitmap>;
 
 export type IconName = keyof typeof ICONS;
@@ -164,7 +128,16 @@ function BitmapIcon({ icon, scale, className }: { icon: Bitmap; scale: number; c
     }
   }
   return (
-    <svg className={`pixel-icon ${className ?? ''}`} width={w * scale} height={h * scale} viewBox={`0 0 ${w} ${h}`} shapeRendering="crispEdges" aria-hidden="true">
+    <svg
+      className={`pixel-icon ${className ?? ''}`}
+      width={w * scale}
+      height={h * scale}
+      viewBox={`0 0 ${w} ${h}`}
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+      // Its size in icon pixels, for screens that scale icons in CSS (the shop on a large screen).
+      style={{ '--icon-w': w, '--icon-h': h } as CSSProperties}
+    >
       {rects}
     </svg>
   );
@@ -197,27 +170,29 @@ const UPGRADE_ICON: Record<string, IconName> = {
   'over-power': 'star',
   'over-vigor': 'heart',
   'over-focus': 'hourglass',
-  // the Grimoire
-  reroll1: 'reroll',
-  reroll2: 'reroll',
-  banish1: 'banish',
-  banish2: 'banish',
-  fourthCard: 'cards',
-  'way:hollows': 'waystone',
-  'way:catacombs': 'waystone',
-  'way:ember': 'waystone',
-  ultReady: 'burst',
-  // permanent upgrades
-  health: 'heart',
-  damage: 'star',
-  pickup: 'crystal',
-  wisdom: 'eye',
 };
 
 /** Upgrade/meta glyph: its pixel icon, or the plain symbol for one without an icon. */
 export function UpgradeGlyph({ id, glyph }: { id: string; glyph: string }) {
   if (UPGRADE_ICON[id]) return <PixelIcon name={UPGRADE_ICON[id]} scale={4} className="card-glyph-px" />;
   return <span className="card-glyph">{glyph}</span>;
+}
+
+/** The shop's icon for a stat line or a Grimoire unlock (see shopIcons.ts), 3 screen pixels to an icon pixel. */
+const SHOP_GLYPH: Record<string, ShopIconName> = {
+  reroll1: 'reroll',
+  reroll2: 'reroll',
+  banish1: 'banish',
+  banish2: 'banish',
+  fourthCard: 'cards',
+  'way:hollows': 'wayHollows',
+  'way:catacombs': 'wayCatacombs',
+  'way:ember': 'wayEmber',
+};
+
+export function ShopGlyph({ id, scale = 3, className = 'card-glyph-px shop-glyph' }: { id: string; scale?: number; className?: string }) {
+  const name = SHOP_GLYPH[id] ?? (id in SHOP_ICONS ? (id as ShopIconName) : null);
+  return name ? <BitmapIcon icon={SHOP_ICONS[name]} scale={scale} className={className} /> : null;
 }
 
 /** Mixes a hex colour toward white (t > 0) or black (t < 0). */
@@ -232,11 +207,13 @@ const RELIC_GRID = 16;
 const relicBitmaps = new Map<RelicId, Bitmap>();
 
 /**
- * Relics whose shape is too fine to snap to the grid on its own, drawn by hand (16×16 like the rest).
+ * Relics drawn by hand (16×16 like the rest): the six the Grimoire sells (see shopIcons.ts), and two
+ * whose shape is too fine to snap to the grid on its own.
  * The Gambler's Die: a bone-white die showing three, lit on its upper-left and shaded lower-right.
  * The Frenzied Heart: a red heart with a bright bolt zig-zagging across it.
  */
 const RELIC_PIXELS: Partial<Record<RelicId, Bitmap>> = {
+  ...RELIC_ICONS,
   gamblersDie: {
     rows: [
       '................',
