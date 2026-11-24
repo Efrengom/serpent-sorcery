@@ -257,6 +257,206 @@
   margin: 18px 0 0;
 }
 
+/* Relics: icons drawn as the menus draw them, over the stage. */
+.insp-icons {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  scrollbar-color: var(--insp-edge) transparent;
+}
+
+.insp-relic {
+  box-sizing: border-box;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 24px 16px 56px;
+}
+
+.insp-big {
+  position: relative;
+  display: block;
+  line-height: 0;
+}
+
+.insp-big.grid::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.18) 1px, transparent 1px);
+  background-size: var(--z) var(--z);
+  box-shadow: inset -1px -1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.insp-pick {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid var(--insp-gold);
+  pointer-events: none;
+}
+
+.insp-ingame {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 16px 28px;
+  padding: 16px 20px;
+  background: rgba(13, 7, 24, 0.82);
+  border: 2px solid var(--insp-edge);
+}
+
+.insp-ingame figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.insp-ingame figcaption {
+  font-family: 'Silkscreen', 'Courier New', monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--insp-dim);
+}
+
+/* As the pixel look's relic card, HUD chip and pause list draw them (styles.css). */
+.insp-card {
+  width: 150px;
+  box-sizing: border-box;
+  padding: 16px 10px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  background: #2a1a40;
+  box-shadow:
+    inset 0 0 0 3px var(--relic),
+    0 5px 0 var(--insp-ink);
+}
+
+.insp-card b {
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.insp-card small {
+  font-size: 0.75rem;
+  color: var(--relic);
+}
+
+.insp-chip {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.insp-listing {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  max-width: 300px;
+  font-size: 0.85rem;
+  line-height: 1.3;
+  color: var(--insp-dim);
+}
+
+.insp-listing b {
+  color: var(--insp-text);
+}
+
+.insp-sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(max(150px, calc(16 * var(--z) + 28px)), 1fr));
+  gap: 10px;
+  padding: 14px 14px 56px;
+}
+
+.insp-sheet-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 8px 10px;
+  background: none;
+  border: 2px solid var(--insp-edge);
+}
+
+.insp-sheet-cell:hover,
+.insp-sheet-cell:focus-visible {
+  border-color: var(--insp-gold);
+  background: rgba(255, 255, 255, 0.05);
+  outline: none;
+}
+
+.insp-sheet-small {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.insp-sheet-name {
+  font-size: 0.8rem;
+  line-height: 1.2;
+  text-align: center;
+  background: rgba(13, 7, 24, 0.82);
+  padding: 1px 6px;
+}
+
+.insp-palette {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  font-size: 0.85rem;
+}
+
+.insp-palette li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px;
+  border-left: 3px solid transparent;
+}
+
+.insp-palette li.on {
+  border-left-color: var(--insp-gold);
+  background: var(--insp-panel-2);
+}
+
+.insp-swatch {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 2px solid var(--insp-ink);
+  box-shadow: 0 0 0 1px var(--insp-edge);
+}
+
+.insp-palette code {
+  font-family: 'Silkscreen', 'Courier New', monospace;
+  color: var(--insp-dim);
+  min-width: 1em;
+}
+
+.insp-count {
+  margin-left: auto;
+  color: var(--insp-dim);
+}
+
 /* A narrow window stacks the list, the stage and the panel. */
 @media (max-width: 899px) {
   .inspector {

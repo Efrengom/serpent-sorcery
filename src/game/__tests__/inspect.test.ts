@@ -3,6 +3,7 @@ import { BEAST_IDS } from '../bestiary';
 import { SPELL_IDS } from '../config';
 import { createStage, defaultOptions, focusOf, hitSubject, killSubject, resetStage, stepStage, SUBJECTS } from '../inspect';
 import { MAP_ORDER } from '../maps';
+import { RELIC_IDS } from '../relics';
 import { ULTIMATES } from '../ultimates';
 import { WIZARD_IDS } from '../wizards';
 
@@ -11,7 +12,7 @@ const run = (stage: ReturnType<typeof createStage>, seconds: number) => {
 };
 
 describe('the inspector', () => {
-  it('lists every foe, Archmage, wizard, spell, ultimate and map once', () => {
+  it('lists every foe, Archmage, wizard, spell, ultimate, map and relic once', () => {
     const ids = SUBJECTS.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
     const of = (prefix: string) => ids.filter((id) => id.startsWith(prefix)).map((id) => id.slice(prefix.length));
@@ -20,6 +21,8 @@ describe('the inspector', () => {
     expect(of('spell:').sort()).toEqual([...SPELL_IDS].sort());
     expect(of('ult:').sort()).toEqual(Object.keys(ULTIMATES).sort());
     expect(of('floor:').sort()).toEqual([...MAP_ORDER].sort());
+    expect(of('relic:').sort()).toEqual([...RELIC_IDS].sort());
+    expect(SUBJECTS.filter((s) => s.relic).every((s) => s.group === 'Relics')).toBe(true);
   });
 
   it('puts every subject on its stage and runs it, idle and live, without losing it', { timeout: 30_000 }, () => {
